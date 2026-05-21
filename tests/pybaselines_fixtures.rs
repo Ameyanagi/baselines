@@ -3,7 +3,8 @@ use std::collections::BTreeMap;
 use baselines::classification::rubberband;
 use baselines::morphology::{MorphologyParams, mor, mwmv, rolling_ball, snip, tophat};
 use baselines::polynomial::{
-    ImodPolyParams, ModPolyParams, PolyParams, QuantRegParams, imodpoly, modpoly, poly, quant_reg,
+    ImodPolyParams, ModPolyParams, PenalizedPolyParams, PolyParams, QuantRegParams, imodpoly,
+    modpoly, penalized_poly, poly, quant_reg,
 };
 use baselines::smoothing::{SmoothingParams, noise_median};
 use baselines::whittaker::{
@@ -48,6 +49,14 @@ fn core_algorithms_track_pybaselines_fixtures() {
             .unwrap()
             .baseline,
         4e-2,
+    );
+    assert_close(
+        "penalized_poly",
+        &fixture,
+        penalized_poly(&fixture.signal, PenalizedPolyParams::default())
+            .unwrap()
+            .baseline,
+        1e-12,
     );
     assert_close(
         "quant_reg",

@@ -10,6 +10,11 @@
 //!   2007.
 //! - R. Koenker and G. Bassett Jr., "Regression Quantiles", *Econometrica*,
 //!   1978.
+//! - V. Mazet et al., "Background removal from spectra by designing and
+//!   minimising a non-quadratic cost function", *Chemometrics and Intelligent
+//!   Laboratory Systems*, 2005.
+//! - J. Liu et al., "Goldindec: A Novel Algorithm for Raman Spectrum Baseline
+//!   Correction", *Applied Spectroscopy*, 2015.
 //! - `pybaselines` is used as a behavioral reference.
 
 use crate::fit::{Fit, FitReport};
@@ -144,8 +149,53 @@ pub fn imodpoly(y: &[f64], params: ImodPolyParams) -> Result<Fit> {
     Ok(Fit { baseline, report })
 }
 
+/// Non-quadratic cost function used by [`penalized_poly`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PenalizedCost {
+    /// Asymmetric truncated quadratic loss.
+    AsymmetricTruncatedQuadratic,
+    /// Symmetric truncated quadratic loss.
+    SymmetricTruncatedQuadratic,
+    /// Asymmetric Huber loss.
+    AsymmetricHuber,
+    /// Symmetric Huber loss.
+    SymmetricHuber,
+    /// Asymmetric Indec loss.
+    AsymmetricIndec,
+    /// Symmetric Indec loss.
+    SymmetricIndec,
+}
+
 /// Parameters for penalized polynomial fitting.
-pub type PenalizedPolyParams = ModPolyParams;
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PenalizedPolyParams {
+    /// Polynomial order.
+    pub order: usize,
+    /// Maximum number of non-quadratic refinement iterations.
+    pub max_iter: usize,
+    /// Relative baseline-change tolerance.
+    pub tol: f64,
+    /// Non-quadratic loss function.
+    pub cost: PenalizedCost,
+    /// Residual threshold separating quadratic and non-quadratic loss. If
+    /// `None`, uses `std(y) / 10`.
+    pub threshold: Option<f64>,
+    /// Scale factor for the non-quadratic penalty in `(0, 1]`.
+    pub alpha_factor: f64,
+}
+
+impl Default for PenalizedPolyParams {
+    fn default() -> Self {
+        Self {
+            order: 2,
+            max_iter: 250,
+            tol: 1.0e-3,
+            cost: PenalizedCost::AsymmetricTruncatedQuadratic,
+            threshold: None,
+            alpha_factor: 0.99,
+        }
+    }
+}
 
 /// Parameters for LOESS baseline fitting.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -195,9 +245,16 @@ pub type GoldindecParams = ModPolyParams;
 ///
 /// # References
 ///
+/// - V. Mazet et al., "Background removal from spectra by designing and
+///   minimising a non-quadratic cost function", *Chemometrics and Intelligent
+///   Laboratory Systems*, 2005.
+/// - J. Liu et al., "Goldindec: A Novel Algorithm for Raman Spectrum Baseline
+///   Correction", *Applied Spectroscopy*, 2015.
 /// - `pybaselines.Baseline.penalized_poly` is used as a behavioral reference.
 pub fn penalized_poly(y: &[f64], params: PenalizedPolyParams) -> Result<Fit> {
-    modpoly(y, params)
+    let mut baseline = vec![0.0; y.len()];
+    let report = penalized_poly_into(y, params, &mut baseline)?;
+    Ok(Fit { baseline, report })
 }
 
 /// Fits a LOESS-style local smoothing baseline.
@@ -258,6 +315,42 @@ pub fn quant_reg(y: &[f64], params: QuantRegParams) -> Result<Fit> {
 /// - `pybaselines.Baseline.goldindec` is used as a behavioral reference.
 pub fn goldindec(y: &[f64], params: GoldindecParams) -> Result<Fit> {
     modpoly(y, params)
+}
+
+/// Fits a penalized polynomial baseline into an existing output buffer.
+pub fn penalized_poly_into(
+    y: &[f64],
+    params: PenalizedPolyParams,
+    baseline: &mut [f64],
+) -> Result<FitReport> {
+    validate_penalized_poly_params(params)?;
+    validate_poly_input(y, params.order, baseline)?;
+
+    let weights = vec![1.0; y.len()];
+    let mut adjusted = y.to_vec();
+    let mut previous = vec![0.0; y.len()];
+    let threshold = params
+        .threshold
+        .unwrap_or_else(|| standard_deviation(y) / 10.0);
+    fit_weighted_polynomial(y, &weights, params.order, baseline)?;
+
+    let mut tolerance = f64::INFINITY;
+    for iter in 0..params.max_iter {
+        previous.copy_from_slice(baseline);
+        for ((target, observed), fitted) in adjusted.iter_mut().zip(y).zip(baseline.iter()) {
+            let residual = observed - fitted;
+            *target = observed
+                + non_quadratic_correction(residual, threshold, params.alpha_factor, params.cost);
+        }
+
+        fit_weighted_polynomial(&adjusted, &weights, params.order, baseline)?;
+        tolerance = relative_baseline_change(&previous, baseline);
+        if iter > 0 && tolerance <= params.tol {
+            return Ok(FitReport::new(iter + 1, true, tolerance));
+        }
+    }
+
+    Ok(FitReport::new(params.max_iter, false, tolerance))
 }
 
 /// Fits an improved modified polynomial baseline into an existing output buffer.
@@ -364,6 +457,93 @@ fn validate_quant_reg_params(params: QuantRegParams) -> Result<()> {
     Ok(())
 }
 
+fn validate_penalized_poly_params(params: PenalizedPolyParams) -> Result<()> {
+    validate_iter_params(params.max_iter, params.tol)?;
+    if !params.alpha_factor.is_finite() || params.alpha_factor <= 0.0 || params.alpha_factor > 1.0 {
+        return Err(BaselineError::InvalidParameter {
+            name: "alpha_factor",
+            reason: "must be finite and in (0, 1]",
+        });
+    }
+    if let Some(threshold) = params.threshold
+        && (!threshold.is_finite() || threshold < 0.0)
+    {
+        return Err(BaselineError::InvalidParameter {
+            name: "threshold",
+            reason: "must be finite and non-negative",
+        });
+    }
+    Ok(())
+}
+
+fn non_quadratic_correction(
+    residual: f64,
+    threshold: f64,
+    alpha_factor: f64,
+    cost: PenalizedCost,
+) -> f64 {
+    let alpha = 0.5 * alpha_factor;
+    match cost {
+        PenalizedCost::AsymmetricTruncatedQuadratic => {
+            truncated_quadratic_correction(residual, threshold, alpha, false)
+        }
+        PenalizedCost::SymmetricTruncatedQuadratic => {
+            truncated_quadratic_correction(residual, threshold, alpha, true)
+        }
+        PenalizedCost::AsymmetricHuber => huber_correction(residual, threshold, alpha, false),
+        PenalizedCost::SymmetricHuber => huber_correction(residual, threshold, alpha, true),
+        PenalizedCost::AsymmetricIndec => indec_correction(residual, threshold, alpha, false),
+        PenalizedCost::SymmetricIndec => indec_correction(residual, threshold, alpha, true),
+    }
+}
+
+fn truncated_quadratic_correction(
+    residual: f64,
+    threshold: f64,
+    alpha: f64,
+    symmetric: bool,
+) -> f64 {
+    let in_quadratic_region = if symmetric {
+        residual.abs() < threshold
+    } else {
+        residual < threshold
+    };
+    if in_quadratic_region {
+        residual * (2.0 * alpha - 1.0)
+    } else {
+        -residual
+    }
+}
+
+fn huber_correction(residual: f64, threshold: f64, alpha: f64, symmetric: bool) -> f64 {
+    if symmetric {
+        if residual.abs() < threshold {
+            residual * (2.0 * alpha - 1.0)
+        } else {
+            2.0 * alpha * threshold * residual.signum()
+        }
+    } else if residual < threshold {
+        residual * (2.0 * alpha - 1.0)
+    } else {
+        2.0 * alpha * threshold - residual
+    }
+}
+
+fn indec_correction(residual: f64, threshold: f64, alpha: f64, symmetric: bool) -> f64 {
+    let in_quadratic_region = if symmetric {
+        residual.abs() < threshold
+    } else {
+        residual < threshold
+    };
+    if in_quadratic_region {
+        residual * (2.0 * alpha - 1.0)
+    } else {
+        let sign = if symmetric { residual.signum() } else { 1.0 };
+        let denominator = (2.0 * residual * residual).max(f64::MIN_POSITIVE);
+        -(residual + alpha * sign * threshold.powi(3) / denominator)
+    }
+}
+
 fn signal_scale(y: &[f64]) -> f64 {
     let (min, max) = y
         .iter()
@@ -372,6 +552,22 @@ fn signal_scale(y: &[f64]) -> f64 {
             (min.min(value), max.max(value))
         });
     max - min
+}
+
+fn standard_deviation(values: &[f64]) -> f64 {
+    if values.is_empty() {
+        return 0.0;
+    }
+    let mean = values.iter().sum::<f64>() / values.len() as f64;
+    let variance = values
+        .iter()
+        .map(|value| {
+            let centered = value - mean;
+            centered * centered
+        })
+        .sum::<f64>()
+        / values.len() as f64;
+    variance.sqrt()
 }
 
 fn validate_poly_input(y: &[f64], order: usize, baseline: &[f64]) -> Result<()> {
