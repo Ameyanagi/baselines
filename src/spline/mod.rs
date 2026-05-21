@@ -8,7 +8,7 @@ mod weights;
 
 use crate::fit::{Fit, FitReport};
 use crate::linalg::pspline::PenalizedSpline;
-use crate::morphology::{MorphologyParams, mpls};
+use crate::morphology::MorphologyParams;
 use crate::smoothing::{SmoothingParams, peak_filling};
 use crate::whittaker::{
     AirPlsParams, ArPlsParams, AsPlsParams, AslsParams, BrPlsParams, DerPsalsaParams, DrPlsParams,
@@ -18,12 +18,15 @@ use crate::workspace::validate_signal;
 use crate::{BaselineError, Result};
 use weights::{
     airpls_weights, arpls_weights, brpls_weights, derivative_peak_screening_weights,
-    derpsalsa_weights, iarpls_weights, lsrpls_weights, psalsa_weights, standard_deviation,
+    derpsalsa_weights, iarpls_weights, lsrpls_weights, mpls_anchor_weights, psalsa_weights,
+    standard_deviation,
 };
 
 const PSPLINE_NUM_KNOTS: usize = 100;
 const PSPLINE_DEGREE: usize = 3;
 const PSPLINE_DIFF_ORDER: usize = 2;
+const PSPLINE_MPLS_LAMBDA: f64 = 1.0e3;
+const PSPLINE_MPLS_P: f64 = 0.0;
 
 /// Parameters for mixture-model spline fitting.
 pub type MixtureModelParams = ArPlsParams;
@@ -370,9 +373,27 @@ pub fn pspline_derpsalsa(y: &[f64], params: DerPsalsaParams) -> Result<Fit> {
 ///
 /// # References
 ///
+/// - Z. Li et al., "Morphological weighted penalized least squares for
+///   background correction", *Analyst*, 2013.
+/// - P. H. C. Eilers, B. D. Marx, and M. Durban, "Twenty years of P-splines",
+///   *SORT*, 2015.
 /// - `pybaselines.Baseline.pspline_mpls` is used as a behavioral reference.
 pub fn pspline_mpls(y: &[f64], params: MorphologyParams) -> Result<Fit> {
-    mpls(y, params)
+    validate_spline_signal("pspline_mpls", y)?;
+    if params.window_size == 0 {
+        return Err(BaselineError::InvalidParameter {
+            name: "window_size",
+            reason: "must be greater than zero",
+        });
+    }
+
+    let radius = params.window_size / 2;
+    let weights = mpls_anchor_weights(y, radius, PSPLINE_MPLS_P);
+    let baseline = default_pspline(y.len()).solve(y, &weights, PSPLINE_MPLS_LAMBDA)?;
+    Ok(Fit {
+        baseline,
+        report: FitReport::new(1, true, 0.0),
+    })
 }
 
 /// Fits a penalized-spline brPLS baseline.

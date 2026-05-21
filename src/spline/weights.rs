@@ -179,6 +179,45 @@ pub(super) fn psalsa_weights(y: &[f64], baseline: &[f64], p: f64, k: f64) -> Vec
         .collect()
 }
 
+pub(super) fn mpls_anchor_weights(y: &[f64], radius: usize, p: f64) -> Vec<f64> {
+    let rough_baseline = opening_reflect(y, radius);
+    let mut padded = Vec::with_capacity(rough_baseline.len() + 2);
+    if let Some(first) = rough_baseline.first() {
+        padded.push(*first);
+    }
+    padded.extend_from_slice(&rough_baseline);
+    if let Some(last) = rough_baseline.last() {
+        padded.push(*last);
+    }
+
+    let diff: Vec<f64> = padded.windows(2).map(|pair| pair[1] - pair[0]).collect();
+    let indices: Vec<usize> = (0..y.len())
+        .filter(|&index| {
+            ((diff[index + 1] == 0.0) || (diff[index] == 0.0))
+                && ((diff[index + 1] != 0.0) || (diff[index] != 0.0))
+        })
+        .collect();
+
+    let mut weights = vec![p; y.len()];
+    for pair_index in (1..indices.len().saturating_sub(1)).step_by(2) {
+        let previous_segment = indices[pair_index];
+        let next_segment = indices[pair_index + 1];
+        if previous_segment > next_segment || next_segment >= y.len() {
+            continue;
+        }
+        let mut min_index = previous_segment;
+        let mut min_value = y[previous_segment];
+        for (offset, value) in y[previous_segment..=next_segment].iter().enumerate() {
+            if *value < min_value {
+                min_value = *value;
+                min_index = previous_segment + offset;
+            }
+        }
+        weights[min_index] = 1.0 - p;
+    }
+    weights
+}
+
 pub(super) fn standard_deviation(values: &[f64]) -> f64 {
     if values.is_empty() {
         return 0.0;
@@ -328,4 +367,33 @@ fn root_mean_square(values: &[f64]) -> f64 {
     }
     let sum = values.iter().map(|value| value * value).sum::<f64>();
     (sum / values.len() as f64).sqrt()
+}
+
+fn opening_reflect(y: &[f64], radius: usize) -> Vec<f64> {
+    let eroded = moving_min_reflect(y, radius);
+    let mut opened = vec![0.0; y.len()];
+    moving_max_reflect(&eroded, radius, &mut opened);
+    opened
+}
+
+fn moving_min_reflect(y: &[f64], radius: usize) -> Vec<f64> {
+    (0..y.len())
+        .map(|i| {
+            let start = i as isize - radius as isize;
+            let end = i as isize + radius as isize;
+            (start..=end)
+                .map(|index| y[reflect_index(index, y.len())])
+                .fold(f64::INFINITY, f64::min)
+        })
+        .collect()
+}
+
+fn moving_max_reflect(y: &[f64], radius: usize, output: &mut [f64]) {
+    for (i, target) in output.iter_mut().enumerate() {
+        let start = i as isize - radius as isize;
+        let end = i as isize + radius as isize;
+        *target = (start..=end)
+            .map(|index| y[reflect_index(index, y.len())])
+            .fold(f64::NEG_INFINITY, f64::max);
+    }
 }
