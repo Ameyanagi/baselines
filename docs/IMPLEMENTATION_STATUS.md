@@ -12,7 +12,7 @@ is tightened with generated pybaselines fixtures.
 - Polynomial core: `poly`, `modpoly`, `imodpoly`, `loess`,
   `penalized_poly`, `quant_reg`, `goldindec`
 - Morphology core: `rolling_ball`, `mwmv`, `tophat`, `mor`, `mpls`, `imor`,
-  `mormol`, `amormol`
+  `mormol`, `amormol`, `jbcd`
 - Smoothing core: `noise_median`, `snip`, `swima`, `ipsa`, `ria`, `peak_filling`
 - Classification core: `rubberband`
 - Misc core: `interp_pts`
@@ -20,7 +20,7 @@ is tightened with generated pybaselines fixtures.
 ## Compatibility Entry Points Needing Fixture Tuning
 
 - Whittaker variants: none currently tracked
-- Morphology variants: `mpspline`, `jbcd`
+- Morphology variants: `mpspline`
 - Spline family: `mixture_model`, `irsqr`, `corner_cutting`, all `pspline_*`
   methods
 - Classification variants: `dietrich`, `golotvin`, `std_distribution`,

@@ -14,7 +14,10 @@
 //! - `pybaselines` is used as a behavioral reference.
 
 use crate::fit::{Fit, FitReport};
-use crate::linalg::pentadiagonal::{PentadiagonalWorkspace, solve_second_order};
+use crate::linalg::pentadiagonal::{
+    GeneralPentadiagonalSystem, GeneralPentadiagonalWorkspace, PentadiagonalWorkspace,
+    solve_general_pentadiagonal, solve_second_order,
+};
 use crate::workspace::{validate_output, validate_signal};
 use crate::{BaselineError, Result};
 
@@ -24,6 +27,14 @@ const IMOR_MAX_ITER: usize = 200;
 const IMOR_TOL: f64 = 1.0e-3;
 const MORMOL_MAX_ITER: usize = 250;
 const MORMOL_TOL: f64 = 1.0e-3;
+const JBCD_ALPHA: f64 = 0.1;
+const JBCD_BETA: f64 = 10.0;
+const JBCD_GAMMA: f64 = 1.0;
+const JBCD_BETA_MULT: f64 = 1.1;
+const JBCD_GAMMA_MULT: f64 = 0.909;
+const JBCD_MAX_ITER: usize = 20;
+const JBCD_SIGNAL_TOL: f64 = 1.0e-2;
+const JBCD_BASELINE_TOL: f64 = 1.0e-3;
 
 /// Parameters for window-based morphology baselines.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -226,9 +237,13 @@ pub fn mpspline(y: &[f64], params: MorphologyParams) -> Result<Fit> {
 ///
 /// # References
 ///
+/// - H. Liu et al., "Joint Baseline-Correction and Denoising for Raman
+///   Spectra", *Applied Spectroscopy*, 2015.
 /// - `pybaselines.Baseline.jbcd` is used as a behavioral reference.
 pub fn jbcd(y: &[f64], params: MorphologyParams) -> Result<Fit> {
-    amormol(y, params)
+    let mut baseline = vec![0.0; y.len()];
+    let report = jbcd_into(y, params, &mut baseline)?;
+    Ok(Fit { baseline, report })
 }
 
 /// Estimates a morphology baseline into an existing output buffer.
@@ -325,6 +340,107 @@ pub fn mormol_into(y: &[f64], params: MorphologyParams, baseline: &mut [f64]) ->
 
     baseline.copy_from_slice(&padded_baseline[bounds]);
     Ok(FitReport::new(MORMOL_MAX_ITER + 1, false, tolerance))
+}
+
+/// Estimates a JBCD baseline into an existing output buffer.
+pub fn jbcd_into(y: &[f64], params: MorphologyParams, baseline: &mut [f64]) -> Result<FitReport> {
+    validate_morphology_input(y, params, baseline)?;
+    if y.len() < 3 {
+        return Err(BaselineError::TooShort {
+            algorithm: "jbcd",
+            len: y.len(),
+            min: 3,
+        });
+    }
+
+    let opening = opening_reflect(y, params.radius());
+    let averaged = average_opening_from_opened_reflect(&opening, params.radius());
+    let robust_opening: Vec<f64> = opening
+        .into_iter()
+        .zip(averaged)
+        .map(|(opened, average)| opened.min(average))
+        .collect();
+
+    let n = y.len();
+    let mut band_workspace = GeneralPentadiagonalWorkspace::new(n);
+    let lower2 = vec![0.0; n - 2];
+    let upper2 = vec![0.0; n - 2];
+    let mut lower1 = vec![0.0; n - 1];
+    let mut diag = vec![0.0; n];
+    let mut upper1 = vec![0.0; n - 1];
+    let mut rhs = vec![0.0; n];
+    let mut signal = y.to_vec();
+    let mut previous_signal = y.to_vec();
+    let mut previous_baseline = robust_opening.clone();
+    let mut beta = JBCD_BETA;
+    let mut gamma = JBCD_GAMMA;
+    let mut signal_tolerance = f64::INFINITY;
+    let mut baseline_tolerance = f64::INFINITY;
+
+    for iter in 0..=JBCD_MAX_ITER {
+        fill_first_order_system(gamma, 1.0, &mut lower1, &mut diag, &mut upper1);
+        for ((target, observed), previous) in rhs.iter_mut().zip(y).zip(&previous_baseline) {
+            *target = observed - previous;
+        }
+        solve_general_pentadiagonal(
+            GeneralPentadiagonalSystem {
+                lower2: &lower2,
+                lower1: &lower1,
+                diag: &diag,
+                upper1: &upper1,
+                upper2: &upper2,
+            },
+            &rhs,
+            &mut signal,
+            &mut band_workspace,
+        )?;
+
+        fill_first_order_system(
+            2.0 * beta,
+            1.0 + 2.0 * JBCD_ALPHA,
+            &mut lower1,
+            &mut diag,
+            &mut upper1,
+        );
+        for (((target, observed), signal_value), opened) in
+            rhs.iter_mut().zip(y).zip(&signal).zip(&robust_opening)
+        {
+            *target = observed - signal_value + 2.0 * JBCD_ALPHA * opened;
+        }
+        solve_general_pentadiagonal(
+            GeneralPentadiagonalSystem {
+                lower2: &lower2,
+                lower1: &lower1,
+                diag: &diag,
+                upper1: &upper1,
+                upper2: &upper2,
+            },
+            &rhs,
+            baseline,
+            &mut band_workspace,
+        )?;
+
+        signal_tolerance = relative_change(&previous_signal, &signal);
+        baseline_tolerance = relative_change(&previous_baseline, baseline);
+        if signal_tolerance < JBCD_SIGNAL_TOL && baseline_tolerance < JBCD_BASELINE_TOL {
+            return Ok(FitReport::new(
+                iter + 1,
+                true,
+                signal_tolerance.max(baseline_tolerance),
+            ));
+        }
+
+        previous_signal.copy_from_slice(&signal);
+        previous_baseline.copy_from_slice(baseline);
+        gamma *= JBCD_GAMMA_MULT;
+        beta *= JBCD_BETA_MULT;
+    }
+
+    Ok(FitReport::new(
+        JBCD_MAX_ITER + 1,
+        false,
+        signal_tolerance.max(baseline_tolerance),
+    ))
 }
 
 /// Estimates a baseline with the statistics-sensitive nonlinear iterative peak-clipping algorithm.
@@ -457,6 +573,26 @@ fn convolve_reflect_same(y: &[f64], kernel: &[f64]) -> Vec<f64> {
         *target = sum;
     }
     output
+}
+
+fn fill_first_order_system(
+    penalty: f64,
+    diagonal_offset: f64,
+    lower1: &mut [f64],
+    diag: &mut [f64],
+    upper1: &mut [f64],
+) {
+    let n = diag.len();
+    for (index, value) in diag.iter_mut().enumerate() {
+        let penalty_diag = if index == 0 || index + 1 == n {
+            penalty
+        } else {
+            2.0 * penalty
+        };
+        *value = diagonal_offset + penalty_diag;
+    }
+    lower1.fill(-penalty);
+    upper1.fill(-penalty);
 }
 
 fn average_opening_reflect(y: &[f64], radius: usize, output: &mut [f64]) {
