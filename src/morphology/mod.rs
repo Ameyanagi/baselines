@@ -117,7 +117,7 @@ pub fn tophat(y: &[f64], params: MorphologyParams) -> Result<Fit> {
 /// Estimates a top-hat baseline into an existing output buffer.
 pub fn tophat_into(y: &[f64], params: MorphologyParams, baseline: &mut [f64]) -> Result<FitReport> {
     validate_morphology_input(y, params, baseline)?;
-    let opened = opening(y, params.radius());
+    let opened = opening_reflect(y, params.radius());
     baseline.copy_from_slice(&opened);
     Ok(FitReport::new(1, true, 0.0))
 }
@@ -247,7 +247,7 @@ pub fn mpls_into(y: &[f64], params: MorphologyParams, baseline: &mut [f64]) -> R
         });
     }
 
-    let rough_baseline = opening(y, params.radius());
+    let rough_baseline = opening_reflect(y, params.radius());
     let weights = mpls_anchor_weights(y, &rough_baseline, MPLS_P);
     if !weights.iter().any(|weight| *weight > 0.0) {
         baseline.copy_from_slice(y);
@@ -317,34 +317,6 @@ fn validate_morphology_input(y: &[f64], params: MorphologyParams, baseline: &[f6
     validate_signal(y)?;
     validate_output("baseline", y.len(), baseline.len())?;
     params.validate()
-}
-
-fn opening(y: &[f64], radius: usize) -> Vec<f64> {
-    let eroded = moving_min(y, radius);
-    let mut opened = vec![0.0; y.len()];
-    moving_max(&eroded, radius, &mut opened);
-    opened
-}
-
-fn moving_min(y: &[f64], radius: usize) -> Vec<f64> {
-    let mut output = vec![0.0; y.len()];
-    for (i, value) in output.iter_mut().enumerate() {
-        let start = i.saturating_sub(radius);
-        let end = (i + radius + 1).min(y.len());
-        *value = y[start..end].iter().copied().fold(f64::INFINITY, f64::min);
-    }
-    output
-}
-
-fn moving_max(y: &[f64], radius: usize, output: &mut [f64]) {
-    for (i, value) in output.iter_mut().enumerate() {
-        let start = i.saturating_sub(radius);
-        let end = (i + radius + 1).min(y.len());
-        *value = y[start..end]
-            .iter()
-            .copied()
-            .fold(f64::NEG_INFINITY, f64::max);
-    }
 }
 
 fn moving_average_extrapolated(y: &[f64], radius: usize, output: &mut [f64]) {
