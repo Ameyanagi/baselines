@@ -4,7 +4,7 @@ use crate::fit::Fit;
 use crate::linalg::pentadiagonal::solve_second_order_with_first_order;
 use crate::polynomial::fit_weighted_polynomial;
 use crate::whittaker::engine::{Reweighter, WhittakerParams, fit_alloc, relative_change};
-use crate::whittaker::{ArPlsParams, AslsParams, arpls, asls};
+use crate::whittaker::{ArPlsParams, arpls};
 use crate::workspace::{validate_output, validate_signal};
 use crate::{BaselineError, FitReport, Result};
 
@@ -55,8 +55,6 @@ pub type DrPlsParams = ArPlsParams;
 pub type IarPlsParams = ArPlsParams;
 /// Parameters for adaptive smoothness penalized least squares.
 pub type AsPlsParams = ArPlsParams;
-/// Parameters for derivative peaked signal asymmetric least squares.
-pub type DerPsalsaParams = AslsParams;
 /// Parameters for Bayesian reweighted penalized least squares.
 pub type BrPlsParams = ArPlsParams;
 /// Parameters for locally symmetric reweighted penalized least squares.
@@ -89,6 +87,56 @@ impl Default for PsalsaParams {
 
 impl PsalsaParams {
     /// Validates psalsa parameters that do not depend on the input signal.
+    pub fn validate(&self) -> Result<()> {
+        self.whittaker.validate()?;
+        if !self.p.is_finite() || self.p <= 0.0 || self.p >= 1.0 {
+            return Err(BaselineError::InvalidParameter {
+                name: "p",
+                reason: "must be finite and between 0 and 1",
+            });
+        }
+        if let Some(k) = self.k
+            && (!k.is_finite() || k <= 0.0)
+        {
+            return Err(BaselineError::InvalidParameter {
+                name: "k",
+                reason: "must be finite and positive",
+            });
+        }
+        Ok(())
+    }
+}
+
+/// Parameters for derivative peak-screening asymmetric least squares.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DerPsalsaParams {
+    /// Shared Whittaker parameters.
+    pub whittaker: WhittakerParams,
+    /// Asymmetry parameter in `(0, 1)`.
+    pub p: f64,
+    /// Peak-height scale. If `None`, uses `std(y) / 10`.
+    pub k: Option<f64>,
+    /// Optional half-window for derivative smoothing. If `None`, uses
+    /// `len(y) / 200`.
+    pub smooth_half_window: Option<usize>,
+    /// Number of mollifier smoothing passes before computing derivatives.
+    pub num_smooths: usize,
+}
+
+impl Default for DerPsalsaParams {
+    fn default() -> Self {
+        Self {
+            whittaker: WhittakerParams::default(),
+            p: 0.01,
+            k: None,
+            smooth_half_window: None,
+            num_smooths: 16,
+        }
+    }
+}
+
+impl DerPsalsaParams {
+    /// Validates derpsalsa parameters that do not depend on the input signal.
     pub fn validate(&self) -> Result<()> {
         self.whittaker.validate()?;
         if !self.p.is_finite() || self.p <= 0.0 || self.p >= 1.0 {
@@ -250,9 +298,34 @@ pub fn psalsa(y: &[f64], params: PsalsaParams) -> Result<Fit> {
 ///
 /// # References
 ///
+/// - V. Korepanov, "Asymmetric least-squares baseline algorithm with peak
+///   screening for automatic processing of the Raman spectra", *Journal of
+///   Raman Spectroscopy*, 2020.
 /// - `pybaselines.Baseline.derpsalsa` is used as a behavioral reference.
 pub fn derpsalsa(y: &[f64], params: DerPsalsaParams) -> Result<Fit> {
-    asls(y, params)
+    validate_signal(y)?;
+    params.validate()?;
+    let k = params.k.unwrap_or_else(|| standard_deviation(y) / 10.0);
+    if !k.is_finite() || k <= 0.0 {
+        return Err(BaselineError::InvalidParameter {
+            name: "k",
+            reason: "computed std(y) / 10 must be finite and positive",
+        });
+    }
+    let partial_weights = derivative_peak_screening_weights(
+        y,
+        params.smooth_half_window.unwrap_or(y.len() / 200),
+        params.num_smooths,
+    );
+    fit_alloc(
+        y,
+        params.whittaker,
+        DerPsalsaWeights {
+            p: params.p,
+            k,
+            partial_weights,
+        },
+    )
 }
 
 /// Fits a brPLS baseline.
@@ -283,6 +356,13 @@ struct PsalsaWeights {
     k: f64,
 }
 
+#[derive(Debug, Clone)]
+struct DerPsalsaWeights {
+    p: f64,
+    k: f64,
+    partial_weights: Vec<f64>,
+}
+
 #[derive(Debug, Clone, Copy)]
 struct IarPlsWeights;
 
@@ -303,6 +383,31 @@ impl Reweighter for PsalsaWeights {
             } else {
                 1.0 - self.p
             };
+        }
+        relative_change(&previous, weights)
+    }
+}
+
+impl Reweighter for DerPsalsaWeights {
+    fn initialize(&self, _y: &[f64], weights: &mut [f64]) {
+        weights.fill(1.0);
+    }
+
+    fn update(&self, y: &[f64], baseline: &[f64], weights: &mut [f64], _iter: usize) -> f64 {
+        let previous = weights.to_vec();
+        for (((weight, observed), fitted), partial) in weights
+            .iter_mut()
+            .zip(y)
+            .zip(baseline)
+            .zip(&self.partial_weights)
+        {
+            let residual = observed - fitted;
+            let asymmetric = if residual > 0.0 {
+                self.p * (-0.5 * (residual / self.k).powi(2)).exp()
+            } else {
+                1.0 - self.p
+            };
+            *weight = asymmetric * partial;
         }
         relative_change(&previous, weights)
     }
@@ -407,4 +512,131 @@ fn first_order_penalty_rhs(y: &[f64], lambda_1: f64, output: &mut [f64]) {
     }
     let last = y.len() - 1;
     output[last] = lambda_1 * (y[last] - y[last - 1]);
+}
+
+fn derivative_peak_screening_weights(
+    y: &[f64],
+    smooth_half_window: usize,
+    num_smooths: usize,
+) -> Vec<f64> {
+    let smoothed = smooth_for_derivatives(y, smooth_half_window, num_smooths);
+    let first = gradient(&smoothed);
+    let second = gradient(&first);
+    let first_rms = root_mean_square(&first).max(f64::MIN_POSITIVE);
+    let second_rms = root_mean_square(&second).max(f64::MIN_POSITIVE);
+
+    first
+        .iter()
+        .zip(&second)
+        .map(|(first_deriv, second_deriv)| {
+            (-0.5 * (first_deriv / first_rms).powi(2)).exp()
+                * (-0.5 * (second_deriv / second_rms).powi(2)).exp()
+        })
+        .collect()
+}
+
+fn smooth_for_derivatives(y: &[f64], smooth_half_window: usize, num_smooths: usize) -> Vec<f64> {
+    if smooth_half_window == 0 || num_smooths == 0 {
+        return y.to_vec();
+    }
+
+    let kernel = mollifier_kernel(smooth_half_window);
+    let mut current = extrapolate_pad(y, smooth_half_window);
+    for _ in 0..num_smooths {
+        current = convolve_reflect_same(&current, &kernel);
+    }
+    current[smooth_half_window..smooth_half_window + y.len()].to_vec()
+}
+
+fn mollifier_kernel(half_window: usize) -> Vec<f64> {
+    if half_window == 0 {
+        return vec![1.0];
+    }
+    let mut kernel = Vec::with_capacity(2 * half_window + 1);
+    for index in 0..=2 * half_window {
+        if index == 0 || index == 2 * half_window {
+            kernel.push(0.0);
+        } else {
+            let x = (index as f64 - half_window as f64) / half_window as f64;
+            kernel.push((-1.0 / (1.0 - x * x)).exp());
+        }
+    }
+    let sum = kernel.iter().sum::<f64>().max(f64::MIN_POSITIVE);
+    for value in &mut kernel {
+        *value /= sum;
+    }
+    kernel
+}
+
+fn extrapolate_pad(y: &[f64], pad: usize) -> Vec<f64> {
+    if pad == 0 {
+        return y.to_vec();
+    }
+    let left_slope = if y.len() > 1 { y[1] - y[0] } else { 0.0 };
+    let right_slope = if y.len() > 1 {
+        y[y.len() - 1] - y[y.len() - 2]
+    } else {
+        0.0
+    };
+    let mut output = Vec::with_capacity(y.len() + 2 * pad);
+    for i in (1..=pad).rev() {
+        output.push(y[0] - left_slope * i as f64);
+    }
+    output.extend_from_slice(y);
+    let last = *y.last().unwrap_or(&0.0);
+    for i in 1..=pad {
+        output.push(last + right_slope * i as f64);
+    }
+    output
+}
+
+fn convolve_reflect_same(y: &[f64], kernel: &[f64]) -> Vec<f64> {
+    let radius = kernel.len() / 2;
+    let mut output = vec![0.0; y.len()];
+    for (i, target) in output.iter_mut().enumerate() {
+        let mut sum = 0.0;
+        for (j, weight) in kernel.iter().enumerate() {
+            let offset = j as isize - radius as isize;
+            let index = reflect_index(i as isize + offset, y.len());
+            sum += weight * y[index];
+        }
+        *target = sum;
+    }
+    output
+}
+
+fn reflect_index(index: isize, len: usize) -> usize {
+    if len <= 1 {
+        return 0;
+    }
+    let period = 2 * len as isize - 2;
+    let mut value = index.rem_euclid(period);
+    if value >= len as isize {
+        value = period - value;
+    }
+    value as usize
+}
+
+fn gradient(values: &[f64]) -> Vec<f64> {
+    match values.len() {
+        0 => Vec::new(),
+        1 => vec![0.0],
+        len => {
+            let mut output = vec![0.0; len];
+            output[0] = values[1] - values[0];
+            output[len - 1] = values[len - 1] - values[len - 2];
+            for i in 1..len - 1 {
+                output[i] = 0.5 * (values[i + 1] - values[i - 1]);
+            }
+            output
+        }
+    }
+}
+
+fn root_mean_square(values: &[f64]) -> f64 {
+    if values.is_empty() {
+        return 0.0;
+    }
+    let sum = values.iter().map(|value| value * value).sum::<f64>();
+    (sum / values.len() as f64).sqrt()
 }
