@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
 
-use baselines::classification::{GolotvinParams, golotvin, rubberband};
+use baselines::classification::{
+    GolotvinParams, StdDistributionParams, golotvin, rubberband, std_distribution,
+};
 use baselines::morphology::{
     MorphologyParams, imor, jbcd, mor, mormol, mpls, mpspline, mwmv, rolling_ball, snip, tophat,
 };
@@ -473,6 +475,14 @@ fn core_algorithms_track_pybaselines_fixtures() {
         "golotvin",
         &fixture,
         golotvin(&fixture.signal, GolotvinParams::default())
+            .unwrap()
+            .baseline,
+        1e-12,
+    );
+    assert_close(
+        "std_distribution",
+        &fixture,
+        std_distribution(&fixture.signal, StdDistributionParams::default())
             .unwrap()
             .baseline,
         1e-12,

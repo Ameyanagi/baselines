@@ -76,6 +76,51 @@ impl GolotvinParams {
     }
 }
 
+/// Parameters for distribution-based baseline classification.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct StdDistributionParams {
+    /// Half-window for rolling standard-deviation calculations.
+    pub half_window: usize,
+    /// Half-window for averaging interpolation anchor points.
+    pub interp_half_window: usize,
+    /// Half-window for expanding detected peak regions.
+    pub fill_half_window: usize,
+    /// Multiple of the estimated noise standard deviation used for thresholding.
+    pub num_std: f64,
+    /// Half-window for smoothing the interpolated baseline.
+    pub smooth_half_window: usize,
+}
+
+impl Default for StdDistributionParams {
+    fn default() -> Self {
+        Self {
+            half_window: 8,
+            interp_half_window: 5,
+            fill_half_window: 3,
+            num_std: 1.1,
+            smooth_half_window: 8,
+        }
+    }
+}
+
+impl StdDistributionParams {
+    fn validate(&self) -> Result<()> {
+        if self.half_window == 0 {
+            return Err(BaselineError::InvalidParameter {
+                name: "half_window",
+                reason: "must be greater than zero",
+            });
+        }
+        if !self.num_std.is_finite() || self.num_std <= 0.0 {
+            return Err(BaselineError::InvalidParameter {
+                name: "num_std",
+                reason: "must be finite and positive",
+            });
+        }
+        Ok(())
+    }
+}
+
 /// Estimates a baseline using Dietrich-style peak classification.
 ///
 /// # References
@@ -118,9 +163,35 @@ pub fn golotvin(y: &[f64], params: GolotvinParams) -> Result<Fit> {
 ///
 /// # References
 ///
+/// - K. C. Wang et al., "Distribution-Based Classification Method for Baseline
+///   Correction of Metabolomic 1D Proton Nuclear Magnetic Resonance Spectra",
+///   *Analytical Chemistry*, 2013.
 /// - `pybaselines.Baseline.std_distribution` is used as a behavioral reference.
-pub fn std_distribution(y: &[f64], params: ClassificationParams) -> Result<Fit> {
-    envelope_from_smoothed(y, params)
+pub fn std_distribution(y: &[f64], params: StdDistributionParams) -> Result<Fit> {
+    validate_signal(y)?;
+    params.validate()?;
+
+    let rolling_std = padded_rolling_std(y, params.half_window, 1);
+    let mut median = median(&rolling_std);
+    let mut median_2 = median_below(&rolling_std, 2.0 * median);
+    while median_2 / median < 0.999 {
+        median = median_2;
+        median_2 = median_below(&rolling_std, 2.0 * median);
+    }
+    let noise_std = median_2;
+    let peak_regions: Vec<bool> = rolling_std
+        .iter()
+        .map(|value| *value > params.num_std * noise_std)
+        .collect();
+    let dilated_peaks = dilate_mask(&peak_regions, params.fill_half_window);
+    let mask: Vec<bool> = dilated_peaks.iter().map(|is_peak| !is_peak).collect();
+
+    let rough_baseline = averaged_interp(y, &mask, params.interp_half_window);
+    let baseline = moving_average_extrapolated(&rough_baseline, params.smooth_half_window);
+    Ok(Fit {
+        baseline,
+        report: FitReport::new(1, true, 0.0),
+    })
 }
 
 /// Estimates a baseline using FastChrom-style classification.
@@ -206,6 +277,64 @@ fn sample_standard_deviation(values: &[f64]) -> f64 {
         .sum::<f64>()
         / (values.len() - 1) as f64;
     variance.sqrt()
+}
+
+fn padded_rolling_std(y: &[f64], radius: usize, ddof: usize) -> Vec<f64> {
+    let window_size = 2 * radius + 1;
+    (0..y.len())
+        .map(|index| {
+            let candidates = index as isize - radius as isize..=index as isize + radius as isize;
+            let sum = candidates
+                .clone()
+                .map(|candidate| y[reflect_pad_index(candidate, y.len())])
+                .sum::<f64>();
+            let mean = sum / window_size as f64;
+            let variance = candidates
+                .map(|candidate| {
+                    let value = y[reflect_pad_index(candidate, y.len())];
+                    let centered = value - mean;
+                    centered * centered
+                })
+                .sum::<f64>()
+                / (window_size - ddof) as f64;
+            variance.sqrt()
+        })
+        .collect()
+}
+
+fn median(values: &[f64]) -> f64 {
+    if values.is_empty() {
+        return f64::NAN;
+    }
+    let mut sorted = values.to_vec();
+    sorted.sort_by(f64::total_cmp);
+    let mid = sorted.len() / 2;
+    if sorted.len().is_multiple_of(2) {
+        0.5 * (sorted[mid - 1] + sorted[mid])
+    } else {
+        sorted[mid]
+    }
+}
+
+fn median_below(values: &[f64], threshold: f64) -> f64 {
+    let filtered: Vec<f64> = values
+        .iter()
+        .copied()
+        .filter(|value| *value < threshold)
+        .collect();
+    median(&filtered)
+}
+
+fn dilate_mask(mask: &[bool], radius: usize) -> Vec<bool> {
+    let mut output = vec![false; mask.len()];
+    for (index, is_set) in mask.iter().copied().enumerate() {
+        if is_set {
+            let start = index.saturating_sub(radius);
+            let end = (index + radius + 1).min(mask.len());
+            output[start..end].fill(true);
+        }
+    }
+    output
 }
 
 fn rolling_extreme_reflect(
@@ -362,6 +491,18 @@ fn reflect_index(index: isize, len: usize) -> usize {
     let mut value = index.rem_euclid(period);
     if value >= len as isize {
         value = period - value - 1;
+    }
+    value as usize
+}
+
+fn reflect_pad_index(index: isize, len: usize) -> usize {
+    if len <= 1 {
+        return 0;
+    }
+    let period = 2 * len as isize - 2;
+    let mut value = index.rem_euclid(period);
+    if value >= len as isize {
+        value = period - value;
     }
     value as usize
 }
