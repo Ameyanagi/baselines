@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use baselines::classification::rubberband;
+use baselines::classification::{GolotvinParams, golotvin, rubberband};
 use baselines::morphology::{
     MorphologyParams, imor, jbcd, mor, mormol, mpls, mpspline, mwmv, rolling_ball, snip, tophat,
 };
@@ -465,6 +465,14 @@ fn core_algorithms_track_pybaselines_fixtures() {
         "corner_cutting",
         &fixture,
         corner_cutting(&fixture.signal, CornerCuttingParams::default())
+            .unwrap()
+            .baseline,
+        1e-12,
+    );
+    assert_close(
+        "golotvin",
+        &fixture,
+        golotvin(&fixture.signal, GolotvinParams::default())
             .unwrap()
             .baseline,
         1e-12,

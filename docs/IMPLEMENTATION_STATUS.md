@@ -14,7 +14,7 @@ is tightened with generated pybaselines fixtures.
 - Morphology core: `rolling_ball`, `mwmv`, `tophat`, `mor`, `mpls`, `imor`,
   `mormol`, `amormol`, `mpspline`, `jbcd`
 - Smoothing core: `noise_median`, `snip`, `swima`, `ipsa`, `ria`, `peak_filling`
-- Classification core: `rubberband`
+- Classification core: `rubberband`, `golotvin`
 - Spline core: `pspline_asls`, `pspline_iasls`, `pspline_airpls`, `pspline_arpls`,
   `pspline_drpls`, `pspline_iarpls`, `pspline_aspls`, `pspline_psalsa`,
   `pspline_derpsalsa`, `pspline_lsrpls`, `pspline_brpls`, `pspline_mpls`,
@@ -26,8 +26,8 @@ is tightened with generated pybaselines fixtures.
 - Whittaker variants: none currently tracked
 - Morphology variants: none currently tracked
 - Spline family: none currently tracked
-- Classification variants: `dietrich`, `golotvin`, `std_distribution`,
-  `fastchrom`, `cwt_br`, `fabc`
+- Classification variants: `dietrich`, `std_distribution`, `fastchrom`,
+  `cwt_br`, `fabc`
 - Optimizer/meta methods: `collab_pls`, `optimize_extended_range`,
   `adaptive_minmax`, `custom_bc`
 - Misc: `beads`
