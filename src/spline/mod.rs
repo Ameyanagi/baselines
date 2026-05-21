@@ -10,15 +10,16 @@ use crate::morphology::{MorphologyParams, mpls};
 use crate::smoothing::{SmoothingParams, peak_filling};
 use crate::whittaker::{
     AirPlsParams, ArPlsParams, AsPlsParams, AslsParams, BrPlsParams, DerPsalsaParams, DrPlsParams,
-    IarPlsParams, IaslsParams, LsrPlsParams, PsalsaParams, airpls, arpls, asls, aspls, brpls,
-    derpsalsa, drpls, iarpls, iasls, lsrpls, psalsa,
+    IarPlsParams, IaslsParams, LsrPlsParams, PsalsaParams, arpls, asls, aspls, brpls, derpsalsa,
+    drpls, iarpls, iasls, lsrpls, psalsa,
 };
-use crate::workspace::validate_signal;
+use crate::workspace::{logistic, validate_signal};
 use crate::{BaselineError, Result};
 
 const PSPLINE_NUM_KNOTS: usize = 100;
 const PSPLINE_DEGREE: usize = 3;
 const PSPLINE_DIFF_ORDER: usize = 2;
+const AIRPLS_MAX_EXPONENT: f64 = 700.0;
 
 /// Parameters for mixture-model spline fitting.
 pub type MixtureModelParams = ArPlsParams;
@@ -77,7 +78,7 @@ pub fn pspline_asls(y: &[f64], params: AslsParams) -> Result<Fit> {
     let mut tolerance = f64::INFINITY;
     let mut baseline = Vec::new();
 
-    for iter in 0..params.whittaker.max_iter {
+    for iter in 0..=params.whittaker.max_iter {
         baseline = pspline.solve(y, &weights, params.whittaker.lambda)?;
         let new_weights: Vec<f64> = y
             .iter()
@@ -102,7 +103,7 @@ pub fn pspline_asls(y: &[f64], params: AslsParams) -> Result<Fit> {
 
     Ok(Fit {
         baseline,
-        report: FitReport::new(params.whittaker.max_iter, false, tolerance),
+        report: FitReport::new(params.whittaker.max_iter + 1, false, tolerance),
     })
 }
 
@@ -119,18 +120,91 @@ pub fn pspline_iasls(y: &[f64], params: IaslsParams) -> Result<Fit> {
 ///
 /// # References
 ///
+/// - Z.-M. Zhang, S. Chen, and Y.-Z. Liang, "Baseline correction using
+///   adaptive iteratively reweighted penalized least squares", *Analyst*, 2010.
+/// - P. H. C. Eilers, B. D. Marx, and M. Durban, "Twenty years of P-splines",
+///   *SORT*, 2015.
 /// - `pybaselines.Baseline.pspline_airpls` is used as a behavioral reference.
 pub fn pspline_airpls(y: &[f64], params: AirPlsParams) -> Result<Fit> {
-    airpls(y, params)
+    params.whittaker.validate()?;
+    validate_spline_signal("pspline_airpls", y)?;
+
+    let mut weights = vec![1.0; y.len()];
+    let pspline = default_pspline(y.len());
+    let y_l1_norm = y
+        .iter()
+        .map(|value| value.abs())
+        .sum::<f64>()
+        .max(f64::EPSILON);
+    let mut tolerance = f64::INFINITY;
+    let mut baseline = Vec::new();
+
+    for iter in 0..=params.whittaker.max_iter {
+        baseline = pspline.solve(y, &weights, params.whittaker.lambda)?;
+        let (new_weights, residual_l1_norm, exit_early) = airpls_weights(y, &baseline, iter + 1);
+        if exit_early {
+            return Ok(Fit {
+                baseline,
+                report: FitReport::new(iter + 1, false, tolerance),
+            });
+        }
+
+        tolerance = residual_l1_norm / y_l1_norm;
+        if tolerance < params.whittaker.tol {
+            return Ok(Fit {
+                baseline,
+                report: FitReport::new(iter + 1, true, tolerance),
+            });
+        }
+        weights = new_weights;
+    }
+
+    Ok(Fit {
+        baseline,
+        report: FitReport::new(params.whittaker.max_iter + 1, false, tolerance),
+    })
 }
 
 /// Fits a penalized-spline arPLS baseline.
 ///
 /// # References
 ///
+/// - J. Baek et al., "Baseline correction using asymmetrically reweighted
+///   penalized least squares smoothing", *Analyst*, 2015.
+/// - P. H. C. Eilers, B. D. Marx, and M. Durban, "Twenty years of P-splines",
+///   *SORT*, 2015.
 /// - `pybaselines.Baseline.pspline_arpls` is used as a behavioral reference.
 pub fn pspline_arpls(y: &[f64], params: ArPlsParams) -> Result<Fit> {
-    arpls(y, params)
+    params.whittaker.validate()?;
+    validate_spline_signal("pspline_arpls", y)?;
+
+    let mut weights = vec![1.0; y.len()];
+    let pspline = default_pspline(y.len());
+    let mut tolerance = f64::INFINITY;
+    let mut baseline = Vec::new();
+
+    for iter in 0..=params.whittaker.max_iter {
+        baseline = pspline.solve(y, &weights, params.whittaker.lambda)?;
+        let Some(new_weights) = arpls_weights(y, &baseline) else {
+            return Ok(Fit {
+                baseline,
+                report: FitReport::new(iter + 1, false, tolerance),
+            });
+        };
+        tolerance = relative_change(&weights, &new_weights);
+        if tolerance < params.whittaker.tol {
+            return Ok(Fit {
+                baseline,
+                report: FitReport::new(iter + 1, true, tolerance),
+            });
+        }
+        weights = new_weights;
+    }
+
+    Ok(Fit {
+        baseline,
+        report: FitReport::new(params.whittaker.max_iter + 1, false, tolerance),
+    })
 }
 
 /// Fits a penalized-spline drPLS baseline.
@@ -243,4 +317,68 @@ fn relative_change(previous: &[f64], current: &[f64]) -> f64 {
         .sum::<f64>()
         .sqrt();
     numerator / denominator.max(f64::EPSILON)
+}
+
+fn airpls_weights(y: &[f64], baseline: &[f64], iteration: usize) -> (Vec<f64>, f64, bool) {
+    let residuals: Vec<f64> = y
+        .iter()
+        .zip(baseline)
+        .map(|(observed, fitted)| observed - fitted)
+        .collect();
+    let negative: Vec<f64> = residuals
+        .iter()
+        .copied()
+        .filter(|residual| *residual < 0.0)
+        .collect();
+    if negative.len() < 2 {
+        return (vec![0.0; y.len()], 0.0, true);
+    }
+
+    let residual_l1_norm = negative.iter().sum::<f64>().abs();
+    let scale = iteration.min(50) as f64 / residual_l1_norm;
+    let weights = residuals
+        .into_iter()
+        .map(|residual| {
+            if residual < 0.0 {
+                (scale * residual.abs()).min(AIRPLS_MAX_EXPONENT).exp()
+            } else {
+                0.0
+            }
+        })
+        .collect();
+
+    (weights, residual_l1_norm, false)
+}
+
+fn arpls_weights(y: &[f64], baseline: &[f64]) -> Option<Vec<f64>> {
+    let residuals: Vec<f64> = y
+        .iter()
+        .zip(baseline)
+        .map(|(observed, fitted)| observed - fitted)
+        .collect();
+    let negative: Vec<f64> = residuals
+        .iter()
+        .copied()
+        .filter(|residual| *residual < 0.0)
+        .collect();
+    if negative.len() < 2 {
+        return None;
+    }
+
+    let mean = negative.iter().sum::<f64>() / negative.len() as f64;
+    let variance = negative
+        .iter()
+        .map(|value| {
+            let centered = value - mean;
+            centered * centered
+        })
+        .sum::<f64>()
+        / (negative.len() - 1) as f64;
+    let std = variance.sqrt().max(f64::MIN_POSITIVE);
+    let weights = residuals
+        .into_iter()
+        .map(|residual| logistic(-(2.0 / std) * (residual - (2.0 * std - mean))))
+        .collect();
+
+    Some(weights)
 }

@@ -15,7 +15,7 @@ is tightened with generated pybaselines fixtures.
   `mormol`, `amormol`, `mpspline`, `jbcd`
 - Smoothing core: `noise_median`, `snip`, `swima`, `ipsa`, `ria`, `peak_filling`
 - Classification core: `rubberband`
-- Spline core: `pspline_asls`
+- Spline core: `pspline_asls`, `pspline_airpls`, `pspline_arpls`
 - Misc core: `interp_pts`
 
 ## Compatibility Entry Points Needing Fixture Tuning
