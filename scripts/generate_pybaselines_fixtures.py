@@ -88,6 +88,9 @@ def call_table() -> dict[str, Callable[[Baseline, list[float]], Any]]:
         ),
         "fastchrom": lambda b, y: b.fastchrom(y, half_window=8, smooth_half_window=8),
         "fabc": lambda b, y: b.fabc(y, lam=1e6, scale=8),
+        "adaptive_minmax": lambda b, y: b.adaptive_minmax(
+            y, poly_order=2, method="poly"
+        ),
         "rubberband": lambda b, y: b.rubberband(y),
     }
 
