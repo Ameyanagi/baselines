@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use baselines::classification::rubberband;
 use baselines::morphology::{
-    MorphologyParams, imor, jbcd, mor, mormol, mpls, mwmv, rolling_ball, snip, tophat,
+    MorphologyParams, imor, jbcd, mor, mormol, mpls, mpspline, mwmv, rolling_ball, snip, tophat,
 };
 use baselines::polynomial::{
     GoldindecParams, ImodPolyParams, ModPolyParams, PenalizedPolyParams, PolyParams,
@@ -266,6 +266,12 @@ fn core_algorithms_track_pybaselines_fixtures() {
         &fixture,
         jbcd(&fixture.signal, morphology).unwrap().baseline,
         1e-8,
+    );
+    assert_close(
+        "mpspline",
+        &fixture,
+        mpspline(&fixture.signal, morphology).unwrap().baseline,
+        1e-11,
     );
     assert_close(
         "snip",

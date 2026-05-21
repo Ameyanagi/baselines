@@ -18,6 +18,7 @@ use crate::linalg::pentadiagonal::{
     GeneralPentadiagonalSystem, GeneralPentadiagonalWorkspace, PentadiagonalWorkspace,
     solve_general_pentadiagonal, solve_second_order,
 };
+use crate::linalg::pspline::PenalizedSpline;
 use crate::workspace::{validate_output, validate_signal};
 use crate::{BaselineError, Result};
 
@@ -35,6 +36,12 @@ const JBCD_GAMMA_MULT: f64 = 0.909;
 const JBCD_MAX_ITER: usize = 20;
 const JBCD_SIGNAL_TOL: f64 = 1.0e-2;
 const JBCD_BASELINE_TOL: f64 = 1.0e-3;
+const MPSPLINE_LAMBDA: f64 = 1.0e4;
+const MPSPLINE_SMOOTH_LAMBDA: f64 = 1.0e-2;
+const MPSPLINE_P: f64 = 0.0;
+const MPSPLINE_NUM_KNOTS: usize = 100;
+const MPSPLINE_DEGREE: usize = 3;
+const MPSPLINE_DIFF_ORDER: usize = 2;
 
 /// Parameters for window-based morphology baselines.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -228,9 +235,14 @@ pub fn amormol(y: &[f64], params: MorphologyParams) -> Result<Fit> {
 ///
 /// # References
 ///
+/// - J. Gonzalez-Vidal et al., "Automatic morphology-based cubic p-spline
+///   fitting methodology for smoothing and baseline-removal of Raman spectra",
+///   *Journal of Raman Spectroscopy*, 2017.
 /// - `pybaselines.Baseline.mpspline` is used as a behavioral reference.
 pub fn mpspline(y: &[f64], params: MorphologyParams) -> Result<Fit> {
-    rolling_ball(y, params)
+    let mut baseline = vec![0.0; y.len()];
+    let report = mpspline_into(y, params, &mut baseline)?;
+    Ok(Fit { baseline, report })
 }
 
 /// Estimates a joint baseline correction and denoising baseline.
@@ -443,6 +455,64 @@ pub fn jbcd_into(y: &[f64], params: MorphologyParams, baseline: &mut [f64]) -> R
     ))
 }
 
+/// Estimates an MPSpline baseline into an existing output buffer.
+pub fn mpspline_into(
+    y: &[f64],
+    params: MorphologyParams,
+    baseline: &mut [f64],
+) -> Result<FitReport> {
+    validate_morphology_input(y, params, baseline)?;
+    if y.len() < MPSPLINE_DEGREE + 2 {
+        return Err(BaselineError::TooShort {
+            algorithm: "mpspline",
+            len: y.len(),
+            min: MPSPLINE_DEGREE + 2,
+        });
+    }
+
+    let num_knots = MPSPLINE_NUM_KNOTS.min(y.len()).max(2);
+    let pspline = PenalizedSpline::new(y.len(), num_knots, MPSPLINE_DEGREE, MPSPLINE_DIFF_ORDER);
+
+    let closed = closing_reflect(y, 1);
+    let smooth_weights: Vec<f64> = y
+        .iter()
+        .zip(&closed)
+        .map(|(observed, closed)| if observed == closed { 1.0 } else { 0.0 })
+        .collect();
+    let spline_fit = pspline.solve(y, &smooth_weights, MPSPLINE_SMOOTH_LAMBDA)?;
+
+    let radius = params.radius();
+    let full_window = 2 * radius + 1;
+    let padded = pad_extrapolated(&spline_fit, full_window);
+    let opened = opening_reflect(&padded, radius);
+    let averaged = average_opening_from_opened_reflect(&opened, radius);
+    let optimal_opening: Vec<f64> = opened[full_window..full_window + y.len()]
+        .iter()
+        .zip(&averaged[full_window..full_window + y.len()])
+        .map(|(opened, average)| opened.min(*average))
+        .collect();
+
+    let weights: Vec<f64> = spline_fit
+        .iter()
+        .zip(&optimal_opening)
+        .map(|(fit, opening)| {
+            if (*fit - *opening).abs() <= 1.0e-12 {
+                1.0 - MPSPLINE_P
+            } else {
+                MPSPLINE_P
+            }
+        })
+        .collect();
+    if !weights.iter().any(|weight| *weight > 0.0) {
+        baseline.copy_from_slice(&spline_fit);
+        return Ok(FitReport::new(1, true, 0.0));
+    }
+
+    let fitted = pspline.solve(&spline_fit, &weights, MPSPLINE_LAMBDA)?;
+    baseline.copy_from_slice(&fitted);
+    Ok(FitReport::new(1, true, 0.0))
+}
+
 /// Estimates a baseline with the statistics-sensitive nonlinear iterative peak-clipping algorithm.
 ///
 /// # References
@@ -617,6 +687,12 @@ fn opening_reflect(y: &[f64], radius: usize) -> Vec<f64> {
     let mut opened = vec![0.0; y.len()];
     moving_max_reflect(&eroded, radius, &mut opened);
     opened
+}
+
+fn closing_reflect(y: &[f64], radius: usize) -> Vec<f64> {
+    let mut dilated = vec![0.0; y.len()];
+    moving_max_reflect(y, radius, &mut dilated);
+    moving_min_reflect(&dilated, radius)
 }
 
 fn moving_min_reflect(y: &[f64], radius: usize) -> Vec<f64> {
