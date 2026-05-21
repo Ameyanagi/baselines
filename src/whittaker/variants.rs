@@ -211,9 +211,13 @@ pub fn drpls(y: &[f64], params: DrPlsParams) -> Result<Fit> {
 ///
 /// # References
 ///
+/// - J. Ye et al., "Baseline correction method based on improved
+///   asymmetrically reweighted penalized least squares for Raman spectrum",
+///   *Applied Optics*, 2020.
 /// - `pybaselines.Baseline.iarpls` is used as a behavioral reference.
 pub fn iarpls(y: &[f64], params: IarPlsParams) -> Result<Fit> {
-    arpls(y, params)
+    params.whittaker.validate()?;
+    fit_alloc(y, params.whittaker, IarPlsWeights)
 }
 
 /// Fits an asPLS baseline.
@@ -264,9 +268,13 @@ pub fn brpls(y: &[f64], params: BrPlsParams) -> Result<Fit> {
 ///
 /// # References
 ///
+/// - Z. Heng et al., "Baseline correction for Raman spectra based on locally
+///   symmetric reweighted penalized least squares", *Chinese Journal of
+///   Lasers*, 2018.
 /// - `pybaselines.Baseline.lsrpls` is used as a behavioral reference.
 pub fn lsrpls(y: &[f64], params: LsrPlsParams) -> Result<Fit> {
-    arpls(y, params)
+    params.whittaker.validate()?;
+    fit_alloc(y, params.whittaker, LsrPlsWeights)
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -274,6 +282,12 @@ struct PsalsaWeights {
     p: f64,
     k: f64,
 }
+
+#[derive(Debug, Clone, Copy)]
+struct IarPlsWeights;
+
+#[derive(Debug, Clone, Copy)]
+struct LsrPlsWeights;
 
 impl Reweighter for PsalsaWeights {
     fn initialize(&self, _y: &[f64], weights: &mut [f64]) {
@@ -294,6 +308,51 @@ impl Reweighter for PsalsaWeights {
     }
 }
 
+impl Reweighter for IarPlsWeights {
+    fn initialize(&self, _y: &[f64], weights: &mut [f64]) {
+        weights.fill(1.0);
+    }
+
+    fn update(&self, y: &[f64], baseline: &[f64], weights: &mut [f64], iter: usize) -> f64 {
+        let previous = weights.to_vec();
+        let Some((_mean, std)) = negative_residual_stats(y, baseline) else {
+            return 0.0;
+        };
+        let factor = (iter + 1).min(100) as f64;
+        let scale = factor.exp() / std.max(f64::EPSILON);
+
+        for ((weight, observed), fitted) in weights.iter_mut().zip(y).zip(baseline) {
+            let residual = observed - fitted;
+            let inner = scale * (residual - 2.0 * std);
+            *weight = 0.5 * (1.0 - inner / (1.0 + inner * inner).sqrt());
+        }
+
+        relative_change(&previous, weights)
+    }
+}
+
+impl Reweighter for LsrPlsWeights {
+    fn initialize(&self, _y: &[f64], weights: &mut [f64]) {
+        weights.fill(1.0);
+    }
+
+    fn update(&self, y: &[f64], baseline: &[f64], weights: &mut [f64], iter: usize) -> f64 {
+        let previous = weights.to_vec();
+        let Some((mean, std)) = negative_residual_stats(y, baseline) else {
+            return 0.0;
+        };
+        let scale = 10f64.powi((iter + 1).min(100) as i32) / std.max(f64::EPSILON);
+
+        for ((weight, observed), fitted) in weights.iter_mut().zip(y).zip(baseline) {
+            let residual = observed - fitted;
+            let inner = scale * (residual - (2.0 * std - mean));
+            *weight = 0.5 * (1.0 - inner / (1.0 + inner.abs()));
+        }
+
+        relative_change(&previous, weights)
+    }
+}
+
 fn standard_deviation(values: &[f64]) -> f64 {
     if values.is_empty() {
         return 0.0;
@@ -308,6 +367,33 @@ fn standard_deviation(values: &[f64]) -> f64 {
         .sum::<f64>()
         / values.len() as f64;
     variance.sqrt()
+}
+
+fn negative_residual_stats(y: &[f64], baseline: &[f64]) -> Option<(f64, f64)> {
+    let mut count = 0usize;
+    let mut sum = 0.0;
+    for (observed, fitted) in y.iter().zip(baseline) {
+        let residual = observed - fitted;
+        if residual < 0.0 {
+            count += 1;
+            sum += residual;
+        }
+    }
+    if count < 2 {
+        return None;
+    }
+
+    let mean = sum / count as f64;
+    let mut sum_squares = 0.0;
+    for (observed, fitted) in y.iter().zip(baseline) {
+        let residual = observed - fitted;
+        if residual < 0.0 {
+            let centered = residual - mean;
+            sum_squares += centered * centered;
+        }
+    }
+    let std = (sum_squares / (count - 1) as f64).sqrt();
+    Some((mean, std))
 }
 
 fn asls_weight(observed: f64, fitted: f64, p: f64) -> f64 {

@@ -7,7 +7,8 @@ is tightened with generated pybaselines fixtures.
 
 ## Dedicated First-Pass Implementations
 
-- Whittaker core: `asls`, `airpls`, `arpls`, `psalsa`
+- Whittaker core: `asls`, `airpls`, `arpls`, `iasls`, `iarpls`, `psalsa`,
+  `lsrpls`
 - Polynomial core: `poly`, `modpoly`, `imodpoly`, `loess`,
   `penalized_poly`, `quant_reg`, `goldindec`
 - Morphology core: `rolling_ball`, `mwmv`, `tophat`, `mor`, `mpls`, `imor`,
@@ -18,8 +19,7 @@ is tightened with generated pybaselines fixtures.
 
 ## Compatibility Entry Points Needing Fixture Tuning
 
-- Whittaker variants: `iasls`, `drpls`, `iarpls`, `aspls`, `derpsalsa`,
-  `brpls`, `lsrpls`
+- Whittaker variants: `drpls`, `aspls`, `derpsalsa`, `brpls`
 - Morphology variants: `mormol`, `mpspline`, `jbcd`
 - Spline family: `mixture_model`, `irsqr`, `corner_cutting`, all `pspline_*`
   methods
