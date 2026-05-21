@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use baselines::classification::rubberband;
-use baselines::morphology::{MorphologyParams, mor, mwmv, rolling_ball, snip, tophat};
+use baselines::morphology::{MorphologyParams, mor, mpls, mwmv, rolling_ball, snip, tophat};
 use baselines::polynomial::{
     GoldindecParams, ImodPolyParams, ModPolyParams, PenalizedPolyParams, PolyParams,
     QuantRegParams, goldindec, imodpoly, modpoly, penalized_poly, poly, quant_reg,
@@ -144,6 +144,12 @@ fn core_algorithms_track_pybaselines_fixtures() {
         &fixture,
         mor(&fixture.signal, morphology).unwrap().baseline,
         7e-2,
+    );
+    assert_close(
+        "mpls",
+        &fixture,
+        mpls(&fixture.signal, morphology).unwrap().baseline,
+        1e-8,
     );
     assert_close(
         "snip",

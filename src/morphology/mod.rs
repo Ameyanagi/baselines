@@ -5,13 +5,19 @@
 //! - M. Kneen and H. Annegarn, "Algorithm for fitting XRF, SEM and PIXE
 //!   X-ray spectra backgrounds", *Nuclear Instruments and Methods in Physics
 //!   Research Section B*, 1996.
+//! - Z. Li et al., "Morphological weighted penalized least squares for
+//!   background correction", *Analyst*, 2013.
 //! - C. G. Ryan et al., "SNIP, a statistics-sensitive background treatment
 //!   for the quantitative analysis of PIXE spectra", 1988.
 //! - `pybaselines` is used as a behavioral reference.
 
 use crate::fit::{Fit, FitReport};
+use crate::linalg::pentadiagonal::{PentadiagonalWorkspace, solve_second_order};
 use crate::workspace::{validate_output, validate_signal};
 use crate::{BaselineError, Result};
+
+const MPLS_LAMBDA: f64 = 1.0e6;
+const MPLS_P: f64 = 0.0;
 
 /// Parameters for window-based morphology baselines.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -146,9 +152,13 @@ pub fn mor(y: &[f64], params: MorphologyParams) -> Result<Fit> {
 ///
 /// # References
 ///
+/// - Z. Li et al., "Morphological weighted penalized least squares for
+///   background correction", *Analyst*, 2013.
 /// - `pybaselines.Baseline.mpls` is used as a behavioral reference.
 pub fn mpls(y: &[f64], params: MorphologyParams) -> Result<Fit> {
-    mor(y, params)
+    let mut baseline = vec![0.0; y.len()];
+    let report = mpls_into(y, params, &mut baseline)?;
+    Ok(Fit { baseline, report })
 }
 
 /// Estimates an improved morphology baseline.
@@ -227,6 +237,28 @@ pub fn mor_into(y: &[f64], params: MorphologyParams, baseline: &mut [f64]) -> Re
     for ((target, open), close) in baseline.iter_mut().zip(opened).zip(closed) {
         *target = 0.5 * (open + close);
     }
+    Ok(FitReport::new(1, true, 0.0))
+}
+
+/// Estimates an MPLS baseline into an existing output buffer.
+pub fn mpls_into(y: &[f64], params: MorphologyParams, baseline: &mut [f64]) -> Result<FitReport> {
+    validate_morphology_input(y, params, baseline)?;
+    if y.len() < 3 {
+        return Err(BaselineError::TooShort {
+            algorithm: "mpls",
+            len: y.len(),
+            min: 3,
+        });
+    }
+
+    let rough_baseline = opening(y, params.radius());
+    let weights = mpls_anchor_weights(y, &rough_baseline, MPLS_P);
+    if !weights.iter().any(|weight| *weight > 0.0) {
+        baseline.copy_from_slice(y);
+        return Ok(FitReport::new(1, true, 0.0));
+    }
+    let mut workspace = PentadiagonalWorkspace::new(y.len());
+    solve_second_order(y, &weights, MPLS_LAMBDA, baseline, &mut workspace)?;
     Ok(FitReport::new(1, true, 0.0))
 }
 
@@ -314,6 +346,42 @@ fn moving_average(y: &[f64], radius: usize, output: &mut [f64]) {
     }
 }
 
+fn mpls_anchor_weights(y: &[f64], rough_baseline: &[f64], p: f64) -> Vec<f64> {
+    let mut diff = Vec::with_capacity(rough_baseline.len() + 1);
+    diff.push(0.0);
+    diff.extend(rough_baseline.windows(2).map(|pair| pair[1] - pair[0]));
+    diff.push(0.0);
+
+    let indices: Vec<usize> = (0..rough_baseline.len())
+        .filter(|&index| {
+            let left_flat = diff[index] == 0.0;
+            let right_flat = diff[index + 1] == 0.0;
+            let left_changes = diff[index] != 0.0;
+            let right_changes = diff[index + 1] != 0.0;
+            (right_flat || left_flat) && (right_changes || left_changes)
+        })
+        .collect();
+
+    let mut weights = vec![p; y.len()];
+    for (&previous_segment, &next_segment) in indices
+        .iter()
+        .skip(1)
+        .step_by(2)
+        .zip(indices.iter().skip(2).step_by(2))
+    {
+        let region = &y[previous_segment..=next_segment];
+        if let Some((offset, _)) = region
+            .iter()
+            .enumerate()
+            .min_by(|(_, left), (_, right)| left.total_cmp(right))
+        {
+            weights[previous_segment + offset] = 1.0 - p;
+        }
+    }
+
+    weights
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -326,6 +394,7 @@ mod tests {
             tophat(&y, MorphologyParams::default()).unwrap(),
             mwmv(&y, MorphologyParams::default()).unwrap(),
             mor(&y, MorphologyParams::default()).unwrap(),
+            mpls(&y, MorphologyParams::default()).unwrap(),
             snip(&y, SnipParams::default()).unwrap(),
         ] {
             for value in fit.baseline {

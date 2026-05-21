@@ -10,7 +10,8 @@ is tightened with generated pybaselines fixtures.
 - Whittaker core: `asls`, `airpls`, `arpls`, `psalsa`
 - Polynomial core: `poly`, `modpoly`, `imodpoly`, `loess`,
   `penalized_poly`, `quant_reg`, `goldindec`
-- Morphology core: `rolling_ball`, `mwmv`, `tophat`, `mor`, `imor`, `amormol`
+- Morphology core: `rolling_ball`, `mwmv`, `tophat`, `mor`, `mpls`, `imor`,
+  `amormol`
 - Smoothing core: `noise_median`, `snip`, `swima`, `ipsa`, `ria`, `peak_filling`
 - Classification core: `rubberband`
 - Misc core: `interp_pts`
@@ -19,7 +20,7 @@ is tightened with generated pybaselines fixtures.
 
 - Whittaker variants: `iasls`, `drpls`, `iarpls`, `aspls`, `derpsalsa`,
   `brpls`, `lsrpls`
-- Morphology variants: `mpls`, `mormol`, `mpspline`, `jbcd`
+- Morphology variants: `mormol`, `mpspline`, `jbcd`
 - Spline family: `mixture_model`, `irsqr`, `corner_cutting`, all `pspline_*`
   methods
 - Classification variants: `dietrich`, `golotvin`, `std_distribution`,
