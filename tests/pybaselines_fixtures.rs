@@ -5,6 +5,7 @@ use baselines::classification::{
     StdDistributionParams, cwt_br, dietrich, fabc, fastchrom, golotvin, rubberband,
     std_distribution,
 };
+use baselines::misc::{BeadsParams, beads};
 use baselines::morphology::{
     MorphologyParams, imor, jbcd, mor, mormol, mpls, mpspline, mwmv, rolling_ball, snip, tophat,
 };
@@ -586,6 +587,14 @@ fn core_algorithms_track_pybaselines_fixtures() {
         &fixture,
         rubberband(&fixture.signal).unwrap().baseline,
         1e-12,
+    );
+    assert_close(
+        "beads",
+        &fixture,
+        beads(&fixture.signal, BeadsParams::default())
+            .unwrap()
+            .baseline,
+        1e-8,
     );
 }
 

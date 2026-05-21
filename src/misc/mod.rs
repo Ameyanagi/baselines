@@ -1,22 +1,12 @@
 //! Miscellaneous baseline algorithms.
 
+mod beads;
+
 use crate::fit::{Fit, FitReport};
-use crate::whittaker::{AslsParams, asls};
 use crate::workspace::validate_signal;
 use crate::{BaselineError, Result};
 
-/// Parameters for BEADS-style baseline estimation.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct BeadsParams {
-    /// Smoothness penalty passed to the internal Whittaker approximation.
-    pub lambda: f64,
-}
-
-impl Default for BeadsParams {
-    fn default() -> Self {
-        Self { lambda: 1.0e6 }
-    }
-}
+pub use beads::{BeadsCostFunction, BeadsParams, beads};
 
 /// Interpolates a baseline through user-provided anchor points.
 ///
@@ -59,15 +49,4 @@ pub fn interp_pts(y: &[f64], points: &[(usize, f64)]) -> Result<Fit> {
         baseline,
         report: FitReport::new(1, true, 0.0),
     })
-}
-
-/// Estimates a baseline with a BEADS-inspired sparse/smooth approximation.
-///
-/// # References
-///
-/// - `pybaselines.Baseline.beads` is used as a behavioral reference.
-pub fn beads(y: &[f64], params: BeadsParams) -> Result<Fit> {
-    let mut asls_params = AslsParams::default();
-    asls_params.whittaker.lambda = params.lambda;
-    asls(y, asls_params)
 }

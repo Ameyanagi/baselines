@@ -122,6 +122,7 @@ def call_table() -> dict[str, Callable[[Baseline, list[float]], Any]]:
             method_kwargs={"lam": 1e5, "p": 0.01},
         ),
         "rubberband": lambda b, y: b.rubberband(y),
+        "beads": lambda b, y: b.beads(y),
     }
 
 

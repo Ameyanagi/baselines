@@ -22,7 +22,7 @@ is tightened with generated pybaselines fixtures.
   `corner_cutting`, `irsqr`, `mixture_model`
 - Optimizer/meta core: `adaptive_minmax`, `optimize_extended_range`, `custom_bc`,
   `collab_pls`
-- Misc core: `interp_pts`
+- Misc core: `interp_pts`, `beads`
 
 ## Compatibility Entry Points Needing Fixture Tuning
 
@@ -31,7 +31,7 @@ is tightened with generated pybaselines fixtures.
 - Spline family: none currently tracked
 - Classification variants: none currently tracked
 - Optimizer/meta methods: none currently tracked
-- Misc: `beads`
+- Misc: none currently tracked
 
 ## Next Compatibility Work
 
