@@ -15,6 +15,7 @@ thiserror = "2.0"
 faer = { version = "0.24", default-features = false, features = ["std"], optional = true }
 rayon = { version = "1.11", optional = true }
 cubecl = { version = "0.10", default-features = false, features = ["std"], optional = true }
+libm = "0.2"
 
 [dev-dependencies]
 approx = "0.5"

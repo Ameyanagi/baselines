@@ -8,9 +8,9 @@ use baselines::polynomial::{
 };
 use baselines::smoothing::{SmoothingParams, noise_median};
 use baselines::whittaker::{
-    AirPlsParams, ArPlsParams, AslsParams, DerPsalsaParams, IarPlsParams, IaslsParams,
-    LsrPlsParams, PsalsaParams, WhittakerParams, airpls, arpls, asls, derpsalsa, iarpls, iasls,
-    lsrpls, psalsa,
+    AirPlsParams, ArPlsParams, AslsParams, BrPlsParams, DerPsalsaParams, IarPlsParams, IaslsParams,
+    LsrPlsParams, PsalsaParams, WhittakerParams, airpls, arpls, asls, brpls, derpsalsa, iarpls,
+    iasls, lsrpls, psalsa,
 };
 use serde::Deserialize;
 
@@ -154,6 +154,21 @@ fn core_algorithms_track_pybaselines_fixtures() {
                 k: None,
                 smooth_half_window: None,
                 num_smooths: 16,
+            },
+        )
+        .unwrap()
+        .baseline,
+        1e-8,
+    );
+    assert_close(
+        "brpls",
+        &fixture,
+        brpls(
+            &fixture.signal,
+            BrPlsParams {
+                whittaker,
+                max_iter_2: 50,
+                tol_2: 1e-3,
             },
         )
         .unwrap()

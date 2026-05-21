@@ -145,6 +145,7 @@ dependencies = [
  "criterion",
  "cubecl",
  "faer",
+ "libm",
  "rayon",
  "serde",
  "serde_json",

@@ -55,8 +55,6 @@ pub type DrPlsParams = ArPlsParams;
 pub type IarPlsParams = ArPlsParams;
 /// Parameters for adaptive smoothness penalized least squares.
 pub type AsPlsParams = ArPlsParams;
-/// Parameters for Bayesian reweighted penalized least squares.
-pub type BrPlsParams = ArPlsParams;
 /// Parameters for locally symmetric reweighted penalized least squares.
 pub type LsrPlsParams = ArPlsParams;
 
@@ -150,6 +148,51 @@ impl DerPsalsaParams {
         {
             return Err(BaselineError::InvalidParameter {
                 name: "k",
+                reason: "must be finite and positive",
+            });
+        }
+        Ok(())
+    }
+}
+
+/// Parameters for Bayesian reweighted penalized least squares.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct BrPlsParams {
+    /// Shared Whittaker parameters for the inner baseline fit.
+    pub whittaker: WhittakerParams,
+    /// Maximum number of outer peak-proportion updates.
+    pub max_iter_2: usize,
+    /// Convergence tolerance for the outer peak-proportion update.
+    pub tol_2: f64,
+}
+
+impl Default for BrPlsParams {
+    fn default() -> Self {
+        Self {
+            whittaker: WhittakerParams {
+                lambda: 1.0e5,
+                max_iter: 50,
+                tol: 1.0e-3,
+            },
+            max_iter_2: 50,
+            tol_2: 1.0e-3,
+        }
+    }
+}
+
+impl BrPlsParams {
+    /// Validates BrPLS parameters.
+    pub fn validate(&self) -> Result<()> {
+        self.whittaker.validate()?;
+        if self.max_iter_2 == 0 {
+            return Err(BaselineError::InvalidParameter {
+                name: "max_iter_2",
+                reason: "must be greater than zero",
+            });
+        }
+        if !self.tol_2.is_finite() || self.tol_2 <= 0.0 {
+            return Err(BaselineError::InvalidParameter {
+                name: "tol_2",
                 reason: "must be finite and positive",
             });
         }
@@ -332,9 +375,83 @@ pub fn derpsalsa(y: &[f64], params: DerPsalsaParams) -> Result<Fit> {
 ///
 /// # References
 ///
+/// - Q. Wang et al., "Spectral baseline estimation using penalized least
+///   squares with weights derived from the Bayesian method", *Nuclear Science
+///   and Techniques*, 2022.
 /// - `pybaselines.Baseline.brpls` is used as a behavioral reference.
 pub fn brpls(y: &[f64], params: BrPlsParams) -> Result<Fit> {
-    arpls(y, params)
+    let mut baseline = vec![0.0; y.len()];
+    let report = brpls_into(y, params, &mut baseline)?;
+    Ok(Fit { baseline, report })
+}
+
+/// Fits a brPLS baseline into an existing output buffer.
+pub fn brpls_into(y: &[f64], params: BrPlsParams, baseline: &mut [f64]) -> Result<FitReport> {
+    validate_signal(y)?;
+    validate_output("baseline", y.len(), baseline.len())?;
+    if y.len() < 3 {
+        return Err(BaselineError::TooShort {
+            algorithm: "brpls",
+            len: y.len(),
+            min: 3,
+        });
+    }
+    params.validate()?;
+
+    let mut workspace = crate::whittaker::WhittakerWorkspace::new(y.len());
+    workspace.iter.weights.fill(1.0);
+    let mut current_baseline = y.to_vec();
+    let mut candidate = vec![0.0; y.len()];
+    let mut new_weights = vec![1.0; y.len()];
+    let mut beta = 0.5;
+    let mut tolerance = f64::INFINITY;
+    let mut outer_tolerance = f64::INFINITY;
+    let mut total_iterations = 0usize;
+
+    'outer: for outer in 0..=params.max_iter_2 {
+        for inner in 0..=params.whittaker.max_iter {
+            crate::linalg::pentadiagonal::solve_second_order(
+                y,
+                &workspace.iter.weights,
+                params.whittaker.lambda,
+                &mut candidate,
+                &mut workspace.solver,
+            )?;
+            total_iterations += 1;
+
+            if !brpls_weights(y, &candidate, beta, &mut new_weights) {
+                break 'outer;
+            }
+
+            tolerance = relative_change(&current_baseline, &candidate);
+            if tolerance < params.whittaker.tol {
+                if outer == 0 && inner == 0 {
+                    current_baseline.copy_from_slice(&candidate);
+                }
+                break;
+            }
+
+            workspace.iter.weights.copy_from_slice(&new_weights);
+            current_baseline.copy_from_slice(&candidate);
+        }
+
+        workspace.iter.weights.copy_from_slice(&new_weights);
+        let weight_mean =
+            workspace.iter.weights.iter().sum::<f64>() / workspace.iter.weights.len() as f64;
+        outer_tolerance = (beta + weight_mean - 1.0).abs();
+        if outer_tolerance < params.tol_2 {
+            baseline.copy_from_slice(&current_baseline);
+            return Ok(FitReport::new(total_iterations, true, outer_tolerance));
+        }
+        beta = 1.0 - weight_mean;
+    }
+
+    baseline.copy_from_slice(&current_baseline);
+    Ok(FitReport::new(
+        total_iterations,
+        outer_tolerance <= params.tol_2,
+        outer_tolerance.max(tolerance),
+    ))
 }
 
 /// Fits an lsrPLS baseline.
@@ -512,6 +629,50 @@ fn first_order_penalty_rhs(y: &[f64], lambda_1: f64, output: &mut [f64]) {
     }
     let last = y.len() - 1;
     output[last] = lambda_1 * (y[last] - y[last - 1]);
+}
+
+fn brpls_weights(y: &[f64], baseline: &[f64], beta: f64, weights: &mut [f64]) -> bool {
+    let mut positive_count = 0usize;
+    let mut positive_sum = 0.0;
+    let mut negative_count = 0usize;
+    let mut negative_sum_squares = 0.0;
+
+    for (observed, fitted) in y.iter().zip(baseline) {
+        let residual = observed - fitted;
+        if residual > 0.0 {
+            positive_count += 1;
+            positive_sum += residual;
+        } else if residual < 0.0 {
+            negative_count += 1;
+            negative_sum_squares += residual * residual;
+        }
+    }
+
+    if positive_count < 2 || negative_count < 2 {
+        weights.fill(0.0);
+        return false;
+    }
+
+    let mean = positive_sum / positive_count as f64;
+    let sigma = (negative_sum_squares / negative_count as f64)
+        .sqrt()
+        .max(f64::MIN_POSITIVE);
+    let denominator = (1.0 - beta).max(f64::MIN_POSITIVE);
+    let multiplier = (beta * (0.5 * std::f64::consts::PI).sqrt() / denominator) * (sigma / mean);
+    let max_inner = f64::MAX.ln().sqrt();
+    let sqrt_two = std::f64::consts::SQRT_2;
+
+    for ((weight, observed), fitted) in weights.iter_mut().zip(y).zip(baseline) {
+        let residual = observed - fitted;
+        let inner = residual / (sigma * sqrt_two) - sigma / (mean * sqrt_two);
+        let clipped_inner = inner.clamp(-max_inner, max_inner);
+        let mut partial = (clipped_inner * clipped_inner).exp();
+        if multiplier >= 0.5 {
+            partial = partial.min(f64::MAX / (2.0 * multiplier));
+        }
+        *weight = 1.0 / (1.0 + multiplier * (1.0 + libm::erf(inner)) * partial);
+    }
+    true
 }
 
 fn derivative_peak_screening_weights(
