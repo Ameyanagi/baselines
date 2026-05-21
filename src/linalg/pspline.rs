@@ -38,6 +38,24 @@ impl PenalizedSpline {
         self.solve_with_options(y, weights, lambda, None, 0.0, 0.0)
     }
 
+    /// Fits a weighted penalized spline and returns the baseline and coefficients.
+    pub(crate) fn solve_with_coefficients(
+        &self,
+        y: &[f64],
+        weights: &[f64],
+        lambda: f64,
+    ) -> Result<(Vec<f64>, Vec<f64>)> {
+        let coefficients =
+            self.solve_coefficients_with_options(y, weights, lambda, None, 0.0, 0.0)?;
+        let baseline = self.evaluate_coefficients(&coefficients);
+        Ok((baseline, coefficients))
+    }
+
+    /// Returns the number of spline basis functions.
+    pub(crate) fn basis_count(&self) -> usize {
+        self.penalty.len()
+    }
+
     /// Fits a weighted penalized spline with row-scaled smoothness penalties.
     pub(crate) fn solve_with_row_scaled_penalty(
         &self,
@@ -107,6 +125,26 @@ impl PenalizedSpline {
         basis_first_difference_lambda: f64,
         data_first_difference_lambda: f64,
     ) -> Result<Vec<f64>> {
+        let coefficients = self.solve_coefficients_with_options(
+            y,
+            weights,
+            lambda,
+            row_scales,
+            basis_first_difference_lambda,
+            data_first_difference_lambda,
+        )?;
+        Ok(self.evaluate_coefficients(&coefficients))
+    }
+
+    fn solve_coefficients_with_options(
+        &self,
+        y: &[f64],
+        weights: &[f64],
+        lambda: f64,
+        row_scales: Option<&[f64]>,
+        basis_first_difference_lambda: f64,
+        data_first_difference_lambda: f64,
+    ) -> Result<Vec<f64>> {
         let n_bases = self.penalty.len();
         if let Some(scales) = row_scales
             && scales.len() != n_bases
@@ -161,12 +199,14 @@ impl PenalizedSpline {
             }
         }
 
-        let coef = solve_dense(normal, rhs)?;
-        Ok(self
-            .basis
+        solve_dense(normal, rhs)
+    }
+
+    fn evaluate_coefficients(&self, coefficients: &[f64]) -> Vec<f64> {
+        self.basis
             .iter()
-            .map(|basis_row| basis_row.iter().zip(&coef).map(|(b, c)| b * c).sum())
-            .collect())
+            .map(|basis_row| basis_row.iter().zip(coefficients).map(|(b, c)| b * c).sum())
+            .collect()
     }
 }
 

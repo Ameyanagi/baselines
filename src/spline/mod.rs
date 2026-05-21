@@ -15,26 +15,90 @@ use crate::morphology::MorphologyParams;
 use crate::polynomial::fit_weighted_polynomial;
 use crate::whittaker::{
     AirPlsParams, ArPlsParams, AsPlsParams, AslsParams, BrPlsParams, DerPsalsaParams, DrPlsParams,
-    IarPlsParams, IaslsParams, LsrPlsParams, PsalsaParams, arpls, asls,
+    IarPlsParams, IaslsParams, LsrPlsParams, PsalsaParams, arpls,
 };
 use crate::workspace::validate_signal;
 use crate::{BaselineError, Result};
 use weights::{
     airpls_weights, arpls_weights, aspls_weights, brpls_weights, derivative_peak_screening_weights,
     derpsalsa_weights, drpls_weights, iarpls_weights, lsrpls_weights, mpls_anchor_weights,
-    psalsa_weights, standard_deviation,
+    psalsa_weights, quantile_weights, standard_deviation,
 };
 
 const PSPLINE_NUM_KNOTS: usize = 100;
 const PSPLINE_DEGREE: usize = 3;
 const PSPLINE_DIFF_ORDER: usize = 2;
+const IRSQR_DIFF_ORDER: usize = 3;
 const PSPLINE_MPLS_LAMBDA: f64 = 1.0e3;
 const PSPLINE_MPLS_P: f64 = 0.0;
 
 /// Parameters for mixture-model spline fitting.
 pub type MixtureModelParams = ArPlsParams;
 /// Parameters for iterative reweighted spline quantile regression.
-pub type IrsqrParams = AslsParams;
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct IrsqrParams {
+    /// P-spline smoothing parameter.
+    pub lambda: f64,
+    /// Quantile in `(0, 1)` to fit.
+    pub quantile: f64,
+    /// Maximum number of iteratively reweighted least-squares iterations.
+    pub max_iter: usize,
+    /// Relative coefficient-change tolerance.
+    pub tol: f64,
+    /// Small value added to squared residuals. If `None`, uses a scale-aware
+    /// pybaselines-compatible default each iteration.
+    pub epsilon: Option<f64>,
+}
+
+impl Default for IrsqrParams {
+    fn default() -> Self {
+        Self {
+            lambda: 100.0,
+            quantile: 0.05,
+            max_iter: 100,
+            tol: 1.0e-6,
+            epsilon: None,
+        }
+    }
+}
+
+impl IrsqrParams {
+    fn validate(&self) -> Result<()> {
+        if !self.lambda.is_finite() || self.lambda <= 0.0 {
+            return Err(BaselineError::InvalidParameter {
+                name: "lambda",
+                reason: "must be finite and positive",
+            });
+        }
+        if !self.quantile.is_finite() || self.quantile <= 0.0 || self.quantile >= 1.0 {
+            return Err(BaselineError::InvalidParameter {
+                name: "quantile",
+                reason: "must be finite and between 0 and 1",
+            });
+        }
+        if self.max_iter == 0 {
+            return Err(BaselineError::InvalidParameter {
+                name: "max_iter",
+                reason: "must be greater than zero",
+            });
+        }
+        if !self.tol.is_finite() || self.tol <= 0.0 {
+            return Err(BaselineError::InvalidParameter {
+                name: "tol",
+                reason: "must be finite and positive",
+            });
+        }
+        if let Some(epsilon) = self.epsilon
+            && (!epsilon.is_finite() || epsilon <= 0.0)
+        {
+            return Err(BaselineError::InvalidParameter {
+                name: "epsilon",
+                reason: "must be finite and positive",
+            });
+        }
+        Ok(())
+    }
+}
 
 /// Fits a mixture-model spline baseline.
 ///
@@ -49,9 +113,46 @@ pub fn mixture_model(y: &[f64], params: MixtureModelParams) -> Result<Fit> {
 ///
 /// # References
 ///
+/// - Q. Han et al., "Iterative Reweighted Quantile Regression Using Augmented
+///   Lagrangian Optimization for Baseline Correction", ICISCE, 2018.
+/// - P. H. C. Eilers, B. D. Marx, and M. Durban, "Twenty years of P-splines",
+///   *SORT*, 2015.
 /// - `pybaselines.Baseline.irsqr` is used as a behavioral reference.
 pub fn irsqr(y: &[f64], params: IrsqrParams) -> Result<Fit> {
-    asls(y, params)
+    params.validate()?;
+    validate_spline_signal("irsqr", y)?;
+
+    let pspline = PenalizedSpline::new(
+        y.len(),
+        PSPLINE_NUM_KNOTS.min(y.len()).max(2),
+        PSPLINE_DEGREE,
+        IRSQR_DIFF_ORDER,
+    );
+    let mut weights = vec![1.0; y.len()];
+    let mut previous_coefficients = vec![0.0; pspline.basis_count()];
+    let mut tolerance = f64::INFINITY;
+    let mut baseline = Vec::new();
+
+    for iter in 0..=params.max_iter {
+        let (new_baseline, coefficients) =
+            pspline.solve_with_coefficients(y, &weights, params.lambda)?;
+        tolerance = relative_change(&previous_coefficients, &coefficients);
+        baseline = new_baseline;
+        if tolerance < params.tol {
+            return Ok(Fit {
+                baseline,
+                report: FitReport::new(iter + 1, true, tolerance),
+            });
+        }
+
+        previous_coefficients = coefficients;
+        weights = quantile_weights(y, &baseline, params.quantile, params.epsilon);
+    }
+
+    Ok(Fit {
+        baseline,
+        report: FitReport::new(params.max_iter + 1, false, tolerance),
+    })
 }
 
 /// Fits a penalized-spline AsLS baseline.

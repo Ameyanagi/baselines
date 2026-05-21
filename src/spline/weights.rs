@@ -210,6 +210,31 @@ pub(super) fn psalsa_weights(y: &[f64], baseline: &[f64], p: f64, k: f64) -> Vec
         .collect()
 }
 
+pub(super) fn quantile_weights(
+    y: &[f64],
+    baseline: &[f64],
+    quantile: f64,
+    epsilon: Option<f64>,
+) -> Vec<f64> {
+    let eps = epsilon.unwrap_or_else(|| {
+        let max_abs = baseline.iter().map(|value| value.abs()).fold(0.0, f64::max);
+        (max_abs * 1.0e-6).powi(2)
+    });
+    let eps = eps.max(f64::MIN_POSITIVE);
+    y.iter()
+        .zip(baseline)
+        .map(|(observed, fitted)| {
+            let residual = observed - fitted;
+            let numerator = if residual > 0.0 {
+                quantile
+            } else {
+                1.0 - quantile
+            };
+            numerator / (residual * residual + eps).sqrt()
+        })
+        .collect()
+}
+
 pub(super) fn mpls_anchor_weights(y: &[f64], radius: usize, p: f64) -> Vec<f64> {
     let rough_baseline = opening_reflect(y, radius);
     let mut padded = Vec::with_capacity(rough_baseline.len() + 2);

@@ -10,9 +10,9 @@ use baselines::polynomial::{
 };
 use baselines::smoothing::{SmoothingParams, noise_median};
 use baselines::spline::{
-    CornerCuttingParams, corner_cutting, pspline_airpls, pspline_arpls, pspline_asls,
-    pspline_aspls, pspline_brpls, pspline_derpsalsa, pspline_drpls, pspline_iarpls, pspline_iasls,
-    pspline_lsrpls, pspline_mpls, pspline_psalsa,
+    CornerCuttingParams, IrsqrParams, corner_cutting, irsqr, pspline_airpls, pspline_arpls,
+    pspline_asls, pspline_aspls, pspline_brpls, pspline_derpsalsa, pspline_drpls, pspline_iarpls,
+    pspline_iasls, pspline_lsrpls, pspline_mpls, pspline_psalsa,
 };
 use baselines::whittaker::{
     AirPlsParams, ArPlsParams, AsPlsParams, AslsParams, BrPlsParams, DerPsalsaParams, DrPlsParams,
@@ -360,6 +360,14 @@ fn core_algorithms_track_pybaselines_fixtures() {
         "pspline_mpls",
         &fixture,
         pspline_mpls(&fixture.signal, MorphologyParams { window_size: 17 })
+            .unwrap()
+            .baseline,
+        1e-8,
+    );
+    assert_close(
+        "irsqr",
+        &fixture,
+        irsqr(&fixture.signal, IrsqrParams::default())
             .unwrap()
             .baseline,
         1e-8,
