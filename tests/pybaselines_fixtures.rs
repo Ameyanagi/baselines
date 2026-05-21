@@ -143,7 +143,7 @@ fn core_algorithms_track_pybaselines_fixtures() {
         "mor",
         &fixture,
         mor(&fixture.signal, morphology).unwrap().baseline,
-        7e-2,
+        1e-12,
     );
     assert_close(
         "mpls",

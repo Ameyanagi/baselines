@@ -141,7 +141,7 @@ pub fn mwmv_into(y: &[f64], params: MorphologyParams, baseline: &mut [f64]) -> R
     Ok(FitReport::new(1, true, 0.0))
 }
 
-/// Estimates a morphology baseline from opening and closing envelopes.
+/// Estimates a morphology baseline from an opening and its averaged envelope.
 ///
 /// # References
 ///
@@ -228,10 +228,10 @@ pub fn jbcd(y: &[f64], params: MorphologyParams) -> Result<Fit> {
 /// Estimates a morphology baseline into an existing output buffer.
 pub fn mor_into(y: &[f64], params: MorphologyParams, baseline: &mut [f64]) -> Result<FitReport> {
     validate_morphology_input(y, params, baseline)?;
-    let opened = opening(y, params.radius());
-    let closed = closing(&opened, params.radius());
-    for ((target, open), close) in baseline.iter_mut().zip(opened).zip(closed) {
-        *target = 0.5 * (open + close);
+    let opened = opening_reflect(y, params.radius());
+    let averaged = average_opening_from_opened_reflect(&opened, params.radius());
+    for ((target, open), average) in baseline.iter_mut().zip(opened).zip(averaged) {
+        *target = open.min(average);
     }
     Ok(FitReport::new(1, true, 0.0))
 }
@@ -326,15 +326,6 @@ fn opening(y: &[f64], radius: usize) -> Vec<f64> {
     opened
 }
 
-fn closing(y: &[f64], radius: usize) -> Vec<f64> {
-    let dilated = {
-        let mut output = vec![0.0; y.len()];
-        moving_max(y, radius, &mut output);
-        output
-    };
-    moving_min(&dilated, radius)
-}
-
 fn moving_min(y: &[f64], radius: usize) -> Vec<f64> {
     let mut output = vec![0.0; y.len()];
     for (i, value) in output.iter_mut().enumerate() {
@@ -367,15 +358,19 @@ fn moving_average(y: &[f64], radius: usize, output: &mut [f64]) {
 
 fn average_opening_reflect(y: &[f64], radius: usize, output: &mut [f64]) {
     let opened = opening_reflect(y, radius);
-    let dilated = {
-        let mut values = vec![0.0; y.len()];
-        moving_max_reflect(&opened, radius, &mut values);
-        values
-    };
-    let eroded = moving_min_reflect(&opened, radius);
-    for ((target, dilation), erosion) in output.iter_mut().zip(dilated).zip(eroded) {
-        *target = 0.5 * (dilation + erosion);
-    }
+    let averaged = average_opening_from_opened_reflect(&opened, radius);
+    output.copy_from_slice(&averaged);
+}
+
+fn average_opening_from_opened_reflect(opened: &[f64], radius: usize) -> Vec<f64> {
+    let mut dilated = vec![0.0; opened.len()];
+    moving_max_reflect(opened, radius, &mut dilated);
+    let eroded = moving_min_reflect(opened, radius);
+    dilated
+        .into_iter()
+        .zip(eroded)
+        .map(|(dilation, erosion)| 0.5 * (dilation + erosion))
+        .collect()
 }
 
 fn opening_reflect(y: &[f64], radius: usize) -> Vec<f64> {
