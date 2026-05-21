@@ -5,6 +5,7 @@
 //! later refinements where individual classifiers differ.
 
 use crate::fit::{Fit, FitReport};
+use crate::linalg::pentadiagonal::{PentadiagonalWorkspace, solve_second_order};
 use crate::polynomial::{evaluate_polynomial_coefficients, fit_weighted_polynomial_coefficients};
 use crate::smoothing::{SmoothingParams, noise_median};
 use crate::workspace::validate_signal;
@@ -231,6 +232,63 @@ impl DietrichParams {
     }
 }
 
+/// Parameters for fully automatic baseline correction.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FabcParams {
+    /// Whittaker smoothing parameter. Larger values produce smoother baselines.
+    pub lambda: f64,
+    /// Scale for the Haar wavelet derivative estimate.
+    pub scale: usize,
+    /// Number of standard deviations included in wavelet-power thresholding.
+    pub num_std: f64,
+    /// Differential order for the Whittaker penalty. Currently only `2` is supported.
+    pub diff_order: usize,
+    /// Minimum consecutive baseline-region length.
+    pub min_length: usize,
+}
+
+impl Default for FabcParams {
+    fn default() -> Self {
+        Self {
+            lambda: 1.0e6,
+            scale: 8,
+            num_std: 3.0,
+            diff_order: 2,
+            min_length: 2,
+        }
+    }
+}
+
+impl FabcParams {
+    fn validate(&self) -> Result<()> {
+        if !self.lambda.is_finite() || self.lambda <= 0.0 {
+            return Err(BaselineError::InvalidParameter {
+                name: "lambda",
+                reason: "must be finite and positive",
+            });
+        }
+        if self.scale == 0 {
+            return Err(BaselineError::InvalidParameter {
+                name: "scale",
+                reason: "must be greater than zero",
+            });
+        }
+        if !self.num_std.is_finite() || self.num_std <= 0.0 {
+            return Err(BaselineError::InvalidParameter {
+                name: "num_std",
+                reason: "must be finite and positive",
+            });
+        }
+        if self.diff_order != 2 {
+            return Err(BaselineError::InvalidParameter {
+                name: "diff_order",
+                reason: "only second-order Whittaker penalties are currently supported",
+            });
+        }
+        Ok(())
+    }
+}
+
 /// Estimates a baseline using Dietrich-style peak classification.
 ///
 /// # References
@@ -433,9 +491,30 @@ pub fn cwt_br(y: &[f64], params: ClassificationParams) -> Result<Fit> {
 ///
 /// # References
 ///
+/// - J. C. Cobas et al., "A new general-purpose fully automatic
+///   baseline-correction procedure for 1D and 2D NMR data", *Journal of
+///   Magnetic Resonance*, 2006.
 /// - `pybaselines.Baseline.fabc` is used as a behavioral reference.
-pub fn fabc(y: &[f64], params: ClassificationParams) -> Result<Fit> {
-    envelope_from_smoothed(y, params)
+pub fn fabc(y: &[f64], params: FabcParams) -> Result<Fit> {
+    validate_signal(y)?;
+    params.validate()?;
+
+    let power = haar_cwt_power(y, params.scale);
+    let mut mask = iter_threshold(&power, params.num_std);
+    refine_mask(&mut mask, params.min_length);
+
+    let weights: Vec<f64> = mask
+        .iter()
+        .map(|is_baseline| if *is_baseline { 1.0 } else { 0.0 })
+        .collect();
+    let mut baseline = vec![0.0; y.len()];
+    let mut workspace = PentadiagonalWorkspace::new(y.len());
+    solve_second_order(y, &weights, params.lambda, &mut baseline, &mut workspace)?;
+
+    Ok(Fit {
+        baseline,
+        report: FitReport::new(1, true, 0.0),
+    })
 }
 
 /// Estimates a baseline using a lower convex-hull rubberband.
@@ -535,6 +614,68 @@ fn iter_threshold(power: &[f64], num_std: f64) -> Vec<bool> {
         }
         mask = new_mask;
     }
+}
+
+fn haar_cwt_power(y: &[f64], scale: usize) -> Vec<f64> {
+    let half_window = 2 * scale;
+    let padded = extrapolate_pad(y, half_window);
+    let wavelet_len = (10 * scale).min(padded.len());
+    let mut wavelet = haar_wavelet(wavelet_len, scale);
+    wavelet.reverse();
+    let cwt = convolve_same(&padded, &wavelet);
+    cwt[half_window..half_window + y.len()]
+        .iter()
+        .map(|value| value * value)
+        .collect()
+}
+
+fn haar_wavelet(mut num_points: usize, scale: usize) -> Vec<f64> {
+    let odd_scale = !scale.is_multiple_of(2);
+    let odd_window = !num_points.is_multiple_of(2);
+    if (odd_scale && !odd_window) || (!odd_scale && odd_window) {
+        num_points += 1;
+    }
+    let center = (num_points - 1) as f64 / 2.0;
+    let half_scale = scale as f64 / 2.0;
+    let norm = (scale as f64).sqrt();
+    (0..num_points)
+        .map(|index| {
+            let x = index as f64 - center;
+            let value = if odd_scale {
+                if x > -half_scale && x < 0.0 {
+                    1.0
+                } else if x < half_scale && x > 0.0 {
+                    -1.0
+                } else {
+                    0.0
+                }
+            } else if x >= -half_scale && x < 0.0 {
+                1.0
+            } else if x < half_scale && x >= 0.0 {
+                -1.0
+            } else {
+                0.0
+            };
+            value / norm
+        })
+        .collect()
+}
+
+fn convolve_same(data: &[f64], kernel: &[f64]) -> Vec<f64> {
+    let start = (kernel.len() - 1) / 2;
+    (0..data.len())
+        .map(|output_index| {
+            let full_index = output_index + start;
+            let data_start = full_index.saturating_sub(kernel.len() - 1);
+            let data_end = full_index.min(data.len() - 1);
+            (data_start..=data_end)
+                .map(|data_index| {
+                    let kernel_index = full_index - data_index;
+                    data[data_index] * kernel[kernel_index]
+                })
+                .sum()
+        })
+        .collect()
 }
 
 fn relative_difference(previous: &[f64], current: &[f64]) -> f64 {

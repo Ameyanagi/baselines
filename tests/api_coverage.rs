@@ -1,7 +1,8 @@
 use baselines::Fit;
 use baselines::classification::{
-    ClassificationParams, DietrichParams, FastChromParams, GolotvinParams, StdDistributionParams,
-    cwt_br, dietrich, fabc, fastchrom, golotvin, rubberband, std_distribution,
+    ClassificationParams, DietrichParams, FabcParams, FastChromParams, GolotvinParams,
+    StdDistributionParams, cwt_br, dietrich, fabc, fastchrom, golotvin, rubberband,
+    std_distribution,
 };
 use baselines::misc::{BeadsParams, beads, interp_pts};
 use baselines::morphology::{
@@ -95,7 +96,7 @@ fn exposed_1d_algorithms_return_finite_baselines() {
         std_distribution(&y, StdDistributionParams::default()).unwrap(),
         fastchrom(&y, FastChromParams::default()).unwrap(),
         cwt_br(&y, ClassificationParams { window_size: 11 }).unwrap(),
-        fabc(&y, ClassificationParams { window_size: 11 }).unwrap(),
+        fabc(&y, FabcParams::default()).unwrap(),
         rubberband(&y).unwrap(),
         optimize_extended_range(&y, search).unwrap(),
         adaptive_minmax(&y, MorphologyParams { window_size: 7 }, morph).unwrap(),

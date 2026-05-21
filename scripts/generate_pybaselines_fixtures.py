@@ -87,6 +87,7 @@ def call_table() -> dict[str, Callable[[Baseline, list[float]], Any]]:
             y, half_window=8, smooth_half_window=8
         ),
         "fastchrom": lambda b, y: b.fastchrom(y, half_window=8, smooth_half_window=8),
+        "fabc": lambda b, y: b.fabc(y, lam=1e6, scale=8),
         "rubberband": lambda b, y: b.rubberband(y),
     }
 
