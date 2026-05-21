@@ -58,56 +58,100 @@ pub fn pspline_asls(y: &[f64], params: AslsParams) -> Result<Fit> {
 }
 
 /// Fits a penalized-spline IAsLS baseline.
+///
+/// # References
+///
+/// - `pybaselines.Baseline.pspline_iasls` is used as a behavioral reference.
 pub fn pspline_iasls(y: &[f64], params: IaslsParams) -> Result<Fit> {
     iasls(y, params)
 }
 
 /// Fits a penalized-spline airPLS baseline.
+///
+/// # References
+///
+/// - `pybaselines.Baseline.pspline_airpls` is used as a behavioral reference.
 pub fn pspline_airpls(y: &[f64], params: AirPlsParams) -> Result<Fit> {
     airpls(y, params)
 }
 
 /// Fits a penalized-spline arPLS baseline.
+///
+/// # References
+///
+/// - `pybaselines.Baseline.pspline_arpls` is used as a behavioral reference.
 pub fn pspline_arpls(y: &[f64], params: ArPlsParams) -> Result<Fit> {
     arpls(y, params)
 }
 
 /// Fits a penalized-spline drPLS baseline.
+///
+/// # References
+///
+/// - `pybaselines.Baseline.pspline_drpls` is used as a behavioral reference.
 pub fn pspline_drpls(y: &[f64], params: DrPlsParams) -> Result<Fit> {
     drpls(y, params)
 }
 
 /// Fits a penalized-spline IarPLS baseline.
+///
+/// # References
+///
+/// - `pybaselines.Baseline.pspline_iarpls` is used as a behavioral reference.
 pub fn pspline_iarpls(y: &[f64], params: IarPlsParams) -> Result<Fit> {
     iarpls(y, params)
 }
 
 /// Fits a penalized-spline asPLS baseline.
+///
+/// # References
+///
+/// - `pybaselines.Baseline.pspline_aspls` is used as a behavioral reference.
 pub fn pspline_aspls(y: &[f64], params: AsPlsParams) -> Result<Fit> {
     aspls(y, params)
 }
 
 /// Fits a penalized-spline psalsa baseline.
+///
+/// # References
+///
+/// - `pybaselines.Baseline.pspline_psalsa` is used as a behavioral reference.
 pub fn pspline_psalsa(y: &[f64], params: PsalsaParams) -> Result<Fit> {
     psalsa(y, params)
 }
 
 /// Fits a penalized-spline derpsalsa baseline.
+///
+/// # References
+///
+/// - `pybaselines.Baseline.pspline_derpsalsa` is used as a behavioral reference.
 pub fn pspline_derpsalsa(y: &[f64], params: DerPsalsaParams) -> Result<Fit> {
     derpsalsa(y, params)
 }
 
 /// Fits a penalized-spline MPLS baseline.
+///
+/// # References
+///
+/// - `pybaselines.Baseline.pspline_mpls` is used as a behavioral reference.
 pub fn pspline_mpls(y: &[f64], params: MorphologyParams) -> Result<Fit> {
     mpls(y, params)
 }
 
 /// Fits a penalized-spline brPLS baseline.
+///
+/// # References
+///
+/// - `pybaselines.Baseline.pspline_brpls` is used as a behavioral reference.
 pub fn pspline_brpls(y: &[f64], params: BrPlsParams) -> Result<Fit> {
     brpls(y, params)
 }
 
 /// Fits a penalized-spline lsrPLS baseline.
+///
+/// # References
+///
+/// - `pybaselines.Baseline.pspline_lsrpls` is used as a behavioral reference.
 pub fn pspline_lsrpls(y: &[f64], params: LsrPlsParams) -> Result<Fit> {
     lsrpls(y, params)
 }

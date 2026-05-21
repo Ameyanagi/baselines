@@ -16,9 +16,14 @@ let corrected = fit.corrected(&y);
 
 ## Scope
 
-The crate starts with CPU `f64` implementations for Whittaker, polynomial, and
-morphological baseline methods. GPU support is intentionally feature-gated and
-experimental while CPU behavior is validated.
+The crate starts with CPU `f64` implementations and public entry points for the
+current one-dimensional `pybaselines.Baseline` algorithm families: polynomial,
+Whittaker, morphology, penalized spline, smoothing, classification, optimizer,
+and miscellaneous methods.
+
+Some algorithms currently share conservative Rust-native engines while golden
+fixtures are added. GPU support is intentionally feature-gated and experimental
+while CPU behavior is validated.
 
 ## Attribution
 
