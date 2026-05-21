@@ -1,8 +1,9 @@
 use std::collections::BTreeMap;
 
 use baselines::classification::{
-    DietrichParams, FabcParams, FastChromParams, GolotvinParams, StdDistributionParams, dietrich,
-    fabc, fastchrom, golotvin, rubberband, std_distribution,
+    CwtBrParams, DietrichParams, FabcParams, FastChromParams, GolotvinParams,
+    StdDistributionParams, cwt_br, dietrich, fabc, fastchrom, golotvin, rubberband,
+    std_distribution,
 };
 use baselines::morphology::{
     MorphologyParams, imor, jbcd, mor, mormol, mpls, mpspline, mwmv, rolling_ball, snip, tophat,
@@ -507,6 +508,25 @@ fn core_algorithms_track_pybaselines_fixtures() {
             .unwrap()
             .baseline,
         1e-12,
+    );
+    assert_close(
+        "cwt_br",
+        &fixture,
+        cwt_br(
+            &fixture.signal,
+            CwtBrParams {
+                poly_order: 2,
+                scales: Some(vec![8]),
+                num_std: 1.0,
+                min_length: 2,
+                max_iter: 50,
+                tol: 1e-3,
+                symmetric: false,
+            },
+        )
+        .unwrap()
+        .baseline,
+        1e-8,
     );
     assert_close(
         "fabc",

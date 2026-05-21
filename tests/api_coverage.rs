@@ -1,6 +1,6 @@
 use baselines::Fit;
 use baselines::classification::{
-    ClassificationParams, DietrichParams, FabcParams, FastChromParams, GolotvinParams,
+    CwtBrParams, DietrichParams, FabcParams, FastChromParams, GolotvinParams,
     StdDistributionParams, cwt_br, dietrich, fabc, fastchrom, golotvin, rubberband,
     std_distribution,
 };
@@ -96,7 +96,7 @@ fn exposed_1d_algorithms_return_finite_baselines() {
         golotvin(&y, GolotvinParams::default()).unwrap(),
         std_distribution(&y, StdDistributionParams::default()).unwrap(),
         fastchrom(&y, FastChromParams::default()).unwrap(),
-        cwt_br(&y, ClassificationParams { window_size: 11 }).unwrap(),
+        cwt_br(&y, CwtBrParams::default()).unwrap(),
         fabc(&y, FabcParams::default()).unwrap(),
         rubberband(&y).unwrap(),
         optimize_extended_range(&y, search).unwrap(),

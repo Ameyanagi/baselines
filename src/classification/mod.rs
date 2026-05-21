@@ -7,22 +7,8 @@
 use crate::fit::{Fit, FitReport};
 use crate::linalg::pentadiagonal::{PentadiagonalWorkspace, solve_second_order};
 use crate::polynomial::{evaluate_polynomial_coefficients, fit_weighted_polynomial_coefficients};
-use crate::smoothing::{SmoothingParams, noise_median};
 use crate::workspace::validate_signal;
 use crate::{BaselineError, Result};
-
-/// Parameters for classification-style baseline methods.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ClassificationParams {
-    /// Smoothing window used while identifying the lower envelope.
-    pub window_size: usize,
-}
-
-impl Default for ClassificationParams {
-    fn default() -> Self {
-        Self { window_size: 31 }
-    }
-}
 
 /// Parameters for Golotvin-style baseline classification.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -289,6 +275,80 @@ impl FabcParams {
     }
 }
 
+/// Parameters for continuous-wavelet-transform baseline recognition.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CwtBrParams {
+    /// Polynomial order for fitting the identified baseline points.
+    pub poly_order: usize,
+    /// CWT scales to evaluate. `None` uses the pybaselines default scale range.
+    pub scales: Option<Vec<usize>>,
+    /// Number of residual standard deviations used during iterative masking.
+    pub num_std: f64,
+    /// Minimum consecutive baseline-region length.
+    pub min_length: usize,
+    /// Maximum polynomial refinement iterations.
+    pub max_iter: usize,
+    /// Relative baseline-change tolerance.
+    pub tol: f64,
+    /// Preserve both positive and negative peak regions during polynomial fitting.
+    pub symmetric: bool,
+}
+
+impl Default for CwtBrParams {
+    fn default() -> Self {
+        Self {
+            poly_order: 5,
+            scales: None,
+            num_std: 1.0,
+            min_length: 2,
+            max_iter: 50,
+            tol: 1.0e-3,
+            symmetric: false,
+        }
+    }
+}
+
+impl CwtBrParams {
+    fn validate(&self, len: usize) -> Result<()> {
+        if self.poly_order + 1 > len {
+            return Err(BaselineError::TooShort {
+                algorithm: "cwt_br",
+                len,
+                min: self.poly_order + 1,
+            });
+        }
+        if self
+            .scales
+            .as_ref()
+            .is_some_and(|scales| scales.is_empty() || scales.contains(&0))
+        {
+            return Err(BaselineError::InvalidParameter {
+                name: "scales",
+                reason: "must be non-empty and contain positive scales when set",
+            });
+        }
+        if !self.num_std.is_finite() || self.num_std <= 0.0 {
+            return Err(BaselineError::InvalidParameter {
+                name: "num_std",
+                reason: "must be finite and positive",
+            });
+        }
+        if self.max_iter == 0 {
+            return Err(BaselineError::InvalidParameter {
+                name: "max_iter",
+                reason: "must be greater than zero",
+            });
+        }
+        if !self.tol.is_finite() || self.tol <= 0.0 {
+            return Err(BaselineError::InvalidParameter {
+                name: "tol",
+                reason: "must be finite and positive",
+            });
+        }
+        Ok(())
+    }
+}
+
 /// Estimates a baseline using Dietrich-style peak classification.
 ///
 /// # References
@@ -482,9 +542,85 @@ pub fn fastchrom(y: &[f64], params: FastChromParams) -> Result<Fit> {
 ///
 /// # References
 ///
+/// - C. Bertinetto et al., "Automatic Baseline Recognition for the Correction
+///   of Large Sets of Spectra Using Continuous Wavelet Transform and Iterative
+///   Fitting", *Applied Spectroscopy*, 2014.
 /// - `pybaselines.Baseline.cwt_br` is used as a behavioral reference.
-pub fn cwt_br(y: &[f64], params: ClassificationParams) -> Result<Fit> {
-    envelope_from_smoothed(y, params)
+pub fn cwt_br(y: &[f64], params: CwtBrParams) -> Result<Fit> {
+    validate_signal(y)?;
+    params.validate(y.len())?;
+
+    let (min_y, max_y) = min_max(y);
+    if (max_y - min_y).abs() <= f64::EPSILON {
+        return Ok(Fit {
+            baseline: y.to_vec(),
+            report: FitReport::new(1, true, 0.0),
+        });
+    }
+
+    let scaled_y: Vec<f64> = y
+        .iter()
+        .map(|value| 2.0 * (value - min_y) / (max_y - min_y) - 1.0)
+        .collect();
+    let scales = cwt_scales(y.len(), &params);
+    let max_scale = *scales.iter().max().expect("validated scales are non-empty");
+    let half_window = 2 * max_scale;
+    let padded_y = extrapolate_pad(&scaled_y, half_window);
+    let (_best_scale, wavelet_cwt) = best_ricker_cwt(&padded_y, y.len(), half_window, &scales);
+    let threshold = 0.6 * sample_standard_deviation(&wavelet_cwt);
+    let mut mask: Vec<bool> = wavelet_cwt
+        .iter()
+        .map(|value| value.abs() < threshold)
+        .collect();
+    refine_mask(&mut mask, params.min_length);
+
+    let check_radius = y.len() / 200;
+    let mut baseline_old = scaled_y.clone();
+    let mut baseline = vec![0.0; y.len()];
+    let mut tolerance = f64::INFINITY;
+    let mut iterations = 0usize;
+
+    for iter in 0..=params.max_iter {
+        fit_masked_polynomial(&scaled_y, &mask, params.poly_order, &mut baseline)?;
+        let residual: Vec<f64> = scaled_y
+            .iter()
+            .zip(&baseline)
+            .map(|(observed, fitted)| observed - fitted)
+            .collect();
+        let residual_std = population_standard_deviation(&residual);
+        for (keep, residual) in mask.iter_mut().zip(&residual) {
+            if *residual > params.num_std * residual_std {
+                *keep = false;
+            }
+        }
+
+        fit_masked_polynomial(&scaled_y, &mask, params.poly_order, &mut baseline)?;
+        tolerance = relative_difference(&baseline_old, &baseline);
+        iterations = iter + 1;
+        if tolerance < params.tol {
+            break;
+        }
+        baseline_old.copy_from_slice(&baseline);
+        if !params.symmetric {
+            let below_fit: Vec<bool> = scaled_y
+                .iter()
+                .zip(&baseline)
+                .map(|(observed, fitted)| observed < fitted)
+                .collect();
+            for (keep, eroded) in mask.iter_mut().zip(erode_mask(&below_fit, check_radius)) {
+                *keep |= eroded;
+            }
+        }
+    }
+
+    for value in &mut baseline {
+        *value = min_y + 0.5 * (*value + 1.0) * (max_y - min_y);
+    }
+
+    Ok(Fit {
+        baseline,
+        report: FitReport::new(iterations, tolerance < params.tol, tolerance),
+    })
 }
 
 /// Estimates a baseline using fully automatic baseline correction.
@@ -532,21 +668,6 @@ pub fn rubberband(y: &[f64]) -> Result<Fit> {
     })
 }
 
-fn envelope_from_smoothed(y: &[f64], params: ClassificationParams) -> Result<Fit> {
-    let smooth = noise_median(
-        y,
-        SmoothingParams {
-            window_size: params.window_size,
-            max_iter: 1,
-        },
-    )?;
-    let fit = rubberband(&smooth.baseline)?;
-    Ok(Fit {
-        baseline: fit.baseline,
-        report: FitReport::new(1, true, 0.0),
-    })
-}
-
 fn minimum_section_std(y: &[f64], sections: usize) -> f64 {
     let mut min_sigma = f64::INFINITY;
     for section in 0..sections {
@@ -557,6 +678,111 @@ fn minimum_section_std(y: &[f64], sections: usize) -> f64 {
         }
     }
     min_sigma
+}
+
+fn min_max(y: &[f64]) -> (f64, f64) {
+    y.iter()
+        .fold((f64::INFINITY, f64::NEG_INFINITY), |(min, max), value| {
+            (min.min(*value), max.max(*value))
+        })
+}
+
+fn cwt_scales(len: usize, params: &CwtBrParams) -> Vec<usize> {
+    if let Some(scales) = &params.scales {
+        return scales.clone();
+    }
+    let min_scale = 2.max(len / 500);
+    let max_scale = len / 4;
+    if max_scale > min_scale {
+        (min_scale..max_scale).collect()
+    } else {
+        vec![min_scale]
+    }
+}
+
+fn best_ricker_cwt(
+    padded_y: &[f64],
+    len: usize,
+    half_window: usize,
+    scales: &[usize],
+) -> (usize, Vec<f64>) {
+    let mut shannon_old = f64::NEG_INFINITY;
+    let mut shannon_current = f64::NEG_INFINITY;
+    let mut best_scale = scales[0];
+    let mut best_cwt = Vec::new();
+
+    for scale in scales {
+        let cwt = ricker_cwt(padded_y, len, half_window, *scale);
+        let entropy = shannon_entropy(&cwt);
+        best_scale = *scale;
+        best_cwt = cwt;
+        if shannon_current < shannon_old && entropy > shannon_current {
+            break;
+        }
+        shannon_old = shannon_current;
+        shannon_current = entropy;
+    }
+
+    (best_scale, best_cwt)
+}
+
+fn ricker_cwt(padded_y: &[f64], len: usize, half_window: usize, scale: usize) -> Vec<f64> {
+    let wavelet_len = (10 * scale).min(padded_y.len()).max(1);
+    let mut wavelet = ricker_wavelet(wavelet_len, scale as f64);
+    wavelet.reverse();
+    let cwt = convolve_same(padded_y, &wavelet);
+    cwt[half_window..half_window + len].to_vec()
+}
+
+fn ricker_wavelet(points: usize, scale: f64) -> Vec<f64> {
+    let amplitude = 2.0 / ((3.0 * scale).sqrt() * std::f64::consts::PI.powf(0.25));
+    let scale_squared = scale * scale;
+    let center = (points as f64 - 1.0) / 2.0;
+    (0..points)
+        .map(|index| {
+            let x = index as f64 - center;
+            let x_squared = x * x;
+            amplitude
+                * (1.0 - x_squared / scale_squared)
+                * (-x_squared / (2.0 * scale_squared)).exp()
+        })
+        .collect()
+}
+
+fn shannon_entropy(values: &[f64]) -> f64 {
+    let total = values.iter().map(|value| value.abs()).sum::<f64>();
+    if total <= f64::EPSILON {
+        return 0.0;
+    }
+    -values
+        .iter()
+        .map(|value| {
+            let probability = value.abs() / total;
+            probability * (probability + f64::MIN_POSITIVE).ln()
+        })
+        .sum::<f64>()
+}
+
+fn fit_masked_polynomial(
+    y: &[f64],
+    mask: &[bool],
+    order: usize,
+    baseline: &mut [f64],
+) -> Result<()> {
+    if mask.iter().filter(|keep| **keep).count() < order + 1 {
+        return Err(BaselineError::TooShort {
+            algorithm: "cwt_br",
+            len: mask.iter().filter(|keep| **keep).count(),
+            min: order + 1,
+        });
+    }
+    let weights: Vec<f64> = mask
+        .iter()
+        .map(|keep| if *keep { 1.0 } else { 0.0 })
+        .collect();
+    let coeffs = fit_weighted_polynomial_coefficients(y, &weights, order)?;
+    evaluate_polynomial_coefficients(&coeffs, baseline);
+    Ok(())
 }
 
 fn sample_standard_deviation(values: &[f64]) -> f64 {
@@ -572,6 +798,22 @@ fn sample_standard_deviation(values: &[f64]) -> f64 {
         })
         .sum::<f64>()
         / (values.len() - 1) as f64;
+    variance.sqrt()
+}
+
+fn population_standard_deviation(values: &[f64]) -> f64 {
+    if values.is_empty() {
+        return 0.0;
+    }
+    let mean = mean(values);
+    let variance = values
+        .iter()
+        .map(|value| {
+            let centered = value - mean;
+            centered * centered
+        })
+        .sum::<f64>()
+        / values.len() as f64;
     variance.sqrt()
 }
 
@@ -767,6 +1009,22 @@ fn dilate_mask(mask: &[bool], radius: usize) -> Vec<bool> {
             let end = (index + radius + 1).min(mask.len());
             output[start..end].fill(true);
         }
+    }
+    output
+}
+
+fn erode_mask(mask: &[bool], radius: usize) -> Vec<bool> {
+    if radius == 0 {
+        return mask.to_vec();
+    }
+    let mut output = vec![false; mask.len()];
+    for (index, target) in output.iter_mut().enumerate() {
+        if index < radius || index + radius >= mask.len() {
+            continue;
+        }
+        *target = mask[index - radius..=index + radius]
+            .iter()
+            .all(|value| *value);
     }
     output
 }
