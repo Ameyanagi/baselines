@@ -7,8 +7,8 @@ is tightened with generated pybaselines fixtures.
 
 ## Dedicated First-Pass Implementations
 
-- Whittaker core: `asls`, `airpls`, `arpls`
-- Polynomial core: `poly`, `modpoly`, `imodpoly`, `loess`
+- Whittaker core: `asls`, `airpls`, `arpls`, `psalsa`
+- Polynomial core: `poly`, `modpoly`, `imodpoly`, `loess`, `quant_reg`
 - Morphology core: `rolling_ball`, `mwmv`, `tophat`, `mor`, `imor`, `amormol`
 - Smoothing core: `noise_median`, `snip`, `swima`, `ipsa`, `ria`, `peak_filling`
 - Classification core: `rubberband`
@@ -16,8 +16,8 @@ is tightened with generated pybaselines fixtures.
 
 ## Compatibility Entry Points Needing Fixture Tuning
 
-- Whittaker variants: `iasls`, `drpls`, `iarpls`, `aspls`, `psalsa`,
-  `derpsalsa`, `brpls`, `lsrpls`
+- Whittaker variants: `iasls`, `drpls`, `iarpls`, `aspls`, `derpsalsa`,
+  `brpls`, `lsrpls`
 - Morphology variants: `mpls`, `mormol`, `mpspline`, `jbcd`
 - Spline family: `mixture_model`, `irsqr`, `corner_cutting`, all `pspline_*`
   methods
@@ -26,7 +26,7 @@ is tightened with generated pybaselines fixtures.
 - Optimizer/meta methods: `collab_pls`, `optimize_extended_range`,
   `adaptive_minmax`, `custom_bc`
 - Misc: `beads`
-- Polynomial variants: `penalized_poly`, `quant_reg`, `goldindec`
+- Polynomial variants: `penalized_poly`, `goldindec`
 
 ## Next Compatibility Work
 

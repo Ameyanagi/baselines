@@ -8,6 +8,8 @@
 //! - J. Zhao et al., "Automated Autofluorescence Background Subtraction
 //!   Algorithm for Biomedical Raman Spectroscopy", *Applied Spectroscopy*,
 //!   2007.
+//! - R. Koenker and G. Bassett Jr., "Regression Quantiles", *Econometrica*,
+//!   1978.
 //! - `pybaselines` is used as a behavioral reference.
 
 use crate::fit::{Fit, FitReport};
@@ -159,7 +161,32 @@ impl Default for LoessParams {
 }
 
 /// Parameters for quantile-regression polynomial fitting.
-pub type QuantRegParams = ModPolyParams;
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct QuantRegParams {
+    /// Polynomial order.
+    pub order: usize,
+    /// Quantile in `(0, 1)` to fit.
+    pub quantile: f64,
+    /// Maximum number of iteratively reweighted least-squares iterations.
+    pub max_iter: usize,
+    /// Relative baseline-change tolerance.
+    pub tol: f64,
+    /// Residual floor used to avoid singular weights. If `None`, a
+    /// scale-aware default is used.
+    pub epsilon: Option<f64>,
+}
+
+impl Default for QuantRegParams {
+    fn default() -> Self {
+        Self {
+            order: 2,
+            quantile: 0.05,
+            max_iter: 250,
+            tol: 1.0e-6,
+            epsilon: None,
+        }
+    }
+}
 
 /// Parameters for Goldindec baseline fitting.
 pub type GoldindecParams = ModPolyParams;
@@ -215,16 +242,13 @@ pub fn loess(y: &[f64], params: LoessParams) -> Result<Fit> {
 ///
 /// # References
 ///
+/// - R. Koenker and G. Bassett Jr., "Regression Quantiles", *Econometrica*,
+///   1978.
 /// - `pybaselines.Baseline.quant_reg` is used as a behavioral reference.
 pub fn quant_reg(y: &[f64], params: QuantRegParams) -> Result<Fit> {
-    imodpoly(
-        y,
-        ImodPolyParams {
-            order: params.order,
-            max_iter: params.max_iter,
-            tol: params.tol,
-        },
-    )
+    let mut baseline = vec![0.0; y.len()];
+    let report = quant_reg_into(y, params, &mut baseline)?;
+    Ok(Fit { baseline, report })
 }
 
 /// Fits a Goldindec polynomial baseline.
@@ -280,6 +304,74 @@ pub fn imodpoly_into(y: &[f64], params: ImodPolyParams, baseline: &mut [f64]) ->
     }
 
     Ok(FitReport::new(params.max_iter, false, tolerance))
+}
+
+/// Fits a quantile-regression polynomial baseline into an existing output buffer.
+pub fn quant_reg_into(
+    y: &[f64],
+    params: QuantRegParams,
+    baseline: &mut [f64],
+) -> Result<FitReport> {
+    validate_quant_reg_params(params)?;
+    validate_poly_input(y, params.order, baseline)?;
+
+    let mut weights = vec![1.0; y.len()];
+    let mut previous = vec![0.0; y.len()];
+    let epsilon = params
+        .epsilon
+        .unwrap_or_else(|| f64::EPSILON.sqrt() * signal_scale(y).max(1.0));
+    fit_weighted_polynomial(y, &weights, params.order, baseline)?;
+
+    let mut tolerance = f64::INFINITY;
+    for iter in 0..params.max_iter {
+        previous.copy_from_slice(baseline);
+        for ((weight, observed), fitted) in weights.iter_mut().zip(y).zip(baseline.iter()) {
+            let residual = observed - fitted;
+            let quantile_weight = if residual >= 0.0 {
+                params.quantile
+            } else {
+                1.0 - params.quantile
+            };
+            *weight = quantile_weight / residual.abs().max(epsilon);
+        }
+
+        fit_weighted_polynomial(y, &weights, params.order, baseline)?;
+        tolerance = relative_baseline_change(&previous, baseline);
+        if iter > 0 && tolerance <= params.tol {
+            return Ok(FitReport::new(iter + 1, true, tolerance));
+        }
+    }
+
+    Ok(FitReport::new(params.max_iter, false, tolerance))
+}
+
+fn validate_quant_reg_params(params: QuantRegParams) -> Result<()> {
+    validate_iter_params(params.max_iter, params.tol)?;
+    if !params.quantile.is_finite() || params.quantile <= 0.0 || params.quantile >= 1.0 {
+        return Err(BaselineError::InvalidParameter {
+            name: "quantile",
+            reason: "must be finite and between 0 and 1",
+        });
+    }
+    if let Some(epsilon) = params.epsilon
+        && (!epsilon.is_finite() || epsilon <= 0.0)
+    {
+        return Err(BaselineError::InvalidParameter {
+            name: "epsilon",
+            reason: "must be finite and positive",
+        });
+    }
+    Ok(())
+}
+
+fn signal_scale(y: &[f64]) -> f64 {
+    let (min, max) = y
+        .iter()
+        .copied()
+        .fold((f64::INFINITY, f64::NEG_INFINITY), |(min, max), value| {
+            (min.min(value), max.max(value))
+        });
+    max - min
 }
 
 fn validate_poly_input(y: &[f64], order: usize, baseline: &[f64]) -> Result<()> {

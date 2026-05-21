@@ -2,7 +2,9 @@ use std::collections::BTreeMap;
 
 use baselines::classification::rubberband;
 use baselines::morphology::{MorphologyParams, mor, mwmv, rolling_ball, snip, tophat};
-use baselines::polynomial::{ImodPolyParams, ModPolyParams, PolyParams, imodpoly, modpoly, poly};
+use baselines::polynomial::{
+    ImodPolyParams, ModPolyParams, PolyParams, QuantRegParams, imodpoly, modpoly, poly, quant_reg,
+};
 use baselines::smoothing::{SmoothingParams, noise_median};
 use baselines::whittaker::{
     AirPlsParams, ArPlsParams, AslsParams, PsalsaParams, WhittakerParams, airpls, arpls, asls,
@@ -46,6 +48,14 @@ fn core_algorithms_track_pybaselines_fixtures() {
             .unwrap()
             .baseline,
         4e-2,
+    );
+    assert_close(
+        "quant_reg",
+        &fixture,
+        quant_reg(&fixture.signal, QuantRegParams::default())
+            .unwrap()
+            .baseline,
+        1e-3,
     );
 
     let whittaker = WhittakerParams {
