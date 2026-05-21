@@ -1,11 +1,14 @@
 //! Additional Whittaker-family algorithm entry points.
 
 use crate::fit::Fit;
-use crate::linalg::pentadiagonal::solve_second_order_with_first_order;
+use crate::linalg::pentadiagonal::{
+    GeneralPentadiagonalSystem, GeneralPentadiagonalWorkspace, solve_general_pentadiagonal,
+    solve_second_order_with_first_order,
+};
 use crate::polynomial::fit_weighted_polynomial;
+use crate::whittaker::ArPlsParams;
 use crate::whittaker::engine::{Reweighter, WhittakerParams, fit_alloc, relative_change};
-use crate::whittaker::{ArPlsParams, arpls};
-use crate::workspace::{validate_output, validate_signal};
+use crate::workspace::{logistic, validate_output, validate_signal};
 use crate::{BaselineError, FitReport, Result};
 
 /// Parameters for improved asymmetric least squares.
@@ -50,13 +53,81 @@ impl IaslsParams {
 }
 
 /// Parameters for doubly reweighted penalized least squares.
-pub type DrPlsParams = ArPlsParams;
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DrPlsParams {
+    /// Shared Whittaker parameters.
+    pub whittaker: WhittakerParams,
+    /// Penalty reweighting control in `[0, 1]`.
+    pub eta: f64,
+}
+
+impl Default for DrPlsParams {
+    fn default() -> Self {
+        Self {
+            whittaker: WhittakerParams {
+                lambda: 1.0e5,
+                max_iter: 50,
+                tol: 1.0e-3,
+            },
+            eta: 0.5,
+        }
+    }
+}
+
+impl DrPlsParams {
+    /// Validates drPLS parameters.
+    pub fn validate(&self) -> Result<()> {
+        self.whittaker.validate()?;
+        if !self.eta.is_finite() || self.eta < 0.0 || self.eta > 1.0 {
+            return Err(BaselineError::InvalidParameter {
+                name: "eta",
+                reason: "must be finite and between 0 and 1",
+            });
+        }
+        Ok(())
+    }
+}
+
 /// Parameters for improved asymmetrically reweighted penalized least squares.
 pub type IarPlsParams = ArPlsParams;
-/// Parameters for adaptive smoothness penalized least squares.
-pub type AsPlsParams = ArPlsParams;
 /// Parameters for locally symmetric reweighted penalized least squares.
 pub type LsrPlsParams = ArPlsParams;
+
+/// Parameters for adaptive smoothness penalized least squares.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AsPlsParams {
+    /// Shared Whittaker parameters.
+    pub whittaker: WhittakerParams,
+    /// Asymmetric weighting coefficient.
+    pub asymmetric_coef: f64,
+}
+
+impl Default for AsPlsParams {
+    fn default() -> Self {
+        Self {
+            whittaker: WhittakerParams {
+                lambda: 1.0e5,
+                max_iter: 100,
+                tol: 1.0e-3,
+            },
+            asymmetric_coef: 0.5,
+        }
+    }
+}
+
+impl AsPlsParams {
+    /// Validates asPLS parameters.
+    pub fn validate(&self) -> Result<()> {
+        self.whittaker.validate()?;
+        if !self.asymmetric_coef.is_finite() || self.asymmetric_coef <= 0.0 {
+            return Err(BaselineError::InvalidParameter {
+                name: "asymmetric_coef",
+                reason: "must be finite and positive",
+            });
+        }
+        Ok(())
+    }
+}
 
 /// Parameters for peaked signal asymmetric least squares.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -243,7 +314,7 @@ pub fn iasls_into(y: &[f64], params: IaslsParams, baseline: &mut [f64]) -> Resul
     first_order_penalty_rhs(y, params.lambda_1, &mut first_order_rhs);
 
     let mut tolerance = f64::INFINITY;
-    for iter in 0..params.whittaker.max_iter {
+    for iter in 0..=params.whittaker.max_iter {
         workspace
             .iter
             .previous_weights
@@ -286,16 +357,95 @@ pub fn iasls_into(y: &[f64], params: IaslsParams, baseline: &mut [f64]) -> Resul
         }
     }
 
-    Ok(FitReport::new(params.whittaker.max_iter, false, tolerance))
+    Ok(FitReport::new(
+        params.whittaker.max_iter + 1,
+        false,
+        tolerance,
+    ))
 }
 
 /// Fits a drPLS baseline.
 ///
 /// # References
 ///
+/// - D. Xu et al., "Baseline correction method based on doubly reweighted
+///   penalized least squares", *Applied Optics*, 2019.
 /// - `pybaselines.Baseline.drpls` is used as a behavioral reference.
 pub fn drpls(y: &[f64], params: DrPlsParams) -> Result<Fit> {
-    arpls(y, params)
+    let mut baseline = vec![0.0; y.len()];
+    let report = drpls_into(y, params, &mut baseline)?;
+    Ok(Fit { baseline, report })
+}
+
+/// Fits a drPLS baseline into an existing output buffer.
+pub fn drpls_into(y: &[f64], params: DrPlsParams, baseline: &mut [f64]) -> Result<FitReport> {
+    validate_signal(y)?;
+    validate_output("baseline", y.len(), baseline.len())?;
+    if y.len() < 3 {
+        return Err(BaselineError::TooShort {
+            algorithm: "drpls",
+            len: y.len(),
+            min: 3,
+        });
+    }
+    params.validate()?;
+
+    let n = y.len();
+    let mut workspace = crate::whittaker::WhittakerWorkspace::new(n);
+    let mut band_workspace = GeneralPentadiagonalWorkspace::new(n);
+    let mut lower2 = vec![0.0; n - 2];
+    let mut lower1 = vec![0.0; n - 1];
+    let mut diag = vec![0.0; n];
+    let mut upper1 = vec![0.0; n - 1];
+    let mut upper2 = vec![0.0; n - 2];
+    let mut rhs = vec![0.0; n];
+    let mut new_weights = vec![1.0; n];
+    workspace.iter.weights.fill(1.0);
+
+    let mut tolerance = f64::INFINITY;
+    for iter in 0..=params.whittaker.max_iter {
+        fill_drpls_bands(
+            &workspace.iter.weights,
+            params.whittaker.lambda,
+            params.eta,
+            &mut lower2,
+            &mut lower1,
+            &mut diag,
+            &mut upper1,
+            &mut upper2,
+        );
+        for ((target, observed), weight) in rhs.iter_mut().zip(y).zip(&workspace.iter.weights) {
+            *target = observed * weight;
+        }
+
+        solve_general_pentadiagonal(
+            GeneralPentadiagonalSystem {
+                lower2: &lower2,
+                lower1: &lower1,
+                diag: &diag,
+                upper1: &upper1,
+                upper2: &upper2,
+            },
+            &rhs,
+            baseline,
+            &mut band_workspace,
+        )?;
+
+        if !drpls_weights(y, baseline, iter + 1, &mut new_weights) {
+            break;
+        }
+        tolerance = relative_change(&workspace.iter.weights, &new_weights);
+        if tolerance <= params.whittaker.tol {
+            return Ok(FitReport::new(iter + 1, true, tolerance));
+        }
+        workspace.iter.weights.copy_from_slice(&new_weights);
+    }
+
+    Ok(FitReport::new(
+        params.whittaker.max_iter + 1,
+        false,
+        tolerance,
+    ))
 }
 
 /// Fits an IarPLS baseline.
@@ -315,9 +465,98 @@ pub fn iarpls(y: &[f64], params: IarPlsParams) -> Result<Fit> {
 ///
 /// # References
 ///
+/// - F. Zhang et al., "Baseline correction for infrared spectra using
+///   adaptive smoothness parameter penalized least squares method",
+///   *Spectroscopy Letters*, 2020.
 /// - `pybaselines.Baseline.aspls` is used as a behavioral reference.
 pub fn aspls(y: &[f64], params: AsPlsParams) -> Result<Fit> {
-    arpls(y, params)
+    let mut baseline = vec![0.0; y.len()];
+    let report = aspls_into(y, params, &mut baseline)?;
+    Ok(Fit { baseline, report })
+}
+
+/// Fits an asPLS baseline into an existing output buffer.
+pub fn aspls_into(y: &[f64], params: AsPlsParams, baseline: &mut [f64]) -> Result<FitReport> {
+    validate_signal(y)?;
+    validate_output("baseline", y.len(), baseline.len())?;
+    if y.len() < 3 {
+        return Err(BaselineError::TooShort {
+            algorithm: "aspls",
+            len: y.len(),
+            min: 3,
+        });
+    }
+    params.validate()?;
+
+    let n = y.len();
+    let mut workspace = crate::whittaker::WhittakerWorkspace::new(n);
+    let mut band_workspace = GeneralPentadiagonalWorkspace::new(n);
+    let mut alpha = vec![1.0; n];
+    let mut lower2 = vec![0.0; n - 2];
+    let mut lower1 = vec![0.0; n - 1];
+    let mut diag = vec![0.0; n];
+    let mut upper1 = vec![0.0; n - 1];
+    let mut upper2 = vec![0.0; n - 2];
+    let mut rhs = vec![0.0; n];
+    let mut new_weights = vec![1.0; n];
+    workspace.iter.weights.fill(1.0);
+
+    let mut tolerance = f64::INFINITY;
+    for iter in 0..params.whittaker.max_iter {
+        fill_aspls_bands(
+            &workspace.iter.weights,
+            &alpha,
+            params.whittaker.lambda,
+            &mut lower2,
+            &mut lower1,
+            &mut diag,
+            &mut upper1,
+            &mut upper2,
+        );
+        for ((target, observed), weight) in rhs.iter_mut().zip(y).zip(&workspace.iter.weights) {
+            *target = observed * weight;
+        }
+
+        solve_general_pentadiagonal(
+            GeneralPentadiagonalSystem {
+                lower2: &lower2,
+                lower1: &lower1,
+                diag: &diag,
+                upper1: &upper1,
+                upper2: &upper2,
+            },
+            &rhs,
+            baseline,
+            &mut band_workspace,
+        )?;
+
+        if !aspls_weights(
+            y,
+            baseline,
+            params.asymmetric_coef,
+            &mut new_weights,
+            &mut workspace.iter.residual,
+        ) {
+            break;
+        }
+        tolerance = relative_change(&workspace.iter.weights, &new_weights);
+        if tolerance <= params.whittaker.tol {
+            return Ok(FitReport::new(iter + 1, true, tolerance));
+        }
+        workspace.iter.weights.copy_from_slice(&new_weights);
+        let max_abs = workspace
+            .iter
+            .residual
+            .iter()
+            .map(|value| value.abs())
+            .fold(0.0, f64::max)
+            .max(f64::MIN_POSITIVE);
+        for (target, residual) in alpha.iter_mut().zip(&workspace.iter.residual) {
+            *target = residual.abs() / max_abs;
+        }
+    }
+
+    Ok(FitReport::new(params.whittaker.max_iter, false, tolerance))
 }
 
 /// Fits a psalsa baseline.
@@ -618,6 +857,64 @@ fn negative_residual_stats(y: &[f64], baseline: &[f64]) -> Option<(f64, f64)> {
     Some((mean, std))
 }
 
+fn drpls_weights(y: &[f64], baseline: &[f64], iteration: usize, weights: &mut [f64]) -> bool {
+    let Some((mean, std)) = negative_residual_stats(y, baseline) else {
+        weights.fill(0.0);
+        return false;
+    };
+    let scale = ((iteration.min(100) as f64).exp()) / std.max(f64::MIN_POSITIVE);
+    for ((weight, observed), fitted) in weights.iter_mut().zip(y).zip(baseline) {
+        let residual = observed - fitted;
+        let inner = scale * (residual - (2.0 * std - mean));
+        *weight = 0.5 * (1.0 - inner / (1.0 + inner.abs()));
+    }
+    true
+}
+
+fn aspls_weights(
+    y: &[f64],
+    baseline: &[f64],
+    asymmetric_coef: f64,
+    weights: &mut [f64],
+    residuals: &mut [f64],
+) -> bool {
+    for ((residual, observed), fitted) in residuals.iter_mut().zip(y).zip(baseline) {
+        *residual = observed - fitted;
+    }
+    let Some(std) = negative_residual_std(residuals) else {
+        weights.fill(0.0);
+        return false;
+    };
+    let scale = asymmetric_coef / std.max(f64::MIN_POSITIVE);
+    for (weight, residual) in weights.iter_mut().zip(residuals) {
+        *weight = logistic(-scale * (*residual - std));
+    }
+    true
+}
+
+fn negative_residual_std(residuals: &[f64]) -> Option<f64> {
+    let mut count = 0usize;
+    let mut sum = 0.0;
+    for residual in residuals {
+        if *residual < 0.0 {
+            count += 1;
+            sum += residual;
+        }
+    }
+    if count < 2 {
+        return None;
+    }
+    let mean = sum / count as f64;
+    let mut sum_squares = 0.0;
+    for residual in residuals {
+        if *residual < 0.0 {
+            let centered = residual - mean;
+            sum_squares += centered * centered;
+        }
+    }
+    Some((sum_squares / (count - 1) as f64).sqrt())
+}
+
 fn asls_weight(observed: f64, fitted: f64, p: f64) -> f64 {
     if observed > fitted { p } else { 1.0 - p }
 }
@@ -629,6 +926,86 @@ fn first_order_penalty_rhs(y: &[f64], lambda_1: f64, output: &mut [f64]) {
     }
     let last = y.len() - 1;
     output[last] = lambda_1 * (y[last] - y[last - 1]);
+}
+
+#[allow(clippy::too_many_arguments)]
+fn fill_drpls_bands(
+    weights: &[f64],
+    lambda: f64,
+    eta: f64,
+    lower2: &mut [f64],
+    lower1: &mut [f64],
+    diag: &mut [f64],
+    upper1: &mut [f64],
+    upper2: &mut [f64],
+) {
+    let n = weights.len();
+    for (i, target) in diag.iter_mut().enumerate() {
+        let second = second_order_diag(i, n, lambda);
+        *target = first_order_diag(i, n) + second * (1.0 - eta * weights[i]) + weights[i];
+    }
+    for i in 0..n - 1 {
+        let first = -1.0;
+        let second = second_order_off1(i, n, lambda);
+        upper1[i] = first + second * (1.0 - eta * weights[i]);
+        lower1[i] = first + second * (1.0 - eta * weights[i + 1]);
+    }
+    for i in 0..n - 2 {
+        upper2[i] = lambda * (1.0 - eta * weights[i]);
+        lower2[i] = lambda * (1.0 - eta * weights[i + 2]);
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn fill_aspls_bands(
+    weights: &[f64],
+    alpha: &[f64],
+    lambda: f64,
+    lower2: &mut [f64],
+    lower1: &mut [f64],
+    diag: &mut [f64],
+    upper1: &mut [f64],
+    upper2: &mut [f64],
+) {
+    let n = weights.len();
+    for (i, target) in diag.iter_mut().enumerate() {
+        *target = weights[i] + alpha[i] * second_order_diag(i, n, lambda);
+    }
+    for i in 0..n - 1 {
+        let second = second_order_off1(i, n, lambda);
+        upper1[i] = alpha[i] * second;
+        lower1[i] = alpha[i + 1] * second;
+    }
+    for i in 0..n - 2 {
+        upper2[i] = alpha[i] * lambda;
+        lower2[i] = alpha[i + 2] * lambda;
+    }
+}
+
+fn first_order_diag(index: usize, len: usize) -> f64 {
+    if index == 0 || index + 1 == len {
+        1.0
+    } else {
+        2.0
+    }
+}
+
+fn second_order_diag(index: usize, len: usize, lambda: f64) -> f64 {
+    if index == 0 || index + 1 == len {
+        lambda
+    } else if index == 1 || index + 2 == len {
+        5.0 * lambda
+    } else {
+        6.0 * lambda
+    }
+}
+
+fn second_order_off1(index: usize, len: usize, lambda: f64) -> f64 {
+    if index == 0 || index + 2 == len {
+        -2.0 * lambda
+    } else {
+        -4.0 * lambda
+    }
 }
 
 fn brpls_weights(y: &[f64], baseline: &[f64], beta: f64, weights: &mut [f64]) -> bool {

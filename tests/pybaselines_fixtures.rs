@@ -8,9 +8,9 @@ use baselines::polynomial::{
 };
 use baselines::smoothing::{SmoothingParams, noise_median};
 use baselines::whittaker::{
-    AirPlsParams, ArPlsParams, AslsParams, BrPlsParams, DerPsalsaParams, IarPlsParams, IaslsParams,
-    LsrPlsParams, PsalsaParams, WhittakerParams, airpls, arpls, asls, brpls, derpsalsa, iarpls,
-    iasls, lsrpls, psalsa,
+    AirPlsParams, ArPlsParams, AsPlsParams, AslsParams, BrPlsParams, DerPsalsaParams, DrPlsParams,
+    IarPlsParams, IaslsParams, LsrPlsParams, PsalsaParams, WhittakerParams, airpls, arpls, asls,
+    aspls, brpls, derpsalsa, drpls, iarpls, iasls, lsrpls, psalsa,
 };
 use serde::Deserialize;
 
@@ -121,12 +121,44 @@ fn core_algorithms_track_pybaselines_fixtures() {
         1e-3,
     );
     assert_close(
+        "drpls",
+        &fixture,
+        drpls(
+            &fixture.signal,
+            DrPlsParams {
+                whittaker,
+                eta: 0.5,
+            },
+        )
+        .unwrap()
+        .baseline,
+        1e-2,
+    );
+    assert_close(
         "iarpls",
         &fixture,
         iarpls(&fixture.signal, IarPlsParams { whittaker })
             .unwrap()
             .baseline,
         1e-8,
+    );
+    assert_close(
+        "aspls",
+        &fixture,
+        aspls(
+            &fixture.signal,
+            AsPlsParams {
+                whittaker: WhittakerParams {
+                    lambda: 1e5,
+                    max_iter: 100,
+                    tol: 1e-3,
+                },
+                asymmetric_coef: 0.5,
+            },
+        )
+        .unwrap()
+        .baseline,
+        1e-2,
     );
     assert_close(
         "psalsa",

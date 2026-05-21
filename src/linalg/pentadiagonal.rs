@@ -14,6 +14,58 @@ pub struct PentadiagonalWorkspace {
     tmp: Vec<f64>,
 }
 
+/// Reusable storage for a general nonsymmetric pentadiagonal system.
+#[derive(Debug, Clone)]
+pub struct GeneralPentadiagonalWorkspace {
+    lower2: Vec<f64>,
+    lower1: Vec<f64>,
+    diag: Vec<f64>,
+    upper1: Vec<f64>,
+    upper2: Vec<f64>,
+    rhs: Vec<f64>,
+}
+
+/// Borrowed diagonals for a general nonsymmetric pentadiagonal system.
+pub(crate) struct GeneralPentadiagonalSystem<'a> {
+    /// Second lower diagonal, where `lower2[i] = A[i + 2, i]`.
+    pub lower2: &'a [f64],
+    /// First lower diagonal, where `lower1[i] = A[i + 1, i]`.
+    pub lower1: &'a [f64],
+    /// Main diagonal.
+    pub diag: &'a [f64],
+    /// First upper diagonal, where `upper1[i] = A[i, i + 1]`.
+    pub upper1: &'a [f64],
+    /// Second upper diagonal, where `upper2[i] = A[i, i + 2]`.
+    pub upper2: &'a [f64],
+}
+
+impl GeneralPentadiagonalWorkspace {
+    /// Creates a workspace for `n` samples.
+    #[must_use]
+    pub fn new(n: usize) -> Self {
+        let mut workspace = Self {
+            lower2: Vec::new(),
+            lower1: Vec::new(),
+            diag: Vec::new(),
+            upper1: Vec::new(),
+            upper2: Vec::new(),
+            rhs: Vec::new(),
+        };
+        workspace.resize(n);
+        workspace
+    }
+
+    /// Resizes buffers for `n` samples.
+    pub fn resize(&mut self, n: usize) {
+        self.lower2.resize(n.saturating_sub(2), 0.0);
+        self.lower1.resize(n.saturating_sub(1), 0.0);
+        self.diag.resize(n, 0.0);
+        self.upper1.resize(n.saturating_sub(1), 0.0);
+        self.upper2.resize(n.saturating_sub(2), 0.0);
+        self.rhs.resize(n, 0.0);
+    }
+}
+
 impl PentadiagonalWorkspace {
     /// Creates a workspace for `n` samples.
     #[must_use]
@@ -146,6 +198,62 @@ pub(crate) fn solve_second_order_with_first_order(
     factor_and_solve(baseline, workspace)
 }
 
+/// Solves a nonsymmetric pentadiagonal system with no pivoting.
+pub(crate) fn solve_general_pentadiagonal(
+    system: GeneralPentadiagonalSystem<'_>,
+    rhs: &[f64],
+    output: &mut [f64],
+    workspace: &mut GeneralPentadiagonalWorkspace,
+) -> Result<()> {
+    let n = system.diag.len();
+    validate_general_band_lengths(&system, rhs, output)?;
+    workspace.resize(n);
+    workspace.lower2.copy_from_slice(system.lower2);
+    workspace.lower1.copy_from_slice(system.lower1);
+    workspace.diag.copy_from_slice(system.diag);
+    workspace.upper1.copy_from_slice(system.upper1);
+    workspace.upper2.copy_from_slice(system.upper2);
+    workspace.rhs.copy_from_slice(rhs);
+
+    for index in 0..n {
+        let pivot = workspace.diag[index];
+        if !pivot.is_finite() || pivot.abs() <= f64::EPSILON {
+            return Err(BaselineError::LinearSolve {
+                reason: "matrix pivot was zero",
+            });
+        }
+
+        if index + 1 < n {
+            let factor = workspace.lower1[index] / pivot;
+            workspace.diag[index + 1] -= factor * workspace.upper1[index];
+            if index + 2 < n {
+                workspace.upper1[index + 1] -= factor * workspace.upper2[index];
+            }
+            workspace.rhs[index + 1] -= factor * workspace.rhs[index];
+        }
+
+        if index + 2 < n {
+            let factor = workspace.lower2[index] / pivot;
+            workspace.lower1[index + 1] -= factor * workspace.upper1[index];
+            workspace.diag[index + 2] -= factor * workspace.upper2[index];
+            workspace.rhs[index + 2] -= factor * workspace.rhs[index];
+        }
+    }
+
+    for index in (0..n).rev() {
+        let mut value = workspace.rhs[index];
+        if index + 1 < n {
+            value -= workspace.upper1[index] * output[index + 1];
+        }
+        if index + 2 < n {
+            value -= workspace.upper2[index] * output[index + 2];
+        }
+        output[index] = value / workspace.diag[index];
+    }
+
+    Ok(())
+}
+
 fn factor_and_solve(baseline: &mut [f64], workspace: &mut PentadiagonalWorkspace) -> Result<()> {
     cholesky_factor(
         &workspace.diag,
@@ -162,6 +270,36 @@ fn factor_and_solve(baseline: &mut [f64], workspace: &mut PentadiagonalWorkspace
         &mut workspace.tmp,
     );
     baseline.copy_from_slice(&workspace.tmp);
+    Ok(())
+}
+
+fn validate_general_band_lengths(
+    system: &GeneralPentadiagonalSystem<'_>,
+    rhs: &[f64],
+    output: &[f64],
+) -> Result<()> {
+    let n = system.diag.len();
+    if n == 0 {
+        return Err(BaselineError::EmptyInput);
+    }
+    let expected_lower2 = n.saturating_sub(2);
+    let expected_lower1 = n.saturating_sub(1);
+    for (name, expected, actual) in [
+        ("lower2", expected_lower2, system.lower2.len()),
+        ("lower1", expected_lower1, system.lower1.len()),
+        ("upper1", expected_lower1, system.upper1.len()),
+        ("upper2", expected_lower2, system.upper2.len()),
+        ("rhs", n, rhs.len()),
+        ("output", n, output.len()),
+    ] {
+        if expected != actual {
+            return Err(BaselineError::LengthMismatch {
+                name,
+                expected,
+                actual,
+            });
+        }
+    }
     Ok(())
 }
 
