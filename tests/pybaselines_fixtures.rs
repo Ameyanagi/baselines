@@ -8,7 +8,8 @@ use baselines::morphology::{
     MorphologyParams, imor, jbcd, mor, mormol, mpls, mpspline, mwmv, rolling_ball, snip, tophat,
 };
 use baselines::optimizers::{
-    AdaptiveMinmaxParams, LambdaSearchParams, adaptive_minmax, collab_pls, optimize_extended_range,
+    AdaptiveMinmaxParams, CustomBcParams, LambdaSearchParams, adaptive_minmax, collab_pls,
+    custom_bc, optimize_extended_range,
 };
 use baselines::polynomial::{
     GoldindecParams, ImodPolyParams, ModPolyParams, PenalizedPolyParams, PolyParams,
@@ -537,6 +538,21 @@ fn core_algorithms_track_pybaselines_fixtures() {
         .unwrap()
         .baseline,
         1e-9,
+    );
+    assert_close(
+        "custom_bc",
+        &fixture,
+        custom_bc(
+            &fixture.signal,
+            CustomBcParams {
+                sampling: 4,
+                asls: AslsParams { whittaker, p: 0.01 },
+                ..CustomBcParams::default()
+            },
+        )
+        .unwrap()
+        .baseline,
+        1e-8,
     );
     let collab = collab_pls(
         &[fixture.signal.clone(), collab_signal(&fixture.signal)],

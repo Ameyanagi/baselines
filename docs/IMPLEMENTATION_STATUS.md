@@ -20,7 +20,8 @@ is tightened with generated pybaselines fixtures.
   `pspline_drpls`, `pspline_iarpls`, `pspline_aspls`, `pspline_psalsa`,
   `pspline_derpsalsa`, `pspline_lsrpls`, `pspline_brpls`, `pspline_mpls`,
   `corner_cutting`, `irsqr`, `mixture_model`
-- Optimizer/meta core: `adaptive_minmax`, `optimize_extended_range`, `collab_pls`
+- Optimizer/meta core: `adaptive_minmax`, `optimize_extended_range`, `custom_bc`,
+  `collab_pls`
 - Misc core: `interp_pts`
 
 ## Compatibility Entry Points Needing Fixture Tuning
@@ -29,7 +30,7 @@ is tightened with generated pybaselines fixtures.
 - Morphology variants: none currently tracked
 - Spline family: none currently tracked
 - Classification variants: `cwt_br`
-- Optimizer/meta methods: `custom_bc`
+- Optimizer/meta methods: none currently tracked
 - Misc: `beads`
 
 ## Next Compatibility Work

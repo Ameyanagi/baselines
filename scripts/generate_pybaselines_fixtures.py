@@ -111,6 +111,13 @@ def call_table() -> dict[str, Callable[[Baseline, list[float]], Any]]:
             step=1,
             method_kwargs={"p": 0.01},
         ),
+        "custom_bc": lambda b, y: b.custom_bc(
+            y,
+            method="asls",
+            regions=((None, None),),
+            sampling=4,
+            method_kwargs={"lam": 1e5, "p": 0.01},
+        ),
         "rubberband": lambda b, y: b.rubberband(y),
     }
 

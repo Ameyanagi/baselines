@@ -118,6 +118,62 @@ impl AdaptiveMinmaxParams {
     }
 }
 
+/// Parameters for customized baseline correction.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CustomBcParams {
+    /// Regions to bin before fitting. `None` maps to the signal boundary.
+    pub regions: Vec<(Option<usize>, Option<usize>)>,
+    /// Sampling step for each region.
+    pub sampling: usize,
+    /// Internal AsLS parameters used on the reduced signal.
+    pub asls: AslsParams,
+    /// Optional Whittaker smoothing lambda for the interpolated baseline.
+    pub smooth_lambda: Option<f64>,
+}
+
+impl Default for CustomBcParams {
+    fn default() -> Self {
+        Self {
+            regions: vec![(None, None)],
+            sampling: 1,
+            asls: AslsParams::default(),
+            smooth_lambda: None,
+        }
+    }
+}
+
+impl CustomBcParams {
+    fn validate(&self) -> Result<()> {
+        self.validate_regions()?;
+        self.asls.validate()
+    }
+
+    fn validate_regions(&self) -> Result<()> {
+        if self.regions.is_empty() {
+            return Err(BaselineError::InvalidParameter {
+                name: "regions",
+                reason: "must contain at least one region",
+            });
+        }
+        if self.sampling == 0 {
+            return Err(BaselineError::InvalidParameter {
+                name: "sampling",
+                reason: "must be greater than zero",
+            });
+        }
+        if self
+            .smooth_lambda
+            .is_some_and(|lambda| !lambda.is_finite() || lambda <= 0.0)
+        {
+            return Err(BaselineError::InvalidParameter {
+                name: "smooth_lambda",
+                reason: "must be finite and positive when set",
+            });
+        }
+        Ok(())
+    }
+}
+
 /// Runs AsLS over an extended-range lambda grid and returns the best edge match.
 ///
 /// # References
@@ -178,17 +234,56 @@ pub fn optimize_extended_range(y: &[f64], params: LambdaSearchParams) -> Result<
     })
 }
 
-/// Applies a baseline function supplied by the caller.
+/// Fits selected signal regions and interpolates the reduced baseline.
 ///
 /// # References
 ///
+/// - K. H. Liland et al., "Customized baseline correction", *Chemometrics and
+///   Intelligent Laboratory Systems*, 2011.
 /// - `pybaselines.Baseline.custom_bc` is used as a behavioral reference.
-pub fn custom_bc<F>(y: &[f64], baseline_fn: F) -> Result<Fit>
+pub fn custom_bc(y: &[f64], params: CustomBcParams) -> Result<Fit> {
+    let asls_params = params.asls;
+    params.validate()?;
+    custom_bc_with(y, params, |values| asls(values, asls_params))
+}
+
+/// Fits selected signal regions with a caller-supplied algorithm.
+///
+/// # References
+///
+/// - K. H. Liland et al., "Customized baseline correction", *Chemometrics and
+///   Intelligent Laboratory Systems*, 2011.
+/// - `pybaselines.Baseline.custom_bc` is used as a behavioral reference.
+pub fn custom_bc_with<F>(y: &[f64], params: CustomBcParams, baseline_fn: F) -> Result<Fit>
 where
     F: FnOnce(&[f64]) -> Result<Fit>,
 {
     validate_signal(y)?;
-    baseline_fn(y)
+    params.validate_regions()?;
+
+    let (x_fit, y_fit) = custom_bc_fit_points(y, &params)?;
+    let fit = baseline_fn(&y_fit)?;
+    if fit.baseline.len() != y_fit.len() {
+        return Err(BaselineError::LengthMismatch {
+            name: "baseline_fit",
+            expected: y_fit.len(),
+            actual: fit.baseline.len(),
+        });
+    }
+    let mut baseline = interpolate_custom_baseline(y.len(), &x_fit, &fit.baseline);
+
+    if let Some(lambda) = params.smooth_lambda {
+        let weights = vec![1.0; y.len()];
+        let mut smoothed = vec![0.0; y.len()];
+        let mut workspace = PentadiagonalWorkspace::new(y.len());
+        solve_second_order(&baseline, &weights, lambda, &mut smoothed, &mut workspace)?;
+        baseline = smoothed;
+    }
+
+    Ok(Fit {
+        baseline,
+        report: fit.report,
+    })
 }
 
 /// Estimates a baseline from the maximum of constrained and unconstrained polynomial fits.
@@ -290,6 +385,99 @@ fn validate_spectra(spectra: &[Vec<f64>]) -> Result<()> {
         validate_signal(spectrum)?;
     }
     Ok(())
+}
+
+fn custom_bc_fit_points(y: &[f64], params: &CustomBcParams) -> Result<(Vec<f64>, Vec<f64>)> {
+    let n = y.len();
+    let mut x_sections = Vec::new();
+    let mut y_sections = Vec::new();
+    let mut point_mask = vec![true; n];
+    let mut last_stop = 0usize;
+    let mut have_previous = false;
+    let mut include_first = true;
+    let mut include_last = true;
+
+    for (start, stop) in &params.regions {
+        let start = start.unwrap_or(0);
+        let stop = stop.unwrap_or(n);
+        if have_previous && start < last_stop {
+            return Err(BaselineError::InvalidParameter {
+                name: "regions",
+                reason: "regions must not overlap and must be sorted",
+            });
+        }
+        if start >= stop {
+            return Err(BaselineError::InvalidParameter {
+                name: "regions",
+                reason: "region start must be less than region stop",
+            });
+        }
+        if stop > n {
+            return Err(BaselineError::InvalidParameter {
+                name: "regions",
+                reason: "region stop is outside the input length",
+            });
+        }
+        last_stop = stop;
+        have_previous = true;
+
+        let mut sections = (stop - start) / params.sampling;
+        if sections == 0 {
+            sections = 1;
+        }
+        for section in 0..sections {
+            let left = start + section * (stop - start) / sections;
+            let right = start + (section + 1) * (stop - start) / sections;
+            if left == 0 && right == 1 {
+                include_first = false;
+            } else if right == n && left == n - 1 {
+                include_last = false;
+            }
+            x_sections.push(0.5 * (left + right - 1) as f64);
+            y_sections.push(y[left..right].iter().sum::<f64>() / (right - left) as f64);
+        }
+        point_mask[start..stop].fill(false);
+    }
+
+    if include_first {
+        point_mask[0] = true;
+    }
+    if include_last {
+        point_mask[n - 1] = true;
+    }
+    for (index, keep) in point_mask.iter().copied().enumerate() {
+        if keep {
+            x_sections.push(index as f64);
+            y_sections.push(y[index]);
+        }
+    }
+
+    let mut points: Vec<(f64, f64)> = x_sections.into_iter().zip(y_sections).collect();
+    points.sort_by(|(left_x, _), (right_x, _)| left_x.total_cmp(right_x));
+    let (x_fit, y_fit): (Vec<_>, Vec<_>) = points.into_iter().unzip();
+    Ok((x_fit, y_fit))
+}
+
+fn interpolate_custom_baseline(n: usize, x_fit: &[f64], baseline_fit: &[f64]) -> Vec<f64> {
+    let mut baseline = vec![0.0; n];
+    let mut segment = 0usize;
+    for (index, target) in baseline.iter_mut().enumerate() {
+        let x = index as f64;
+        while segment + 1 < x_fit.len() && x_fit[segment + 1] < x {
+            segment += 1;
+        }
+        if segment + 1 == x_fit.len() {
+            *target = baseline_fit[segment];
+        } else {
+            let x0 = x_fit[segment];
+            let x1 = x_fit[segment + 1];
+            let y0 = baseline_fit[segment];
+            let y1 = baseline_fit[segment + 1];
+            let t = if x1 == x0 { 0.0 } else { (x - x0) / (x1 - x0) };
+            *target = y0.mul_add(1.0 - t, y1 * t);
+        }
+    }
+    baseline
 }
 
 fn asls_weights(y: &[f64], params: AslsParams) -> Result<Vec<f64>> {

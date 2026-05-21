@@ -9,8 +9,8 @@ use baselines::morphology::{
     MorphologyParams, amormol, imor, jbcd, mor, mormol, mpls, mpspline, mwmv, rolling_ball, tophat,
 };
 use baselines::optimizers::{
-    AdaptiveMinmaxParams, LambdaSearchParams, adaptive_minmax, collab_pls, custom_bc,
-    optimize_extended_range,
+    AdaptiveMinmaxParams, CustomBcParams, LambdaSearchParams, adaptive_minmax, collab_pls,
+    custom_bc, custom_bc_with, optimize_extended_range,
 };
 use baselines::polynomial::{
     GoldindecParams, ImodPolyParams, LoessParams, ModPolyParams, PenalizedPolyParams, PolyParams,
@@ -101,7 +101,11 @@ fn exposed_1d_algorithms_return_finite_baselines() {
         rubberband(&y).unwrap(),
         optimize_extended_range(&y, search).unwrap(),
         adaptive_minmax(&y, AdaptiveMinmaxParams::default()).unwrap(),
-        custom_bc(&y, |values| asls(values, AslsParams::default())).unwrap(),
+        custom_bc(&y, CustomBcParams::default()).unwrap(),
+        custom_bc_with(&y, CustomBcParams::default(), |values| {
+            asls(values, AslsParams::default())
+        })
+        .unwrap(),
         interp_pts(
             &y,
             &[
