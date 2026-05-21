@@ -5,7 +5,8 @@ use baselines::morphology::{MorphologyParams, mor, mwmv, rolling_ball, snip, top
 use baselines::polynomial::{ImodPolyParams, ModPolyParams, PolyParams, imodpoly, modpoly, poly};
 use baselines::smoothing::{SmoothingParams, noise_median};
 use baselines::whittaker::{
-    AirPlsParams, ArPlsParams, AslsParams, WhittakerParams, airpls, arpls, asls,
+    AirPlsParams, ArPlsParams, AslsParams, PsalsaParams, WhittakerParams, airpls, arpls, asls,
+    psalsa,
 };
 use serde::Deserialize;
 
@@ -75,6 +76,21 @@ fn core_algorithms_track_pybaselines_fixtures() {
             .unwrap()
             .baseline,
         1e-3,
+    );
+    assert_close(
+        "psalsa",
+        &fixture,
+        psalsa(
+            &fixture.signal,
+            PsalsaParams {
+                whittaker,
+                p: 0.5,
+                k: None,
+            },
+        )
+        .unwrap()
+        .baseline,
+        1e-8,
     );
 
     let morphology = MorphologyParams { window_size: 17 };
