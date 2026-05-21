@@ -1,0 +1,15 @@
+cff-version: 1.2.0
+message: "If you use baselines, please cite this crate and the original algorithm papers."
+title: "baselines"
+type: software
+authors:
+  - name: "baselines contributors"
+license: "MIT OR Apache-2.0"
+repository-code: "https://github.com/Ameyanagi/baselines"
+references:
+  - type: software
+    title: "pybaselines"
+    authors:
+      - family-names: "Erb"
+        given-names: "Donald"
+    url: "https://pybaselines.readthedocs.io/"

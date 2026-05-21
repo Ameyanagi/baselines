@@ -1,0 +1,33 @@
+[package]
+name = "baselines"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.92"
+description = "Baseline correction algorithms for signals, spectra, and images"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/Ameyanagi/baselines"
+readme = "README.md"
+keywords = ["baseline", "spectroscopy", "signal-processing", "whittaker"]
+categories = ["algorithms", "science"]
+
+[dependencies]
+thiserror = "2.0"
+faer = { version = "0.24", default-features = false, features = ["std"], optional = true }
+rayon = { version = "1.11", optional = true }
+cubecl = { version = "0.10", default-features = false, features = ["std"], optional = true }
+
+[dev-dependencies]
+approx = "0.5"
+criterion = { version = "0.8", default-features = false }
+
+[features]
+default = ["std"]
+std = []
+faer = ["dep:faer"]
+rayon = ["dep:rayon"]
+gpu-wgpu = ["dep:cubecl", "cubecl/wgpu"]
+
+[package.metadata.precommit]
+fmt = "cargo fmt --all --check"
+clippy = "cargo clippy --workspace --all-targets --all-features -- -D warnings"
+test = "cargo test --workspace --all-features"
