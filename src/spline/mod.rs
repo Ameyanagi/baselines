@@ -4,13 +4,15 @@
 //! remaining compatibility APIs reuse the closest one-dimensional baseline
 //! engines until their dedicated spline forms are implemented.
 
+mod corner;
 mod weights;
+
+pub use corner::{CornerCuttingParams, corner_cutting};
 
 use crate::fit::{Fit, FitReport};
 use crate::linalg::pspline::PenalizedSpline;
 use crate::morphology::MorphologyParams;
 use crate::polynomial::fit_weighted_polynomial;
-use crate::smoothing::{SmoothingParams, peak_filling};
 use crate::whittaker::{
     AirPlsParams, ArPlsParams, AsPlsParams, AslsParams, BrPlsParams, DerPsalsaParams, DrPlsParams,
     IarPlsParams, IaslsParams, LsrPlsParams, PsalsaParams, arpls, asls,
@@ -33,8 +35,6 @@ const PSPLINE_MPLS_P: f64 = 0.0;
 pub type MixtureModelParams = ArPlsParams;
 /// Parameters for iterative reweighted spline quantile regression.
 pub type IrsqrParams = AslsParams;
-/// Parameters for corner-cutting baselines.
-pub type CornerCuttingParams = SmoothingParams;
 
 /// Fits a mixture-model spline baseline.
 ///
@@ -52,15 +52,6 @@ pub fn mixture_model(y: &[f64], params: MixtureModelParams) -> Result<Fit> {
 /// - `pybaselines.Baseline.irsqr` is used as a behavioral reference.
 pub fn irsqr(y: &[f64], params: IrsqrParams) -> Result<Fit> {
     asls(y, params)
-}
-
-/// Fits a corner-cutting baseline.
-///
-/// # References
-///
-/// - `pybaselines.Baseline.corner_cutting` is used as a behavioral reference.
-pub fn corner_cutting(y: &[f64], params: CornerCuttingParams) -> Result<Fit> {
-    peak_filling(y, params)
 }
 
 /// Fits a penalized-spline AsLS baseline.

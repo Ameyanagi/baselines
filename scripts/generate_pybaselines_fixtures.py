@@ -78,6 +78,7 @@ def call_table() -> dict[str, Callable[[Baseline, list[float]], Any]]:
         "mpspline": lambda b, y: b.mpspline(y, half_window=8),
         "snip": lambda b, y: b.snip(y, max_half_window=8),
         "noise_median": lambda b, y: b.noise_median(y, half_window=8),
+        "corner_cutting": lambda b, y: b.corner_cutting(y, max_iter=100),
         "rubberband": lambda b, y: b.rubberband(y),
     }
 
