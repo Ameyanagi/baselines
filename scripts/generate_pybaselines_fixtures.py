@@ -1,0 +1,87 @@
+#!/usr/bin/env python3
+"""Generate behavioral fixtures from pybaselines.
+
+The generated files are reference data for compatibility tests only. They do
+not contain pybaselines implementation code.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import math
+from pathlib import Path
+from typing import Any, Callable
+
+import pybaselines
+from pybaselines import Baseline
+
+
+def signal(n: int = 128) -> list[float]:
+    """Return a deterministic synthetic baseline-correction signal."""
+    values: list[float] = []
+    for i in range(n):
+        x = i / (n - 1)
+        baseline = 0.8 + 0.2 * x + 0.05 * math.sin(2 * math.pi * x)
+        peak_a = math.exp(-((x - 0.35) ** 2) / 0.0015)
+        peak_b = 0.5 * math.exp(-((x - 0.72) ** 2) / 0.003)
+        values.append(baseline + peak_a + peak_b)
+    return values
+
+
+def as_list(result: Any) -> list[float]:
+    """Extract the baseline array from a pybaselines result."""
+    baseline = result[0] if isinstance(result, tuple) else result
+    return [float(value) for value in baseline]
+
+
+def call_table() -> dict[str, Callable[[Baseline, list[float]], Any]]:
+    """Return fixture calls with conservative parameters."""
+    return {
+        "poly": lambda b, y: b.poly(y, poly_order=2),
+        "modpoly": lambda b, y: b.modpoly(y, poly_order=2),
+        "imodpoly": lambda b, y: b.imodpoly(y, poly_order=2),
+        "asls": lambda b, y: b.asls(y, lam=1e5, p=0.01),
+        "airpls": lambda b, y: b.airpls(y, lam=1e5),
+        "arpls": lambda b, y: b.arpls(y, lam=1e5),
+        "rolling_ball": lambda b, y: b.rolling_ball(y, half_window=8),
+        "mwmv": lambda b, y: b.mwmv(y, half_window=8),
+        "tophat": lambda b, y: b.tophat(y, half_window=8),
+        "mor": lambda b, y: b.mor(y, half_window=8),
+        "snip": lambda b, y: b.snip(y, max_half_window=8),
+        "noise_median": lambda b, y: b.noise_median(y, half_window=8),
+        "rubberband": lambda b, y: b.rubberband(y),
+    }
+
+
+def main() -> None:
+    """Generate JSON fixtures."""
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=Path("tests/fixtures/pybaselines_1d_reference.json"),
+    )
+    args = parser.parse_args()
+
+    y = signal()
+    baseline = Baseline()
+    payload: dict[str, Any] = {
+        "pybaselines_version": pybaselines.__version__,
+        "notice": (
+            "Generated from pybaselines for behavioral comparison. "
+            "pybaselines is BSD-3-Clause licensed and should be cited."
+        ),
+        "signal": y,
+        "baselines": {},
+    }
+
+    for name, call in call_table().items():
+        payload["baselines"][name] = as_list(call(baseline, y))
+
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    args.output.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+
+if __name__ == "__main__":
+    main()
