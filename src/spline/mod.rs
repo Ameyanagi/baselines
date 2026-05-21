@@ -12,14 +12,13 @@ use crate::morphology::{MorphologyParams, mpls};
 use crate::smoothing::{SmoothingParams, peak_filling};
 use crate::whittaker::{
     AirPlsParams, ArPlsParams, AsPlsParams, AslsParams, BrPlsParams, DerPsalsaParams, DrPlsParams,
-    IarPlsParams, IaslsParams, LsrPlsParams, PsalsaParams, arpls, asls, aspls, derpsalsa, drpls,
-    iasls,
+    IarPlsParams, IaslsParams, LsrPlsParams, PsalsaParams, arpls, asls, aspls, drpls, iasls,
 };
 use crate::workspace::validate_signal;
 use crate::{BaselineError, Result};
 use weights::{
-    airpls_weights, arpls_weights, brpls_weights, iarpls_weights, lsrpls_weights, psalsa_weights,
-    standard_deviation,
+    airpls_weights, arpls_weights, brpls_weights, derivative_peak_screening_weights,
+    derpsalsa_weights, iarpls_weights, lsrpls_weights, psalsa_weights, standard_deviation,
 };
 
 const PSPLINE_NUM_KNOTS: usize = 100;
@@ -321,9 +320,50 @@ pub fn pspline_psalsa(y: &[f64], params: PsalsaParams) -> Result<Fit> {
 ///
 /// # References
 ///
+/// - V. Korepanov, "Asymmetric least-squares baseline algorithm with peak
+///   screening for automatic processing of the Raman spectra", *Journal of
+///   Raman Spectroscopy*, 2020.
+/// - P. H. C. Eilers, B. D. Marx, and M. Durban, "Twenty years of P-splines",
+///   *SORT*, 2015.
 /// - `pybaselines.Baseline.pspline_derpsalsa` is used as a behavioral reference.
 pub fn pspline_derpsalsa(y: &[f64], params: DerPsalsaParams) -> Result<Fit> {
-    derpsalsa(y, params)
+    params.validate()?;
+    validate_spline_signal("pspline_derpsalsa", y)?;
+    let k = params.k.unwrap_or_else(|| standard_deviation(y) / 10.0);
+    if !k.is_finite() || k <= 0.0 {
+        return Err(BaselineError::InvalidParameter {
+            name: "k",
+            reason: "computed std(y) / 10 must be finite and positive",
+        });
+    }
+
+    let partial_weights = derivative_peak_screening_weights(
+        y,
+        params.smooth_half_window.unwrap_or(y.len() / 200),
+        params.num_smooths,
+    );
+    let mut weights = vec![1.0; y.len()];
+    let pspline = default_pspline(y.len());
+    let mut tolerance = f64::INFINITY;
+    let mut baseline = Vec::new();
+
+    for iter in 0..=params.whittaker.max_iter {
+        baseline = pspline.solve(y, &weights, params.whittaker.lambda)?;
+        let new_weights = derpsalsa_weights(y, &baseline, params.p, k, &partial_weights);
+        tolerance = relative_change(&weights, &new_weights);
+        if tolerance < params.whittaker.tol {
+            return Ok(Fit {
+                baseline,
+                report: FitReport::new(iter + 1, true, tolerance),
+            });
+        }
+        weights = new_weights;
+    }
+
+    Ok(Fit {
+        baseline,
+        report: FitReport::new(params.whittaker.max_iter + 1, false, tolerance),
+    })
 }
 
 /// Fits a penalized-spline MPLS baseline.
