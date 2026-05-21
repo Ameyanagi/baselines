@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
 
+use baselines::classification::rubberband;
 use baselines::morphology::{MorphologyParams, mor, mwmv, rolling_ball, snip, tophat};
-use baselines::polynomial::{PolyParams, poly};
+use baselines::polynomial::{ImodPolyParams, ModPolyParams, PolyParams, imodpoly, modpoly, poly};
 use baselines::smoothing::{SmoothingParams, noise_median};
 use baselines::whittaker::{
     AirPlsParams, ArPlsParams, AslsParams, WhittakerParams, airpls, arpls, asls,
@@ -28,6 +29,22 @@ fn core_algorithms_track_pybaselines_fixtures() {
             .unwrap()
             .baseline,
         1e-10,
+    );
+    assert_close(
+        "modpoly",
+        &fixture,
+        modpoly(&fixture.signal, ModPolyParams::default())
+            .unwrap()
+            .baseline,
+        6e-2,
+    );
+    assert_close(
+        "imodpoly",
+        &fixture,
+        imodpoly(&fixture.signal, ImodPolyParams::default())
+            .unwrap()
+            .baseline,
+        4e-2,
     );
 
     let whittaker = WhittakerParams {
@@ -109,6 +126,12 @@ fn core_algorithms_track_pybaselines_fixtures() {
         .unwrap()
         .baseline,
         1.3e-1,
+    );
+    assert_close(
+        "rubberband",
+        &fixture,
+        rubberband(&fixture.signal).unwrap().baseline,
+        1e-12,
     );
 }
 

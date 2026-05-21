@@ -115,7 +115,7 @@ fn lower_hull(y: &[f64]) -> Vec<(usize, f64)> {
             let a = hull[len - 3];
             let b = hull[len - 2];
             let c = hull[len - 1];
-            if cross(a, b, c) <= 0.0 {
+            if cross(a, b, c) > 0.0 {
                 break;
             }
             hull.remove(len - 2);
