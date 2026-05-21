@@ -121,6 +121,57 @@ impl StdDistributionParams {
     }
 }
 
+/// Parameters for FastChrom-style baseline classification.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FastChromParams {
+    /// Half-window for rolling standard-deviation calculations.
+    pub half_window: usize,
+    /// Optional rolling standard-deviation threshold. Uses the 15th percentile when `None`.
+    pub threshold: Option<f64>,
+    /// Minimum width for adding an extra baseline point during correction.
+    pub min_fwhm: Option<usize>,
+    /// Half-window for averaging interpolation anchor points.
+    pub interp_half_window: usize,
+    /// Half-window for smoothing the interpolated baseline.
+    pub smooth_half_window: usize,
+    /// Maximum number of interpolation correction passes.
+    pub max_iter: usize,
+    /// Minimum consecutive baseline-region length.
+    pub min_length: usize,
+}
+
+impl Default for FastChromParams {
+    fn default() -> Self {
+        Self {
+            half_window: 8,
+            threshold: None,
+            min_fwhm: None,
+            interp_half_window: 5,
+            smooth_half_window: 8,
+            max_iter: 100,
+            min_length: 2,
+        }
+    }
+}
+
+impl FastChromParams {
+    fn validate(&self) -> Result<()> {
+        if self.half_window == 0 {
+            return Err(BaselineError::InvalidParameter {
+                name: "half_window",
+                reason: "must be greater than zero",
+            });
+        }
+        if self.threshold.is_some_and(|value| !value.is_finite()) {
+            return Err(BaselineError::InvalidParameter {
+                name: "threshold",
+                reason: "must be finite when set",
+            });
+        }
+        Ok(())
+    }
+}
+
 /// Estimates a baseline using Dietrich-style peak classification.
 ///
 /// # References
@@ -198,9 +249,65 @@ pub fn std_distribution(y: &[f64], params: StdDistributionParams) -> Result<Fit>
 ///
 /// # References
 ///
+/// - L. Johnsen et al., "An automated method for baseline correction, peak
+///   finding and peak grouping in chromatographic data", *Analyst*, 2013.
 /// - `pybaselines.Baseline.fastchrom` is used as a behavioral reference.
-pub fn fastchrom(y: &[f64], params: ClassificationParams) -> Result<Fit> {
-    envelope_from_smoothed(y, params)
+pub fn fastchrom(y: &[f64], params: FastChromParams) -> Result<Fit> {
+    validate_signal(y)?;
+    params.validate()?;
+
+    let rolling_std = padded_rolling_std(y, params.half_window, 1);
+    let threshold = params
+        .threshold
+        .unwrap_or_else(|| percentile(&rolling_std, 15.0));
+    let mut mask: Vec<bool> = rolling_std.iter().map(|value| *value < threshold).collect();
+    refine_mask(&mut mask, params.min_length);
+
+    let min_fwhm = params.min_fwhm.unwrap_or(2 * params.half_window);
+    let mut rough_baseline = averaged_interp(y, &mask, params.interp_half_window);
+    let mask_sum = mask.iter().filter(|value| **value).count();
+    if mask_sum != 0 && mask_sum != mask.len() {
+        let initial_peak_segments = peak_segments(&mask);
+        for _ in 0..params.max_iter {
+            let mut modified_baseline = false;
+            for (start, end) in initial_peak_segments.iter().copied() {
+                let section_mask: Vec<bool> = rough_baseline[start..=end]
+                    .iter()
+                    .zip(&y[start..=end])
+                    .map(|(baseline, observed)| baseline < observed)
+                    .collect();
+                let has_wide_above_data_segment = peak_segments(&section_mask)
+                    .iter()
+                    .any(|(seg_start, seg_end)| seg_end - seg_start > min_fwhm);
+                if has_wide_above_data_segment {
+                    modified_baseline = true;
+                    let local_min = y[start..=end]
+                        .iter()
+                        .zip(&rough_baseline[start..=end])
+                        .enumerate()
+                        .min_by(
+                            |(_, (left_y, left_baseline)), (_, (right_y, right_baseline))| {
+                                (*left_y - *left_baseline).total_cmp(&(*right_y - *right_baseline))
+                            },
+                        )
+                        .map(|(index, _)| index)
+                        .unwrap_or(0);
+                    mask[start + local_min] = true;
+                }
+            }
+            if modified_baseline {
+                rough_baseline = averaged_interp(y, &mask, params.interp_half_window);
+            } else {
+                break;
+            }
+        }
+    }
+
+    let baseline = moving_average_extrapolated(&rough_baseline, params.smooth_half_window);
+    Ok(Fit {
+        baseline,
+        report: FitReport::new(1, true, 0.0),
+    })
 }
 
 /// Estimates a baseline using continuous-wavelet-transform classification.
@@ -313,6 +420,23 @@ fn median(values: &[f64]) -> f64 {
         0.5 * (sorted[mid - 1] + sorted[mid])
     } else {
         sorted[mid]
+    }
+}
+
+fn percentile(values: &[f64], percentile: f64) -> f64 {
+    if values.is_empty() {
+        return f64::NAN;
+    }
+    let mut sorted = values.to_vec();
+    sorted.sort_by(f64::total_cmp);
+    let position = percentile / 100.0 * (sorted.len() - 1) as f64;
+    let lower = position.floor() as usize;
+    let upper = position.ceil() as usize;
+    if lower == upper {
+        sorted[lower]
+    } else {
+        let fraction = position - lower as f64;
+        sorted[lower].mul_add(1.0 - fraction, sorted[upper] * fraction)
     }
 }
 

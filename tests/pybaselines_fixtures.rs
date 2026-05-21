@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
 
 use baselines::classification::{
-    GolotvinParams, StdDistributionParams, golotvin, rubberband, std_distribution,
+    FastChromParams, GolotvinParams, StdDistributionParams, fastchrom, golotvin, rubberband,
+    std_distribution,
 };
 use baselines::morphology::{
     MorphologyParams, imor, jbcd, mor, mormol, mpls, mpspline, mwmv, rolling_ball, snip, tophat,
@@ -483,6 +484,14 @@ fn core_algorithms_track_pybaselines_fixtures() {
         "std_distribution",
         &fixture,
         std_distribution(&fixture.signal, StdDistributionParams::default())
+            .unwrap()
+            .baseline,
+        1e-12,
+    );
+    assert_close(
+        "fastchrom",
+        &fixture,
+        fastchrom(&fixture.signal, FastChromParams::default())
             .unwrap()
             .baseline,
         1e-12,

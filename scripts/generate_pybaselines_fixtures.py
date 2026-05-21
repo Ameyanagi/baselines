@@ -85,6 +85,7 @@ def call_table() -> dict[str, Callable[[Baseline, list[float]], Any]]:
         "std_distribution": lambda b, y: b.std_distribution(
             y, half_window=8, smooth_half_window=8
         ),
+        "fastchrom": lambda b, y: b.fastchrom(y, half_window=8, smooth_half_window=8),
         "rubberband": lambda b, y: b.rubberband(y),
     }
 
