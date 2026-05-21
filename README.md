@@ -21,10 +21,11 @@ current one-dimensional `pybaselines.Baseline` algorithm families: polynomial,
 Whittaker, morphology, penalized spline, smoothing, classification, optimizer,
 and miscellaneous methods.
 
-Some algorithms currently share conservative Rust-native engines while golden
-fixtures are added. GPU support is feature-gated behind `gpu-wgpu`; the
-experimental WGPU path provides batched `f32` morphology kernels for moving
-minimum, moving maximum, opening, and the top-hat baseline primitive.
+Golden fixtures generated from a pinned `pybaselines` release check the
+one-dimensional algorithms with algorithm-specific tolerances. GPU support is
+feature-gated behind `gpu-wgpu`; the experimental WGPU path provides batched
+`f32` morphology kernels for moving minimum, moving maximum, opening, and the
+top-hat baseline primitive.
 
 ## Attribution
 

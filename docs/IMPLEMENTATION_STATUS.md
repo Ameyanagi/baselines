@@ -33,14 +33,10 @@ is tightened with generated pybaselines fixtures.
 - Optimizer/meta methods: none currently tracked
 - Misc: none currently tracked
 
-## Next Compatibility Work
+## Future Hardening Work
 
-- Install a pinned pybaselines version in an isolated Python environment and run
-  `scripts/generate_pybaselines_fixtures.py`.
-- Add Rust golden tests that compare dedicated implementations against the
-  generated fixtures with algorithm-specific tolerances.
-- Replace compatibility wrappers with dedicated implementations family by
-  family, preserving the public API and passing fixture tests.
+- Broaden the fixture matrix with more signal shapes and parameter sets.
+- Optimize dense first-pass paths such as BEADS with banded or sparse solvers.
 - Keep CubeCL WGPU behind `gpu-wgpu`; current real-device-tested kernels cover
   batched `f32` moving minimum, moving maximum, opening, and the top-hat
   baseline primitive. Further kernels should keep the unsafe launch boundary
