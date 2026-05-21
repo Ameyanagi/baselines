@@ -46,6 +46,22 @@ pub(super) fn arpls_weights(y: &[f64], baseline: &[f64]) -> Option<Vec<f64>> {
     Some(weights)
 }
 
+pub(super) fn aspls_weights(
+    y: &[f64],
+    baseline: &[f64],
+    asymmetric_coef: f64,
+) -> Option<(Vec<f64>, Vec<f64>)> {
+    let residuals = residuals(y, baseline);
+    let (_mean, std) = negative_residual_stats(&residuals)?;
+    let scale = asymmetric_coef / std;
+    let weights = residuals
+        .iter()
+        .map(|residual| logistic(-scale * (*residual - std)))
+        .collect();
+
+    Some((weights, residuals))
+}
+
 pub(super) fn brpls_weights(y: &[f64], baseline: &[f64], beta: f64) -> Option<Vec<f64>> {
     let residuals = residuals(y, baseline);
     let positive: Vec<f64> = residuals

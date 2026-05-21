@@ -1,12 +1,13 @@
 //! Dense P-spline helper for one-dimensional baseline methods.
 
-use crate::Result;
 use crate::linalg::dense::solve_dense;
+use crate::{BaselineError, Result};
 
 /// Dense penalized B-spline basis and solver.
 #[derive(Debug, Clone)]
 pub(crate) struct PenalizedSpline {
     basis: Vec<Vec<f64>>,
+    basis_midpoints: Vec<f64>,
     penalty: Vec<Vec<f64>>,
 }
 
@@ -16,17 +17,33 @@ impl PenalizedSpline {
         let x = scaled_domain(n);
         let knots = spline_knots(&x, num_knots, degree);
         let n_bases = knots.len() - degree - 1;
+        let basis_midpoints = basis_midpoints(&knots, degree);
         let basis = x
             .iter()
             .map(|value| basis_row(*value, &knots, degree, n_bases))
             .collect();
         let penalty = difference_penalty(n_bases, diff_order);
-        Self { basis, penalty }
+        Self {
+            basis,
+            basis_midpoints,
+            penalty,
+        }
     }
 
     /// Fits a weighted penalized spline and returns the evaluated baseline.
     pub(crate) fn solve(&self, y: &[f64], weights: &[f64], lambda: f64) -> Result<Vec<f64>> {
-        self.solve_with_first_difference_penalty(y, weights, lambda, 0.0)
+        self.solve_with_options(y, weights, lambda, None, 0.0)
+    }
+
+    /// Fits a weighted penalized spline with row-scaled smoothness penalties.
+    pub(crate) fn solve_with_row_scaled_penalty(
+        &self,
+        y: &[f64],
+        weights: &[f64],
+        lambda: f64,
+        row_scales: &[f64],
+    ) -> Result<Vec<f64>> {
+        self.solve_with_options(y, weights, lambda, Some(row_scales), 0.0)
     }
 
     /// Fits a weighted penalized spline with an added data-domain first-difference penalty.
@@ -37,7 +54,41 @@ impl PenalizedSpline {
         lambda: f64,
         first_difference_lambda: f64,
     ) -> Result<Vec<f64>> {
+        self.solve_with_options(y, weights, lambda, None, first_difference_lambda)
+    }
+
+    /// Interpolates sample-domain values onto the spline basis midpoints.
+    pub(crate) fn interpolate_to_basis(&self, values: &[f64]) -> Vec<f64> {
+        match values.len() {
+            0 => vec![0.0; self.basis_midpoints.len()],
+            1 => vec![values[0]; self.basis_midpoints.len()],
+            len => self
+                .basis_midpoints
+                .iter()
+                .map(|point| interpolate_sample(values, *point, len))
+                .collect(),
+        }
+    }
+
+    fn solve_with_options(
+        &self,
+        y: &[f64],
+        weights: &[f64],
+        lambda: f64,
+        row_scales: Option<&[f64]>,
+        first_difference_lambda: f64,
+    ) -> Result<Vec<f64>> {
         let n_bases = self.penalty.len();
+        if let Some(scales) = row_scales
+            && scales.len() != n_bases
+        {
+            return Err(BaselineError::LengthMismatch {
+                name: "row_scales",
+                expected: n_bases,
+                actual: scales.len(),
+            });
+        }
+
         let mut normal = vec![vec![0.0; n_bases]; n_bases];
         let mut rhs = vec![0.0; n_bases];
 
@@ -50,9 +101,10 @@ impl PenalizedSpline {
             }
         }
 
-        for (normal_row, penalty_row) in normal.iter_mut().zip(&self.penalty) {
+        for (row, (normal_row, penalty_row)) in normal.iter_mut().zip(&self.penalty).enumerate() {
+            let scale = row_scales.map_or(1.0, |scales| scales[row]);
             for (normal_value, penalty_value) in normal_row.iter_mut().zip(penalty_row) {
-                *normal_value += lambda * penalty_value;
+                *normal_value += lambda * scale * penalty_value;
             }
         }
 
@@ -107,6 +159,37 @@ fn spline_knots(x: &[f64], num_knots: usize, degree: usize) -> Vec<f64> {
         knots.push(x_max + index as f64 * dx);
     }
     knots
+}
+
+fn basis_midpoints(knots: &[f64], degree: usize) -> Vec<f64> {
+    if degree % 2 == 1 {
+        let start = 1 + degree / 2;
+        let end = knots.len() - (degree - degree / 2);
+        knots[start..end].to_vec()
+    } else {
+        let midpoints: Vec<f64> = knots
+            .windows(2)
+            .map(|pair| 0.5 * (pair[0] + pair[1]))
+            .collect();
+        let start = degree / 2;
+        let end = midpoints.len() - degree / 2;
+        midpoints[start..end].to_vec()
+    }
+}
+
+fn interpolate_sample(values: &[f64], point: f64, len: usize) -> f64 {
+    if point <= -1.0 {
+        return values[0];
+    }
+    if point >= 1.0 {
+        return values[len - 1];
+    }
+
+    let position = 0.5 * (point + 1.0) * (len - 1) as f64;
+    let left = position.floor() as usize;
+    let right = (left + 1).min(len - 1);
+    let fraction = position - left as f64;
+    values[left] * (1.0 - fraction) + values[right] * fraction
 }
 
 fn basis_row(x: f64, knots: &[f64], degree: usize, n_bases: usize) -> Vec<f64> {

@@ -13,12 +13,12 @@ use crate::polynomial::fit_weighted_polynomial;
 use crate::smoothing::{SmoothingParams, peak_filling};
 use crate::whittaker::{
     AirPlsParams, ArPlsParams, AsPlsParams, AslsParams, BrPlsParams, DerPsalsaParams, DrPlsParams,
-    IarPlsParams, IaslsParams, LsrPlsParams, PsalsaParams, arpls, asls, aspls, drpls,
+    IarPlsParams, IaslsParams, LsrPlsParams, PsalsaParams, arpls, asls, drpls,
 };
 use crate::workspace::validate_signal;
 use crate::{BaselineError, Result};
 use weights::{
-    airpls_weights, arpls_weights, brpls_weights, derivative_peak_screening_weights,
+    airpls_weights, arpls_weights, aspls_weights, brpls_weights, derivative_peak_screening_weights,
     derpsalsa_weights, iarpls_weights, lsrpls_weights, mpls_anchor_weights, psalsa_weights,
     standard_deviation,
 };
@@ -329,9 +329,61 @@ pub fn pspline_iarpls(y: &[f64], params: IarPlsParams) -> Result<Fit> {
 ///
 /// # References
 ///
+/// - F. Zhang et al., "Baseline correction for infrared spectra using
+///   adaptive smoothness parameter penalized least squares method",
+///   *Spectroscopy Letters*, 2020.
+/// - P. H. C. Eilers, B. D. Marx, and M. Durban, "Twenty years of P-splines",
+///   *SORT*, 2015.
 /// - `pybaselines.Baseline.pspline_aspls` is used as a behavioral reference.
 pub fn pspline_aspls(y: &[f64], params: AsPlsParams) -> Result<Fit> {
-    aspls(y, params)
+    params.validate()?;
+    validate_spline_signal("pspline_aspls", y)?;
+
+    let pspline = default_pspline(y.len());
+    let mut weights = vec![1.0; y.len()];
+    let mut alpha = vec![1.0; y.len()];
+    let mut tolerance = f64::INFINITY;
+    let mut baseline = Vec::new();
+
+    for iter in 0..=params.whittaker.max_iter {
+        let alpha_basis = pspline.interpolate_to_basis(&alpha);
+        baseline = pspline.solve_with_row_scaled_penalty(
+            y,
+            &weights,
+            params.whittaker.lambda,
+            &alpha_basis,
+        )?;
+
+        let Some((new_weights, residuals)) = aspls_weights(y, &baseline, params.asymmetric_coef)
+        else {
+            return Ok(Fit {
+                baseline,
+                report: FitReport::new(iter + 1, false, tolerance),
+            });
+        };
+        tolerance = relative_change(&weights, &new_weights);
+        if tolerance < params.whittaker.tol {
+            return Ok(Fit {
+                baseline,
+                report: FitReport::new(iter + 1, true, tolerance),
+            });
+        }
+
+        weights = new_weights;
+        let max_abs = residuals
+            .iter()
+            .map(|residual| residual.abs())
+            .fold(0.0, f64::max)
+            .max(f64::MIN_POSITIVE);
+        for (target, residual) in alpha.iter_mut().zip(&residuals) {
+            *target = residual.abs() / max_abs;
+        }
+    }
+
+    Ok(Fit {
+        baseline,
+        report: FitReport::new(params.whittaker.max_iter + 1, false, tolerance),
+    })
 }
 
 /// Fits a penalized-spline psalsa baseline.
