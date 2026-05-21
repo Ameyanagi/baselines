@@ -10,7 +10,8 @@ use baselines::polynomial::{
 };
 use baselines::smoothing::{SmoothingParams, noise_median};
 use baselines::spline::{
-    pspline_airpls, pspline_arpls, pspline_asls, pspline_iarpls, pspline_lsrpls, pspline_psalsa,
+    pspline_airpls, pspline_arpls, pspline_asls, pspline_brpls, pspline_iarpls, pspline_lsrpls,
+    pspline_psalsa,
 };
 use baselines::whittaker::{
     AirPlsParams, ArPlsParams, AsPlsParams, AslsParams, BrPlsParams, DerPsalsaParams, DrPlsParams,
@@ -273,6 +274,21 @@ fn core_algorithms_track_pybaselines_fixtures() {
         pspline_lsrpls(&fixture.signal, LsrPlsParams { whittaker })
             .unwrap()
             .baseline,
+        1e-8,
+    );
+    assert_close(
+        "pspline_brpls",
+        &fixture,
+        pspline_brpls(
+            &fixture.signal,
+            BrPlsParams {
+                whittaker,
+                max_iter_2: 50,
+                tol_2: 1e-3,
+            },
+        )
+        .unwrap()
+        .baseline,
         1e-8,
     );
 

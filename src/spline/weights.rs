@@ -46,6 +46,51 @@ pub(super) fn arpls_weights(y: &[f64], baseline: &[f64]) -> Option<Vec<f64>> {
     Some(weights)
 }
 
+pub(super) fn brpls_weights(y: &[f64], baseline: &[f64], beta: f64) -> Option<Vec<f64>> {
+    let residuals = residuals(y, baseline);
+    let positive: Vec<f64> = residuals
+        .iter()
+        .copied()
+        .filter(|residual| *residual > 0.0)
+        .collect();
+    let negative: Vec<f64> = residuals
+        .iter()
+        .copied()
+        .filter(|residual| *residual < 0.0)
+        .collect();
+    if positive.len() < 2 || negative.len() < 2 {
+        return None;
+    }
+
+    let mean = positive.iter().sum::<f64>() / positive.len() as f64;
+    let sigma = (negative
+        .iter()
+        .map(|residual| residual * residual)
+        .sum::<f64>()
+        / negative.len() as f64)
+        .sqrt()
+        .max(f64::MIN_POSITIVE);
+    let denominator = (1.0 - beta).max(f64::MIN_POSITIVE);
+    let multiplier = ((beta * (0.5 * std::f64::consts::PI).sqrt()) / denominator) * (sigma / mean);
+    let max_inner = f64::MAX.ln().sqrt();
+    let sqrt_two = std::f64::consts::SQRT_2;
+
+    let weights = residuals
+        .into_iter()
+        .map(|residual| {
+            let inner = residual / (sigma * sqrt_two) - sigma / (mean * sqrt_two);
+            let clipped_inner = inner.clamp(-max_inner, max_inner);
+            let mut partial = (clipped_inner * clipped_inner).exp();
+            if multiplier >= 0.5 {
+                partial = partial.min(f64::MAX / (2.0 * multiplier));
+            }
+            1.0 / (1.0 + multiplier * (1.0 + libm::erf(inner)) * partial)
+        })
+        .collect();
+
+    Some(weights)
+}
+
 pub(super) fn iarpls_weights(y: &[f64], baseline: &[f64], iteration: usize) -> Option<Vec<f64>> {
     let residuals = residuals(y, baseline);
     let (_mean, std) = negative_residual_stats(&residuals)?;

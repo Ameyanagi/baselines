@@ -16,7 +16,7 @@ is tightened with generated pybaselines fixtures.
 - Smoothing core: `noise_median`, `snip`, `swima`, `ipsa`, `ria`, `peak_filling`
 - Classification core: `rubberband`
 - Spline core: `pspline_asls`, `pspline_airpls`, `pspline_arpls`,
-  `pspline_iarpls`, `pspline_psalsa`, `pspline_lsrpls`
+  `pspline_iarpls`, `pspline_psalsa`, `pspline_lsrpls`, `pspline_brpls`
 - Misc core: `interp_pts`
 
 ## Compatibility Entry Points Needing Fixture Tuning

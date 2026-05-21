@@ -12,13 +12,13 @@ use crate::morphology::{MorphologyParams, mpls};
 use crate::smoothing::{SmoothingParams, peak_filling};
 use crate::whittaker::{
     AirPlsParams, ArPlsParams, AsPlsParams, AslsParams, BrPlsParams, DerPsalsaParams, DrPlsParams,
-    IarPlsParams, IaslsParams, LsrPlsParams, PsalsaParams, arpls, asls, aspls, brpls, derpsalsa,
-    drpls, iasls,
+    IarPlsParams, IaslsParams, LsrPlsParams, PsalsaParams, arpls, asls, aspls, derpsalsa, drpls,
+    iasls,
 };
 use crate::workspace::validate_signal;
 use crate::{BaselineError, Result};
 use weights::{
-    airpls_weights, arpls_weights, iarpls_weights, lsrpls_weights, psalsa_weights,
+    airpls_weights, arpls_weights, brpls_weights, iarpls_weights, lsrpls_weights, psalsa_weights,
     standard_deviation,
 };
 
@@ -339,9 +339,65 @@ pub fn pspline_mpls(y: &[f64], params: MorphologyParams) -> Result<Fit> {
 ///
 /// # References
 ///
+/// - Q. Wang et al., "Spectral baseline estimation using penalized least
+///   squares with weights derived from the Bayesian method", *Nuclear Science
+///   and Techniques*, 2022.
+/// - P. H. C. Eilers, B. D. Marx, and M. Durban, "Twenty years of P-splines",
+///   *SORT*, 2015.
 /// - `pybaselines.Baseline.pspline_brpls` is used as a behavioral reference.
 pub fn pspline_brpls(y: &[f64], params: BrPlsParams) -> Result<Fit> {
-    brpls(y, params)
+    params.validate()?;
+    validate_spline_signal("pspline_brpls", y)?;
+
+    let pspline = default_pspline(y.len());
+    let mut weights = vec![1.0; y.len()];
+    let mut baseline = y.to_vec();
+    let mut latest_weights = weights.clone();
+    let mut beta = 0.5;
+    let mut tolerance = f64::INFINITY;
+    let mut outer_tolerance = f64::INFINITY;
+    let mut iterations = 0usize;
+
+    for outer in 0..=params.max_iter_2 {
+        for inner in 0..=params.whittaker.max_iter {
+            let new_baseline = pspline.solve(y, &weights, params.whittaker.lambda)?;
+            iterations += 1;
+            let Some(new_weights) = brpls_weights(y, &new_baseline, beta) else {
+                return Ok(Fit {
+                    baseline,
+                    report: FitReport::new(iterations, false, tolerance),
+                });
+            };
+
+            tolerance = relative_change(&baseline, &new_baseline);
+            latest_weights = new_weights;
+            if tolerance < params.whittaker.tol {
+                if outer == 0 && inner == 0 {
+                    baseline = new_baseline;
+                }
+                break;
+            }
+
+            weights.clone_from(&latest_weights);
+            baseline = new_baseline;
+        }
+
+        weights.clone_from(&latest_weights);
+        let weight_mean = weights.iter().sum::<f64>() / weights.len() as f64;
+        outer_tolerance = (beta + weight_mean - 1.0).abs();
+        if outer_tolerance < params.tol_2 {
+            return Ok(Fit {
+                baseline,
+                report: FitReport::new(iterations, true, outer_tolerance),
+            });
+        }
+        beta = 1.0 - weight_mean;
+    }
+
+    Ok(Fit {
+        baseline,
+        report: FitReport::new(iterations, false, outer_tolerance.max(tolerance)),
+    })
 }
 
 /// Fits a penalized-spline lsrPLS baseline.
