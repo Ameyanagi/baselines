@@ -5,6 +5,7 @@
 //! later refinements where individual classifiers differ.
 
 use crate::fit::{Fit, FitReport};
+use crate::polynomial::{evaluate_polynomial_coefficients, fit_weighted_polynomial_coefficients};
 use crate::smoothing::{SmoothingParams, noise_median};
 use crate::workspace::validate_signal;
 use crate::{BaselineError, Result};
@@ -172,13 +173,122 @@ impl FastChromParams {
     }
 }
 
+/// Parameters for Dietrich-style baseline classification.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DietrichParams {
+    /// Half-window for moving-average smoothing before derivative thresholding.
+    pub smooth_half_window: usize,
+    /// Number of standard deviations included in derivative-power thresholding.
+    pub num_std: f64,
+    /// Half-window for averaging interpolation anchor points.
+    pub interp_half_window: usize,
+    /// Polynomial order for iterative fitting; ignored when `max_iter` is zero.
+    pub poly_order: usize,
+    /// Maximum polynomial refinement iterations. Set to zero to return linear interpolation.
+    pub max_iter: usize,
+    /// Relative coefficient-change tolerance for polynomial refinement.
+    pub tol: f64,
+    /// Minimum consecutive baseline-region length.
+    pub min_length: usize,
+}
+
+impl Default for DietrichParams {
+    fn default() -> Self {
+        Self {
+            smooth_half_window: 1,
+            num_std: 3.0,
+            interp_half_window: 5,
+            poly_order: 5,
+            max_iter: 50,
+            tol: 1.0e-3,
+            min_length: 2,
+        }
+    }
+}
+
+impl DietrichParams {
+    fn validate(&self, len: usize) -> Result<()> {
+        if !self.num_std.is_finite() || self.num_std <= 0.0 {
+            return Err(BaselineError::InvalidParameter {
+                name: "num_std",
+                reason: "must be finite and positive",
+            });
+        }
+        if self.max_iter > 0 && self.poly_order + 1 > len {
+            return Err(BaselineError::TooShort {
+                algorithm: "dietrich",
+                len,
+                min: self.poly_order + 1,
+            });
+        }
+        if !self.tol.is_finite() || self.tol <= 0.0 {
+            return Err(BaselineError::InvalidParameter {
+                name: "tol",
+                reason: "must be finite and positive",
+            });
+        }
+        Ok(())
+    }
+}
+
 /// Estimates a baseline using Dietrich-style peak classification.
 ///
 /// # References
 ///
+/// - W. Dietrich et al., "Fast and Precise Automatic Baseline Correction of
+///   One- and Two-Dimensional NMR Spectra", *Journal of Magnetic Resonance*,
+///   1991.
 /// - `pybaselines.Baseline.dietrich` is used as a behavioral reference.
-pub fn dietrich(y: &[f64], params: ClassificationParams) -> Result<Fit> {
-    envelope_from_smoothed(y, params)
+pub fn dietrich(y: &[f64], params: DietrichParams) -> Result<Fit> {
+    validate_signal(y)?;
+    params.validate(y.len())?;
+
+    let smooth_y = moving_average_extrapolated(y, params.smooth_half_window);
+    let power: Vec<f64> = gradient(&smooth_y)
+        .into_iter()
+        .map(|value| value * value)
+        .collect();
+    let mut mask = iter_threshold(&power, params.num_std);
+    refine_mask(&mut mask, params.min_length);
+
+    let mut rough_baseline = averaged_interp(y, &mask, params.interp_half_window);
+    if params.max_iter == 0 {
+        return Ok(Fit {
+            baseline: rough_baseline,
+            report: FitReport::new(1, true, 0.0),
+        });
+    }
+
+    let weights = vec![1.0; y.len()];
+    let mut coeffs =
+        fit_weighted_polynomial_coefficients(&rough_baseline, &weights, params.poly_order)?;
+    let mut baseline = vec![0.0; y.len()];
+    evaluate_polynomial_coefficients(&coeffs, &mut baseline);
+    let mut tolerance = f64::INFINITY;
+
+    for iter in 1..params.max_iter {
+        for ((rough, fitted), keep) in rough_baseline.iter_mut().zip(&baseline).zip(&mask) {
+            if *keep {
+                *rough = *fitted;
+            }
+        }
+        let new_coeffs =
+            fit_weighted_polynomial_coefficients(&rough_baseline, &weights, params.poly_order)?;
+        evaluate_polynomial_coefficients(&new_coeffs, &mut baseline);
+        tolerance = relative_difference(&coeffs, &new_coeffs);
+        if tolerance < params.tol {
+            return Ok(Fit {
+                baseline,
+                report: FitReport::new(iter + 1, true, tolerance),
+            });
+        }
+        coeffs = new_coeffs;
+    }
+
+    Ok(Fit {
+        baseline,
+        report: FitReport::new(params.max_iter, false, tolerance),
+    })
 }
 
 /// Estimates a baseline using Golotvin-style peak classification.
@@ -384,6 +494,65 @@ fn sample_standard_deviation(values: &[f64]) -> f64 {
         .sum::<f64>()
         / (values.len() - 1) as f64;
     variance.sqrt()
+}
+
+fn mean(values: &[f64]) -> f64 {
+    values.iter().sum::<f64>() / values.len() as f64
+}
+
+fn gradient(y: &[f64]) -> Vec<f64> {
+    match y.len() {
+        0 => Vec::new(),
+        1 => vec![0.0],
+        len => {
+            let mut output = vec![0.0; len];
+            output[0] = y[1] - y[0];
+            output[len - 1] = y[len - 1] - y[len - 2];
+            for index in 1..len - 1 {
+                output[index] = 0.5 * (y[index + 1] - y[index - 1]);
+            }
+            output
+        }
+    }
+}
+
+fn iter_threshold(power: &[f64], num_std: f64) -> Vec<bool> {
+    let threshold = mean(power) + num_std * sample_standard_deviation(power);
+    let mut mask: Vec<bool> = power.iter().map(|value| *value < threshold).collect();
+    loop {
+        let masked_power: Vec<f64> = power
+            .iter()
+            .zip(&mask)
+            .filter_map(|(value, keep)| keep.then_some(*value))
+            .collect();
+        if masked_power.len() < 2 {
+            return mask;
+        }
+        let threshold = mean(&masked_power) + num_std * sample_standard_deviation(&masked_power);
+        let new_mask: Vec<bool> = power.iter().map(|value| *value < threshold).collect();
+        if new_mask == mask {
+            return mask;
+        }
+        mask = new_mask;
+    }
+}
+
+fn relative_difference(previous: &[f64], current: &[f64]) -> f64 {
+    let numerator = previous
+        .iter()
+        .zip(current)
+        .map(|(old, new)| {
+            let diff = new - old;
+            diff * diff
+        })
+        .sum::<f64>()
+        .sqrt();
+    let denominator = previous
+        .iter()
+        .map(|value| value * value)
+        .sum::<f64>()
+        .sqrt();
+    numerator / denominator.max(f64::EPSILON)
 }
 
 fn padded_rolling_std(y: &[f64], radius: usize, ddof: usize) -> Vec<f64> {

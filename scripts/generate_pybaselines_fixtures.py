@@ -81,6 +81,7 @@ def call_table() -> dict[str, Callable[[Baseline, list[float]], Any]]:
         "snip": lambda b, y: b.snip(y, max_half_window=8),
         "noise_median": lambda b, y: b.noise_median(y, half_window=8),
         "corner_cutting": lambda b, y: b.corner_cutting(y, max_iter=100),
+        "dietrich": lambda b, y: b.dietrich(y, smooth_half_window=1),
         "golotvin": lambda b, y: b.golotvin(y, half_window=8, smooth_half_window=8),
         "std_distribution": lambda b, y: b.std_distribution(
             y, half_window=8, smooth_half_window=8

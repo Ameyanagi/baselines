@@ -809,6 +809,17 @@ pub(crate) fn fit_weighted_polynomial(
     order: usize,
     baseline: &mut [f64],
 ) -> Result<()> {
+    let coeffs = fit_weighted_polynomial_coefficients(y, weights, order)?;
+    evaluate_polynomial_coefficients(&coeffs, baseline);
+    Ok(())
+}
+
+/// Fits weighted polynomial coefficients in increasing order.
+pub(crate) fn fit_weighted_polynomial_coefficients(
+    y: &[f64],
+    weights: &[f64],
+    order: usize,
+) -> Result<Vec<f64>> {
     let n_coeffs = order + 1;
     let mut normal = vec![vec![0.0; n_coeffs]; n_coeffs];
     let mut rhs = vec![0.0; n_coeffs];
@@ -824,12 +835,16 @@ pub(crate) fn fit_weighted_polynomial(
         }
     }
 
-    let coeffs = solve_dense(normal, rhs)?;
+    solve_dense(normal, rhs)
+}
+
+/// Evaluates polynomial coefficients on the crate's standard scaled grid.
+pub(crate) fn evaluate_polynomial_coefficients(coeffs: &[f64], baseline: &mut [f64]) {
+    let len = baseline.len();
     for (i, fitted) in baseline.iter_mut().enumerate() {
-        let x = scaled_x(i, y.len());
-        *fitted = evaluate_polynomial(&coeffs, x);
+        let x = scaled_x(i, len);
+        *fitted = evaluate_polynomial(coeffs, x);
     }
-    Ok(())
 }
 
 fn scaled_x(index: usize, len: usize) -> f64 {
