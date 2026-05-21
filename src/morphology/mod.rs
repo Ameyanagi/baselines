@@ -22,6 +22,8 @@ const MPLS_LAMBDA: f64 = 1.0e6;
 const MPLS_P: f64 = 0.0;
 const IMOR_MAX_ITER: usize = 200;
 const IMOR_TOL: f64 = 1.0e-3;
+const MORMOL_MAX_ITER: usize = 250;
+const MORMOL_TOL: f64 = 1.0e-3;
 
 /// Parameters for window-based morphology baselines.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -182,9 +184,13 @@ pub fn imor(y: &[f64], params: MorphologyParams) -> Result<Fit> {
 ///
 /// # References
 ///
+/// - M. Koch et al., "Iterative morphological and mollifier-based baseline
+///   correction for Raman spectra", *Journal of Raman Spectroscopy*, 2017.
 /// - `pybaselines.Baseline.mormol` is used as a behavioral reference.
 pub fn mormol(y: &[f64], params: MorphologyParams) -> Result<Fit> {
-    rolling_ball(y, params)
+    let mut baseline = vec![0.0; y.len()];
+    let report = mormol_into(y, params, &mut baseline)?;
+    Ok(Fit { baseline, report })
 }
 
 /// Estimates an averaged morphology and mollification baseline.
@@ -279,6 +285,46 @@ pub fn imor_into(y: &[f64], params: MorphologyParams, baseline: &mut [f64]) -> R
     }
 
     Ok(FitReport::new(IMOR_MAX_ITER + 1, false, tolerance))
+}
+
+/// Estimates a MorMol baseline into an existing output buffer.
+pub fn mormol_into(y: &[f64], params: MorphologyParams, baseline: &mut [f64]) -> Result<FitReport> {
+    validate_morphology_input(y, params, baseline)?;
+    let radius = params.radius();
+    let full_window = 2 * radius + 1;
+    let padded_y = pad_extrapolated(y, full_window);
+    let bounds = full_window..full_window + y.len();
+    let kernel = mollifier_kernel(full_window);
+    let smooth_kernel = mollifier_kernel(1);
+    let mut padded_baseline = vec![0.0; padded_y.len()];
+    let mut y_minus_baseline = vec![0.0; padded_y.len()];
+    let mut next = vec![0.0; padded_y.len()];
+    let mut tolerance = f64::INFINITY;
+
+    for iter in 0..=MORMOL_MAX_ITER {
+        for ((target, observed), current) in y_minus_baseline
+            .iter_mut()
+            .zip(&padded_y)
+            .zip(&padded_baseline)
+        {
+            *target = observed - current;
+        }
+        let y_smooth = convolve_reflect_same(&y_minus_baseline, &smooth_kernel);
+        let eroded = moving_min_reflect(&y_smooth, radius);
+        let correction = convolve_reflect_same(&eroded, &kernel);
+        for ((target, current), update) in next.iter_mut().zip(&padded_baseline).zip(correction) {
+            *target = current + update;
+        }
+        tolerance = relative_change(&padded_baseline[bounds.clone()], &next[bounds.clone()]);
+        padded_baseline.copy_from_slice(&next);
+        if tolerance < MORMOL_TOL {
+            baseline.copy_from_slice(&padded_baseline[bounds]);
+            return Ok(FitReport::new(iter + 1, true, tolerance));
+        }
+    }
+
+    baseline.copy_from_slice(&padded_baseline[bounds]);
+    Ok(FitReport::new(MORMOL_MAX_ITER + 1, false, tolerance))
 }
 
 /// Estimates a baseline with the statistics-sensitive nonlinear iterative peak-clipping algorithm.
@@ -376,6 +422,41 @@ fn linear_extrapolation(
     output_range
         .map(|index| slope.mul_add(index as f64, intercept))
         .collect()
+}
+
+fn mollifier_kernel(half_window: usize) -> Vec<f64> {
+    if half_window == 0 {
+        return vec![1.0];
+    }
+    let mut kernel = Vec::with_capacity(2 * half_window + 1);
+    for index in 0..=2 * half_window {
+        if index == 0 || index == 2 * half_window {
+            kernel.push(0.0);
+        } else {
+            let x = (index as f64 - half_window as f64) / half_window as f64;
+            kernel.push((-1.0 / (1.0 - x * x)).exp());
+        }
+    }
+    let sum = kernel.iter().sum::<f64>().max(f64::MIN_POSITIVE);
+    for value in &mut kernel {
+        *value /= sum;
+    }
+    kernel
+}
+
+fn convolve_reflect_same(y: &[f64], kernel: &[f64]) -> Vec<f64> {
+    let radius = kernel.len() / 2;
+    let mut output = vec![0.0; y.len()];
+    for (i, target) in output.iter_mut().enumerate() {
+        let mut sum = 0.0;
+        for (j, weight) in kernel.iter().enumerate() {
+            let offset = j as isize - radius as isize;
+            let index = reflect_index(i as isize + offset, y.len());
+            sum += weight * y[index];
+        }
+        *target = sum;
+    }
+    output
 }
 
 fn average_opening_reflect(y: &[f64], radius: usize, output: &mut [f64]) {
