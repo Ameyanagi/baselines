@@ -150,6 +150,21 @@ pub(super) fn derivative_peak_screening_weights(
         .collect()
 }
 
+pub(super) fn drpls_weights(y: &[f64], baseline: &[f64], iteration: usize) -> Option<Vec<f64>> {
+    let residuals = residuals(y, baseline);
+    let (mean, std) = negative_residual_stats(&residuals)?;
+    let scale = (iteration.min(100) as f64).exp() / std;
+    let weights = residuals
+        .into_iter()
+        .map(|residual| {
+            let inner = scale * (residual - (2.0 * std - mean));
+            0.5 * (1.0 - inner / (1.0 + inner.abs()))
+        })
+        .collect();
+
+    Some(weights)
+}
+
 pub(super) fn iarpls_weights(y: &[f64], baseline: &[f64], iteration: usize) -> Option<Vec<f64>> {
     let residuals = residuals(y, baseline);
     let (_mean, std) = negative_residual_stats(&residuals)?;

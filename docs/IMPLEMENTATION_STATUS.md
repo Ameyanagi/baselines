@@ -16,16 +16,15 @@ is tightened with generated pybaselines fixtures.
 - Smoothing core: `noise_median`, `snip`, `swima`, `ipsa`, `ria`, `peak_filling`
 - Classification core: `rubberband`
 - Spline core: `pspline_asls`, `pspline_iasls`, `pspline_airpls`, `pspline_arpls`,
-  `pspline_iarpls`, `pspline_aspls`, `pspline_psalsa`, `pspline_derpsalsa`,
-  `pspline_lsrpls`, `pspline_brpls`, `pspline_mpls`
+  `pspline_drpls`, `pspline_iarpls`, `pspline_aspls`, `pspline_psalsa`,
+  `pspline_derpsalsa`, `pspline_lsrpls`, `pspline_brpls`, `pspline_mpls`
 - Misc core: `interp_pts`
 
 ## Compatibility Entry Points Needing Fixture Tuning
 
 - Whittaker variants: none currently tracked
 - Morphology variants: none currently tracked
-- Spline family: `mixture_model`, `irsqr`, `corner_cutting`, remaining
-  `pspline_*` methods
+- Spline family: `mixture_model`, `irsqr`, `corner_cutting`
 - Classification variants: `dietrich`, `golotvin`, `std_distribution`,
   `fastchrom`, `cwt_br`, `fabc`
 - Optimizer/meta methods: `collab_pls`, `optimize_extended_range`,

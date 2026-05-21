@@ -8,6 +8,7 @@ use crate::{BaselineError, Result};
 pub(crate) struct PenalizedSpline {
     basis: Vec<Vec<f64>>,
     basis_midpoints: Vec<f64>,
+    first_order_penalty: Vec<Vec<f64>>,
     penalty: Vec<Vec<f64>>,
 }
 
@@ -22,17 +23,19 @@ impl PenalizedSpline {
             .iter()
             .map(|value| basis_row(*value, &knots, degree, n_bases))
             .collect();
+        let first_order_penalty = difference_penalty(n_bases, 1);
         let penalty = difference_penalty(n_bases, diff_order);
         Self {
             basis,
             basis_midpoints,
+            first_order_penalty,
             penalty,
         }
     }
 
     /// Fits a weighted penalized spline and returns the evaluated baseline.
     pub(crate) fn solve(&self, y: &[f64], weights: &[f64], lambda: f64) -> Result<Vec<f64>> {
-        self.solve_with_options(y, weights, lambda, None, 0.0)
+        self.solve_with_options(y, weights, lambda, None, 0.0, 0.0)
     }
 
     /// Fits a weighted penalized spline with row-scaled smoothness penalties.
@@ -43,7 +46,32 @@ impl PenalizedSpline {
         lambda: f64,
         row_scales: &[f64],
     ) -> Result<Vec<f64>> {
-        self.solve_with_options(y, weights, lambda, Some(row_scales), 0.0)
+        self.solve_with_options(y, weights, lambda, Some(row_scales), 0.0, 0.0)
+    }
+
+    /// Fits a weighted penalized spline with drPLS basis penalties.
+    pub(crate) fn solve_with_drpls_penalty(
+        &self,
+        y: &[f64],
+        weights: &[f64],
+        lambda: f64,
+        eta: f64,
+        basis_weights: &[f64],
+    ) -> Result<Vec<f64>> {
+        let n_bases = self.penalty.len();
+        if basis_weights.len() != n_bases {
+            return Err(BaselineError::LengthMismatch {
+                name: "basis_weights",
+                expected: n_bases,
+                actual: basis_weights.len(),
+            });
+        }
+
+        let row_scales: Vec<f64> = basis_weights
+            .iter()
+            .map(|weight| 1.0 - eta * weight)
+            .collect();
+        self.solve_with_options(y, weights, lambda, Some(&row_scales), 1.0, 0.0)
     }
 
     /// Fits a weighted penalized spline with an added data-domain first-difference penalty.
@@ -54,7 +82,7 @@ impl PenalizedSpline {
         lambda: f64,
         first_difference_lambda: f64,
     ) -> Result<Vec<f64>> {
-        self.solve_with_options(y, weights, lambda, None, first_difference_lambda)
+        self.solve_with_options(y, weights, lambda, None, 0.0, first_difference_lambda)
     }
 
     /// Interpolates sample-domain values onto the spline basis midpoints.
@@ -76,7 +104,8 @@ impl PenalizedSpline {
         weights: &[f64],
         lambda: f64,
         row_scales: Option<&[f64]>,
-        first_difference_lambda: f64,
+        basis_first_difference_lambda: f64,
+        data_first_difference_lambda: f64,
     ) -> Result<Vec<f64>> {
         let n_bases = self.penalty.len();
         if let Some(scales) = row_scales
@@ -108,15 +137,23 @@ impl PenalizedSpline {
             }
         }
 
-        if first_difference_lambda > 0.0 {
+        if basis_first_difference_lambda > 0.0 {
+            for (normal_row, penalty_row) in normal.iter_mut().zip(&self.first_order_penalty) {
+                for (normal_value, penalty_value) in normal_row.iter_mut().zip(penalty_row) {
+                    *normal_value += basis_first_difference_lambda * penalty_value;
+                }
+            }
+        }
+
+        if data_first_difference_lambda > 0.0 {
             for (basis_pair, observed_pair) in self.basis.windows(2).zip(y.windows(2)) {
                 let observed_difference = observed_pair[1] - observed_pair[0];
                 for row in 0..n_bases {
                     let basis_row_difference = basis_pair[1][row] - basis_pair[0][row];
                     rhs[row] +=
-                        first_difference_lambda * basis_row_difference * observed_difference;
+                        data_first_difference_lambda * basis_row_difference * observed_difference;
                     for col in 0..n_bases {
-                        normal[row][col] += first_difference_lambda
+                        normal[row][col] += data_first_difference_lambda
                             * basis_row_difference
                             * (basis_pair[1][col] - basis_pair[0][col]);
                     }

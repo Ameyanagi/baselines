@@ -13,14 +13,14 @@ use crate::polynomial::fit_weighted_polynomial;
 use crate::smoothing::{SmoothingParams, peak_filling};
 use crate::whittaker::{
     AirPlsParams, ArPlsParams, AsPlsParams, AslsParams, BrPlsParams, DerPsalsaParams, DrPlsParams,
-    IarPlsParams, IaslsParams, LsrPlsParams, PsalsaParams, arpls, asls, drpls,
+    IarPlsParams, IaslsParams, LsrPlsParams, PsalsaParams, arpls, asls,
 };
 use crate::workspace::validate_signal;
 use crate::{BaselineError, Result};
 use weights::{
     airpls_weights, arpls_weights, aspls_weights, brpls_weights, derivative_peak_screening_weights,
-    derpsalsa_weights, iarpls_weights, lsrpls_weights, mpls_anchor_weights, psalsa_weights,
-    standard_deviation,
+    derpsalsa_weights, drpls_weights, iarpls_weights, lsrpls_weights, mpls_anchor_weights,
+    psalsa_weights, standard_deviation,
 };
 
 const PSPLINE_NUM_KNOTS: usize = 100;
@@ -277,9 +277,50 @@ pub fn pspline_arpls(y: &[f64], params: ArPlsParams) -> Result<Fit> {
 ///
 /// # References
 ///
+/// - D. Xu et al., "Baseline correction method based on doubly reweighted
+///   penalized least squares", *Applied Optics*, 2019.
+/// - P. H. C. Eilers, B. D. Marx, and M. Durban, "Twenty years of P-splines",
+///   *SORT*, 2015.
 /// - `pybaselines.Baseline.pspline_drpls` is used as a behavioral reference.
 pub fn pspline_drpls(y: &[f64], params: DrPlsParams) -> Result<Fit> {
-    drpls(y, params)
+    params.validate()?;
+    validate_spline_signal("pspline_drpls", y)?;
+
+    let pspline = default_pspline(y.len());
+    let mut weights = vec![1.0; y.len()];
+    let mut tolerance = f64::INFINITY;
+    let mut baseline = Vec::new();
+
+    for iter in 0..=params.whittaker.max_iter {
+        let basis_weights = pspline.interpolate_to_basis(&weights);
+        baseline = pspline.solve_with_drpls_penalty(
+            y,
+            &weights,
+            params.whittaker.lambda,
+            params.eta,
+            &basis_weights,
+        )?;
+
+        let Some(new_weights) = drpls_weights(y, &baseline, iter + 1) else {
+            return Ok(Fit {
+                baseline,
+                report: FitReport::new(iter + 1, false, tolerance),
+            });
+        };
+        tolerance = relative_change(&weights, &new_weights);
+        if tolerance < params.whittaker.tol {
+            return Ok(Fit {
+                baseline,
+                report: FitReport::new(iter + 1, true, tolerance),
+            });
+        }
+        weights = new_weights;
+    }
+
+    Ok(Fit {
+        baseline,
+        report: FitReport::new(params.whittaker.max_iter + 1, false, tolerance),
+    })
 }
 
 /// Fits a penalized-spline IarPLS baseline.
