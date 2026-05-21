@@ -9,10 +9,11 @@ mod weights;
 use crate::fit::{Fit, FitReport};
 use crate::linalg::pspline::PenalizedSpline;
 use crate::morphology::MorphologyParams;
+use crate::polynomial::fit_weighted_polynomial;
 use crate::smoothing::{SmoothingParams, peak_filling};
 use crate::whittaker::{
     AirPlsParams, ArPlsParams, AsPlsParams, AslsParams, BrPlsParams, DerPsalsaParams, DrPlsParams,
-    IarPlsParams, IaslsParams, LsrPlsParams, PsalsaParams, arpls, asls, aspls, drpls, iasls,
+    IarPlsParams, IaslsParams, LsrPlsParams, PsalsaParams, arpls, asls, aspls, drpls,
 };
 use crate::workspace::validate_signal;
 use crate::{BaselineError, Result};
@@ -118,9 +119,67 @@ pub fn pspline_asls(y: &[f64], params: AslsParams) -> Result<Fit> {
 ///
 /// # References
 ///
+/// - S. He et al., "Baseline correction for Raman spectra using an improved
+///   asymmetric least squares method", *Analytical Methods*, 2014.
+/// - P. H. C. Eilers, B. D. Marx, and M. Durban, "Twenty years of P-splines",
+///   *SORT*, 2015.
 /// - `pybaselines.Baseline.pspline_iasls` is used as a behavioral reference.
 pub fn pspline_iasls(y: &[f64], params: IaslsParams) -> Result<Fit> {
-    iasls(y, params)
+    params.validate()?;
+    validate_spline_signal("pspline_iasls", y)?;
+
+    let mut initial_baseline = vec![0.0; y.len()];
+    let unit_weights = vec![1.0; y.len()];
+    fit_weighted_polynomial(y, &unit_weights, 2, &mut initial_baseline)?;
+    let mut weights: Vec<f64> = y
+        .iter()
+        .zip(&initial_baseline)
+        .map(|(observed, fitted)| {
+            if observed > fitted {
+                params.p
+            } else {
+                1.0 - params.p
+            }
+        })
+        .collect();
+
+    let pspline = default_pspline(y.len());
+    let mut tolerance = f64::INFINITY;
+    let mut baseline = Vec::new();
+
+    for iter in 0..=params.whittaker.max_iter {
+        let squared_weights: Vec<f64> = weights.iter().map(|weight| weight * weight).collect();
+        baseline = pspline.solve_with_first_difference_penalty(
+            y,
+            &squared_weights,
+            params.whittaker.lambda,
+            params.lambda_1,
+        )?;
+        let new_weights: Vec<f64> = y
+            .iter()
+            .zip(&baseline)
+            .map(|(observed, fitted)| {
+                if observed > fitted {
+                    params.p
+                } else {
+                    1.0 - params.p
+                }
+            })
+            .collect();
+        tolerance = relative_change(&weights, &new_weights);
+        if tolerance < params.whittaker.tol {
+            return Ok(Fit {
+                baseline,
+                report: FitReport::new(iter + 1, true, tolerance),
+            });
+        }
+        weights = new_weights;
+    }
+
+    Ok(Fit {
+        baseline,
+        report: FitReport::new(params.whittaker.max_iter + 1, false, tolerance),
+    })
 }
 
 /// Fits a penalized-spline airPLS baseline.

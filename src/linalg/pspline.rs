@@ -26,6 +26,17 @@ impl PenalizedSpline {
 
     /// Fits a weighted penalized spline and returns the evaluated baseline.
     pub(crate) fn solve(&self, y: &[f64], weights: &[f64], lambda: f64) -> Result<Vec<f64>> {
+        self.solve_with_first_difference_penalty(y, weights, lambda, 0.0)
+    }
+
+    /// Fits a weighted penalized spline with an added data-domain first-difference penalty.
+    pub(crate) fn solve_with_first_difference_penalty(
+        &self,
+        y: &[f64],
+        weights: &[f64],
+        lambda: f64,
+        first_difference_lambda: f64,
+    ) -> Result<Vec<f64>> {
         let n_bases = self.penalty.len();
         let mut normal = vec![vec![0.0; n_bases]; n_bases];
         let mut rhs = vec![0.0; n_bases];
@@ -42,6 +53,22 @@ impl PenalizedSpline {
         for (normal_row, penalty_row) in normal.iter_mut().zip(&self.penalty) {
             for (normal_value, penalty_value) in normal_row.iter_mut().zip(penalty_row) {
                 *normal_value += lambda * penalty_value;
+            }
+        }
+
+        if first_difference_lambda > 0.0 {
+            for (basis_pair, observed_pair) in self.basis.windows(2).zip(y.windows(2)) {
+                let observed_difference = observed_pair[1] - observed_pair[0];
+                for row in 0..n_bases {
+                    let basis_row_difference = basis_pair[1][row] - basis_pair[0][row];
+                    rhs[row] +=
+                        first_difference_lambda * basis_row_difference * observed_difference;
+                    for col in 0..n_bases {
+                        normal[row][col] += first_difference_lambda
+                            * basis_row_difference
+                            * (basis_pair[1][col] - basis_pair[0][col]);
+                    }
+                }
             }
         }
 
