@@ -7,6 +7,8 @@
 //!   Research Section B*, 1996.
 //! - Z. Li et al., "Morphological weighted penalized least squares for
 //!   background correction", *Analyst*, 2013.
+//! - L. Dai et al., "An Automated Baseline Correction Method Based on
+//!   Iterative Morphological Operations", *Applied Spectroscopy*, 2018.
 //! - C. G. Ryan et al., "SNIP, a statistics-sensitive background treatment
 //!   for the quantitative analysis of PIXE spectra", 1988.
 //! - `pybaselines` is used as a behavioral reference.
@@ -18,6 +20,8 @@ use crate::{BaselineError, Result};
 
 const MPLS_LAMBDA: f64 = 1.0e6;
 const MPLS_P: f64 = 0.0;
+const IMOR_MAX_ITER: usize = 200;
+const IMOR_TOL: f64 = 1.0e-3;
 
 /// Parameters for window-based morphology baselines.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -165,21 +169,13 @@ pub fn mpls(y: &[f64], params: MorphologyParams) -> Result<Fit> {
 ///
 /// # References
 ///
+/// - L. Dai et al., "An Automated Baseline Correction Method Based on
+///   Iterative Morphological Operations", *Applied Spectroscopy*, 2018.
 /// - `pybaselines.Baseline.imor` is used as a behavioral reference.
 pub fn imor(y: &[f64], params: MorphologyParams) -> Result<Fit> {
-    let mut current = y.to_vec();
-    validate_signal(y)?;
-    params.validate()?;
-    for _ in 0..5 {
-        let opened = opening(&current, params.radius());
-        for (target, value) in current.iter_mut().zip(opened) {
-            *target = target.min(value);
-        }
-    }
-    Ok(Fit {
-        baseline: current,
-        report: FitReport::new(5, true, 0.0),
-    })
+    let mut baseline = vec![0.0; y.len()];
+    let report = imor_into(y, params, &mut baseline)?;
+    Ok(Fit { baseline, report })
 }
 
 /// Estimates a morphology and mollification baseline.
@@ -260,6 +256,29 @@ pub fn mpls_into(y: &[f64], params: MorphologyParams, baseline: &mut [f64]) -> R
     let mut workspace = PentadiagonalWorkspace::new(y.len());
     solve_second_order(y, &weights, MPLS_LAMBDA, baseline, &mut workspace)?;
     Ok(FitReport::new(1, true, 0.0))
+}
+
+/// Estimates an IMor baseline into an existing output buffer.
+pub fn imor_into(y: &[f64], params: MorphologyParams, baseline: &mut [f64]) -> Result<FitReport> {
+    validate_morphology_input(y, params, baseline)?;
+    baseline.copy_from_slice(y);
+    let mut next = vec![0.0; y.len()];
+    let mut averaged = vec![0.0; y.len()];
+    let mut tolerance = f64::INFINITY;
+
+    for iter in 0..=IMOR_MAX_ITER {
+        average_opening_reflect(baseline, params.radius(), &mut averaged);
+        for ((target, observed), opened) in next.iter_mut().zip(y).zip(&averaged) {
+            *target = observed.min(*opened);
+        }
+        tolerance = relative_change(baseline, &next);
+        if tolerance < IMOR_TOL {
+            return Ok(FitReport::new(iter + 1, true, tolerance));
+        }
+        baseline.copy_from_slice(&next);
+    }
+
+    Ok(FitReport::new(IMOR_MAX_ITER + 1, false, tolerance))
 }
 
 /// Estimates a baseline with the statistics-sensitive nonlinear iterative peak-clipping algorithm.
@@ -344,6 +363,82 @@ fn moving_average(y: &[f64], radius: usize, output: &mut [f64]) {
         let sum = y[start..end].iter().sum::<f64>();
         *value = sum / (end - start) as f64;
     }
+}
+
+fn average_opening_reflect(y: &[f64], radius: usize, output: &mut [f64]) {
+    let opened = opening_reflect(y, radius);
+    let dilated = {
+        let mut values = vec![0.0; y.len()];
+        moving_max_reflect(&opened, radius, &mut values);
+        values
+    };
+    let eroded = moving_min_reflect(&opened, radius);
+    for ((target, dilation), erosion) in output.iter_mut().zip(dilated).zip(eroded) {
+        *target = 0.5 * (dilation + erosion);
+    }
+}
+
+fn opening_reflect(y: &[f64], radius: usize) -> Vec<f64> {
+    let eroded = moving_min_reflect(y, radius);
+    let mut opened = vec![0.0; y.len()];
+    moving_max_reflect(&eroded, radius, &mut opened);
+    opened
+}
+
+fn moving_min_reflect(y: &[f64], radius: usize) -> Vec<f64> {
+    let mut output = vec![0.0; y.len()];
+    for (i, value) in output.iter_mut().enumerate() {
+        let start = i as isize - radius as isize;
+        let end = i as isize + radius as isize;
+        *value = (start..=end)
+            .map(|index| y[reflect_index(index, y.len())])
+            .fold(f64::INFINITY, f64::min);
+    }
+    output
+}
+
+fn moving_max_reflect(y: &[f64], radius: usize, output: &mut [f64]) {
+    for (i, value) in output.iter_mut().enumerate() {
+        let start = i as isize - radius as isize;
+        let end = i as isize + radius as isize;
+        *value = (start..=end)
+            .map(|index| y[reflect_index(index, y.len())])
+            .fold(f64::NEG_INFINITY, f64::max);
+    }
+}
+
+fn reflect_index(mut index: isize, len: usize) -> usize {
+    debug_assert!(len > 0);
+    if len == 1 {
+        return 0;
+    }
+    let len = len as isize;
+    while index < 0 || index >= len {
+        if index < 0 {
+            index = -index - 1;
+        } else {
+            index = 2 * len - index - 1;
+        }
+    }
+    index as usize
+}
+
+fn relative_change(previous: &[f64], current: &[f64]) -> f64 {
+    let numerator = previous
+        .iter()
+        .zip(current)
+        .map(|(old, new)| {
+            let difference = new - old;
+            difference * difference
+        })
+        .sum::<f64>()
+        .sqrt();
+    let denominator = previous
+        .iter()
+        .map(|value| value * value)
+        .sum::<f64>()
+        .sqrt();
+    numerator / denominator.max(f64::EPSILON)
 }
 
 fn mpls_anchor_weights(y: &[f64], rough_baseline: &[f64], p: f64) -> Vec<f64> {

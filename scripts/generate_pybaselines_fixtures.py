@@ -53,6 +53,7 @@ def call_table() -> dict[str, Callable[[Baseline, list[float]], Any]]:
         "tophat": lambda b, y: b.tophat(y, half_window=8),
         "mor": lambda b, y: b.mor(y, half_window=8),
         "mpls": lambda b, y: b.mpls(y, half_window=8, lam=1e6, p=0.0),
+        "imor": lambda b, y: b.imor(y, half_window=8),
         "snip": lambda b, y: b.snip(y, max_half_window=8),
         "noise_median": lambda b, y: b.noise_median(y, half_window=8),
         "rubberband": lambda b, y: b.rubberband(y),
