@@ -91,6 +91,15 @@ def call_table() -> dict[str, Callable[[Baseline, list[float]], Any]]:
         "adaptive_minmax": lambda b, y: b.adaptive_minmax(
             y, poly_order=2, method="poly"
         ),
+        "optimize_extended_range": lambda b, y: b.optimize_extended_range(
+            y,
+            method="asls",
+            side="both",
+            min_value=2,
+            max_value=4,
+            step=1,
+            method_kwargs={"p": 0.01},
+        ),
         "rubberband": lambda b, y: b.rubberband(y),
     }
 

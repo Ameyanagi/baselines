@@ -7,7 +7,9 @@ use baselines::classification::{
 use baselines::morphology::{
     MorphologyParams, imor, jbcd, mor, mormol, mpls, mpspline, mwmv, rolling_ball, snip, tophat,
 };
-use baselines::optimizers::{AdaptiveMinmaxParams, adaptive_minmax};
+use baselines::optimizers::{
+    AdaptiveMinmaxParams, LambdaSearchParams, adaptive_minmax, optimize_extended_range,
+};
 use baselines::polynomial::{
     GoldindecParams, ImodPolyParams, ModPolyParams, PenalizedPolyParams, PolyParams,
     QuantRegParams, goldindec, imodpoly, modpoly, penalized_poly, poly, quant_reg,
@@ -520,6 +522,21 @@ fn core_algorithms_track_pybaselines_fixtures() {
             .unwrap()
             .baseline,
         1e-10,
+    );
+    assert_close(
+        "optimize_extended_range",
+        &fixture,
+        optimize_extended_range(
+            &fixture.signal,
+            LambdaSearchParams {
+                start_exp: 2.0,
+                stop_exp: 4.0,
+                steps: 2,
+            },
+        )
+        .unwrap()
+        .baseline,
+        1e-9,
     );
     assert_close(
         "rubberband",
