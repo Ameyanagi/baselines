@@ -98,8 +98,8 @@ pub fn rolling_ball_into(
     baseline: &mut [f64],
 ) -> Result<FitReport> {
     validate_morphology_input(y, params, baseline)?;
-    let opened = opening(y, params.radius());
-    moving_average(&opened, params.radius(), baseline);
+    let opened = opening_reflect(y, params.radius());
+    moving_average_extrapolated(&opened, params.radius(), baseline);
     Ok(FitReport::new(1, true, 0.0))
 }
 
@@ -136,8 +136,8 @@ pub fn mwmv(y: &[f64], params: MorphologyParams) -> Result<Fit> {
 /// Estimates an MWMV baseline into an existing output buffer.
 pub fn mwmv_into(y: &[f64], params: MorphologyParams, baseline: &mut [f64]) -> Result<FitReport> {
     validate_morphology_input(y, params, baseline)?;
-    let mins = moving_min(y, params.radius());
-    moving_max(&mins, params.radius(), baseline);
+    let mins = moving_min_reflect(y, params.radius());
+    moving_average_extrapolated(&mins, params.radius(), baseline);
     Ok(FitReport::new(1, true, 0.0))
 }
 
@@ -347,13 +347,63 @@ fn moving_max(y: &[f64], radius: usize, output: &mut [f64]) {
     }
 }
 
-fn moving_average(y: &[f64], radius: usize, output: &mut [f64]) {
-    for (i, value) in output.iter_mut().enumerate() {
-        let start = i.saturating_sub(radius);
-        let end = (i + radius + 1).min(y.len());
-        let sum = y[start..end].iter().sum::<f64>();
-        *value = sum / (end - start) as f64;
+fn moving_average_extrapolated(y: &[f64], radius: usize, output: &mut [f64]) {
+    if radius == 0 {
+        output.copy_from_slice(y);
+        return;
     }
+    let padded = pad_extrapolated(y, radius);
+    let window = 2 * radius + 1;
+    for (i, target) in output.iter_mut().enumerate() {
+        let sum = padded[i..i + window].iter().sum::<f64>();
+        *target = sum / window as f64;
+    }
+}
+
+fn pad_extrapolated(y: &[f64], radius: usize) -> Vec<f64> {
+    let fit_len = radius.min(y.len()).max(1);
+    let mut padded = Vec::with_capacity(y.len() + 2 * radius);
+    let left = linear_extrapolation(
+        (0..fit_len).map(|index| ((radius + index) as f64, y[index])),
+        0..radius,
+    );
+    padded.extend(left);
+    padded.extend_from_slice(y);
+    let right_start = radius + y.len();
+    let fit_start = y.len().saturating_sub(fit_len);
+    let right = linear_extrapolation(
+        (fit_start..y.len()).map(|index| ((radius + index) as f64, y[index])),
+        right_start..right_start + radius,
+    );
+    padded.extend(right);
+    padded
+}
+
+fn linear_extrapolation(
+    points: impl Iterator<Item = (f64, f64)>,
+    output_range: std::ops::Range<usize>,
+) -> Vec<f64> {
+    let points: Vec<(f64, f64)> = points.collect();
+    if points.len() == 1 {
+        return vec![points[0].1; output_range.len()];
+    }
+
+    let count = points.len() as f64;
+    let sum_x = points.iter().map(|(x, _)| x).sum::<f64>();
+    let sum_y = points.iter().map(|(_, y)| y).sum::<f64>();
+    let sum_xx = points.iter().map(|(x, _)| x * x).sum::<f64>();
+    let sum_xy = points.iter().map(|(x, y)| x * y).sum::<f64>();
+    let denominator = count * sum_xx - sum_x * sum_x;
+    let slope = if denominator.abs() <= f64::EPSILON {
+        0.0
+    } else {
+        (count * sum_xy - sum_x * sum_y) / denominator
+    };
+    let intercept = (sum_y - slope * sum_x) / count;
+
+    output_range
+        .map(|index| slope.mul_add(index as f64, intercept))
+        .collect()
 }
 
 fn average_opening_reflect(y: &[f64], radius: usize, output: &mut [f64]) {

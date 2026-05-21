@@ -125,13 +125,13 @@ fn core_algorithms_track_pybaselines_fixtures() {
         "rolling_ball",
         &fixture,
         rolling_ball(&fixture.signal, morphology).unwrap().baseline,
-        2e-2,
+        1e-12,
     );
     assert_close(
         "mwmv",
         &fixture,
         mwmv(&fixture.signal, morphology).unwrap().baseline,
-        1.1e-1,
+        1e-12,
     );
     assert_close(
         "tophat",
