@@ -4,6 +4,8 @@
 //! remaining compatibility APIs reuse the closest one-dimensional baseline
 //! engines until their dedicated spline forms are implemented.
 
+mod weights;
+
 use crate::fit::{Fit, FitReport};
 use crate::linalg::pspline::PenalizedSpline;
 use crate::morphology::{MorphologyParams, mpls};
@@ -11,15 +13,18 @@ use crate::smoothing::{SmoothingParams, peak_filling};
 use crate::whittaker::{
     AirPlsParams, ArPlsParams, AsPlsParams, AslsParams, BrPlsParams, DerPsalsaParams, DrPlsParams,
     IarPlsParams, IaslsParams, LsrPlsParams, PsalsaParams, arpls, asls, aspls, brpls, derpsalsa,
-    drpls, iarpls, iasls, lsrpls, psalsa,
+    drpls, iasls,
 };
-use crate::workspace::{logistic, validate_signal};
+use crate::workspace::validate_signal;
 use crate::{BaselineError, Result};
+use weights::{
+    airpls_weights, arpls_weights, iarpls_weights, lsrpls_weights, psalsa_weights,
+    standard_deviation,
+};
 
 const PSPLINE_NUM_KNOTS: usize = 100;
 const PSPLINE_DEGREE: usize = 3;
 const PSPLINE_DIFF_ORDER: usize = 2;
-const AIRPLS_MAX_EXPONENT: f64 = 700.0;
 
 /// Parameters for mixture-model spline fitting.
 pub type MixtureModelParams = ArPlsParams;
@@ -220,9 +225,43 @@ pub fn pspline_drpls(y: &[f64], params: DrPlsParams) -> Result<Fit> {
 ///
 /// # References
 ///
+/// - J. Ye et al., "Baseline correction method based on improved
+///   asymmetrically reweighted penalized least squares for Raman spectrum",
+///   *Applied Optics*, 2020.
+/// - P. H. C. Eilers, B. D. Marx, and M. Durban, "Twenty years of P-splines",
+///   *SORT*, 2015.
 /// - `pybaselines.Baseline.pspline_iarpls` is used as a behavioral reference.
 pub fn pspline_iarpls(y: &[f64], params: IarPlsParams) -> Result<Fit> {
-    iarpls(y, params)
+    params.whittaker.validate()?;
+    validate_spline_signal("pspline_iarpls", y)?;
+
+    let mut weights = vec![1.0; y.len()];
+    let pspline = default_pspline(y.len());
+    let mut tolerance = f64::INFINITY;
+    let mut baseline = Vec::new();
+
+    for iter in 0..=params.whittaker.max_iter {
+        baseline = pspline.solve(y, &weights, params.whittaker.lambda)?;
+        let Some(new_weights) = iarpls_weights(y, &baseline, iter + 1) else {
+            return Ok(Fit {
+                baseline,
+                report: FitReport::new(iter + 1, false, tolerance),
+            });
+        };
+        tolerance = relative_change(&weights, &new_weights);
+        if tolerance < params.whittaker.tol {
+            return Ok(Fit {
+                baseline,
+                report: FitReport::new(iter + 1, true, tolerance),
+            });
+        }
+        weights = new_weights;
+    }
+
+    Ok(Fit {
+        baseline,
+        report: FitReport::new(params.whittaker.max_iter + 1, false, tolerance),
+    })
 }
 
 /// Fits a penalized-spline asPLS baseline.
@@ -238,9 +277,44 @@ pub fn pspline_aspls(y: &[f64], params: AsPlsParams) -> Result<Fit> {
 ///
 /// # References
 ///
+/// - S. Oller-Moreno et al., "Adaptive Asymmetric Least Squares baseline
+///   estimation for analytical instruments", IEEE SSD, 2014.
+/// - P. H. C. Eilers, B. D. Marx, and M. Durban, "Twenty years of P-splines",
+///   *SORT*, 2015.
 /// - `pybaselines.Baseline.pspline_psalsa` is used as a behavioral reference.
 pub fn pspline_psalsa(y: &[f64], params: PsalsaParams) -> Result<Fit> {
-    psalsa(y, params)
+    params.validate()?;
+    validate_spline_signal("pspline_psalsa", y)?;
+    let k = params.k.unwrap_or_else(|| standard_deviation(y) / 10.0);
+    if !k.is_finite() || k <= 0.0 {
+        return Err(BaselineError::InvalidParameter {
+            name: "k",
+            reason: "computed std(y) / 10 must be finite and positive",
+        });
+    }
+
+    let mut weights = vec![1.0; y.len()];
+    let pspline = default_pspline(y.len());
+    let mut tolerance = f64::INFINITY;
+    let mut baseline = Vec::new();
+
+    for iter in 0..=params.whittaker.max_iter {
+        baseline = pspline.solve(y, &weights, params.whittaker.lambda)?;
+        let new_weights = psalsa_weights(y, &baseline, params.p, k);
+        tolerance = relative_change(&weights, &new_weights);
+        if tolerance < params.whittaker.tol {
+            return Ok(Fit {
+                baseline,
+                report: FitReport::new(iter + 1, true, tolerance),
+            });
+        }
+        weights = new_weights;
+    }
+
+    Ok(Fit {
+        baseline,
+        report: FitReport::new(params.whittaker.max_iter + 1, false, tolerance),
+    })
 }
 
 /// Fits a penalized-spline derpsalsa baseline.
@@ -274,9 +348,43 @@ pub fn pspline_brpls(y: &[f64], params: BrPlsParams) -> Result<Fit> {
 ///
 /// # References
 ///
+/// - Z. Heng et al., "Baseline correction for Raman spectra based on locally
+///   symmetric reweighted penalized least squares", *Chinese Journal of
+///   Lasers*, 2018.
+/// - P. H. C. Eilers, B. D. Marx, and M. Durban, "Twenty years of P-splines",
+///   *SORT*, 2015.
 /// - `pybaselines.Baseline.pspline_lsrpls` is used as a behavioral reference.
 pub fn pspline_lsrpls(y: &[f64], params: LsrPlsParams) -> Result<Fit> {
-    lsrpls(y, params)
+    params.whittaker.validate()?;
+    validate_spline_signal("pspline_lsrpls", y)?;
+
+    let mut weights = vec![1.0; y.len()];
+    let pspline = default_pspline(y.len());
+    let mut tolerance = f64::INFINITY;
+    let mut baseline = Vec::new();
+
+    for iter in 0..=params.whittaker.max_iter {
+        baseline = pspline.solve(y, &weights, params.whittaker.lambda)?;
+        let Some(new_weights) = lsrpls_weights(y, &baseline, iter + 1) else {
+            return Ok(Fit {
+                baseline,
+                report: FitReport::new(iter + 1, false, tolerance),
+            });
+        };
+        tolerance = relative_change(&weights, &new_weights);
+        if tolerance < params.whittaker.tol {
+            return Ok(Fit {
+                baseline,
+                report: FitReport::new(iter + 1, true, tolerance),
+            });
+        }
+        weights = new_weights;
+    }
+
+    Ok(Fit {
+        baseline,
+        report: FitReport::new(params.whittaker.max_iter + 1, false, tolerance),
+    })
 }
 
 fn validate_spline_signal(algorithm: &'static str, y: &[f64]) -> Result<()> {
@@ -317,68 +425,4 @@ fn relative_change(previous: &[f64], current: &[f64]) -> f64 {
         .sum::<f64>()
         .sqrt();
     numerator / denominator.max(f64::EPSILON)
-}
-
-fn airpls_weights(y: &[f64], baseline: &[f64], iteration: usize) -> (Vec<f64>, f64, bool) {
-    let residuals: Vec<f64> = y
-        .iter()
-        .zip(baseline)
-        .map(|(observed, fitted)| observed - fitted)
-        .collect();
-    let negative: Vec<f64> = residuals
-        .iter()
-        .copied()
-        .filter(|residual| *residual < 0.0)
-        .collect();
-    if negative.len() < 2 {
-        return (vec![0.0; y.len()], 0.0, true);
-    }
-
-    let residual_l1_norm = negative.iter().sum::<f64>().abs();
-    let scale = iteration.min(50) as f64 / residual_l1_norm;
-    let weights = residuals
-        .into_iter()
-        .map(|residual| {
-            if residual < 0.0 {
-                (scale * residual.abs()).min(AIRPLS_MAX_EXPONENT).exp()
-            } else {
-                0.0
-            }
-        })
-        .collect();
-
-    (weights, residual_l1_norm, false)
-}
-
-fn arpls_weights(y: &[f64], baseline: &[f64]) -> Option<Vec<f64>> {
-    let residuals: Vec<f64> = y
-        .iter()
-        .zip(baseline)
-        .map(|(observed, fitted)| observed - fitted)
-        .collect();
-    let negative: Vec<f64> = residuals
-        .iter()
-        .copied()
-        .filter(|residual| *residual < 0.0)
-        .collect();
-    if negative.len() < 2 {
-        return None;
-    }
-
-    let mean = negative.iter().sum::<f64>() / negative.len() as f64;
-    let variance = negative
-        .iter()
-        .map(|value| {
-            let centered = value - mean;
-            centered * centered
-        })
-        .sum::<f64>()
-        / (negative.len() - 1) as f64;
-    let std = variance.sqrt().max(f64::MIN_POSITIVE);
-    let weights = residuals
-        .into_iter()
-        .map(|residual| logistic(-(2.0 / std) * (residual - (2.0 * std - mean))))
-        .collect();
-
-    Some(weights)
 }

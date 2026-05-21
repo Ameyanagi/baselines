@@ -9,7 +9,9 @@ use baselines::polynomial::{
     QuantRegParams, goldindec, imodpoly, modpoly, penalized_poly, poly, quant_reg,
 };
 use baselines::smoothing::{SmoothingParams, noise_median};
-use baselines::spline::{pspline_airpls, pspline_arpls, pspline_asls};
+use baselines::spline::{
+    pspline_airpls, pspline_arpls, pspline_asls, pspline_iarpls, pspline_lsrpls, pspline_psalsa,
+};
 use baselines::whittaker::{
     AirPlsParams, ArPlsParams, AsPlsParams, AslsParams, BrPlsParams, DerPsalsaParams, DrPlsParams,
     IarPlsParams, IaslsParams, LsrPlsParams, PsalsaParams, WhittakerParams, airpls, arpls, asls,
@@ -238,6 +240,37 @@ fn core_algorithms_track_pybaselines_fixtures() {
         "pspline_arpls",
         &fixture,
         pspline_arpls(&fixture.signal, ArPlsParams { whittaker })
+            .unwrap()
+            .baseline,
+        1e-8,
+    );
+    assert_close(
+        "pspline_iarpls",
+        &fixture,
+        pspline_iarpls(&fixture.signal, IarPlsParams { whittaker })
+            .unwrap()
+            .baseline,
+        1e-8,
+    );
+    assert_close(
+        "pspline_psalsa",
+        &fixture,
+        pspline_psalsa(
+            &fixture.signal,
+            PsalsaParams {
+                whittaker,
+                p: 0.5,
+                k: None,
+            },
+        )
+        .unwrap()
+        .baseline,
+        1e-8,
+    );
+    assert_close(
+        "pspline_lsrpls",
+        &fixture,
+        pspline_lsrpls(&fixture.signal, LsrPlsParams { whittaker })
             .unwrap()
             .baseline,
         1e-8,
