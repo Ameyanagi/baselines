@@ -15,9 +15,9 @@ use baselines::polynomial::{
 };
 use baselines::smoothing::{SmoothingParams, ipsa, noise_median, peak_filling, ria, snip, swima};
 use baselines::spline::{
-    CornerCuttingParams, IrsqrParams, corner_cutting, irsqr, mixture_model, pspline_airpls,
-    pspline_arpls, pspline_asls, pspline_aspls, pspline_brpls, pspline_derpsalsa, pspline_drpls,
-    pspline_iarpls, pspline_iasls, pspline_lsrpls, pspline_mpls, pspline_psalsa,
+    CornerCuttingParams, IrsqrParams, MixtureModelParams, corner_cutting, irsqr, mixture_model,
+    pspline_airpls, pspline_arpls, pspline_asls, pspline_aspls, pspline_brpls, pspline_derpsalsa,
+    pspline_drpls, pspline_iarpls, pspline_iasls, pspline_lsrpls, pspline_mpls, pspline_psalsa,
 };
 use baselines::whittaker::{
     AirPlsParams, ArPlsParams, AsPlsParams, AslsParams, BrPlsParams, DerPsalsaParams, DrPlsParams,
@@ -68,7 +68,7 @@ fn exposed_1d_algorithms_return_finite_baselines() {
         tophat(&y, morph).unwrap(),
         mpspline(&y, morph).unwrap(),
         jbcd(&y, morph).unwrap(),
-        mixture_model(&y, ArPlsParams::default()).unwrap(),
+        mixture_model(&y, MixtureModelParams::default()).unwrap(),
         irsqr(&y, IrsqrParams::default()).unwrap(),
         corner_cutting(&y, CornerCuttingParams { max_iter: 20 }).unwrap(),
         pspline_asls(&y, AslsParams::default()).unwrap(),

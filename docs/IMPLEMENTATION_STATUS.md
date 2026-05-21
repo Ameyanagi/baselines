@@ -18,14 +18,14 @@ is tightened with generated pybaselines fixtures.
 - Spline core: `pspline_asls`, `pspline_iasls`, `pspline_airpls`, `pspline_arpls`,
   `pspline_drpls`, `pspline_iarpls`, `pspline_aspls`, `pspline_psalsa`,
   `pspline_derpsalsa`, `pspline_lsrpls`, `pspline_brpls`, `pspline_mpls`,
-  `corner_cutting`, `irsqr`
+  `corner_cutting`, `irsqr`, `mixture_model`
 - Misc core: `interp_pts`
 
 ## Compatibility Entry Points Needing Fixture Tuning
 
 - Whittaker variants: none currently tracked
 - Morphology variants: none currently tracked
-- Spline family: `mixture_model`
+- Spline family: none currently tracked
 - Classification variants: `dietrich`, `golotvin`, `std_distribution`,
   `fastchrom`, `cwt_br`, `fabc`
 - Optimizer/meta methods: `collab_pls`, `optimize_extended_range`,

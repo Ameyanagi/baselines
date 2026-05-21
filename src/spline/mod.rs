@@ -5,9 +5,11 @@
 //! engines until their dedicated spline forms are implemented.
 
 mod corner;
+mod mixture;
 mod weights;
 
 pub use corner::{CornerCuttingParams, corner_cutting};
+pub use mixture::{MixtureModelParams, mixture_model};
 
 use crate::fit::{Fit, FitReport};
 use crate::linalg::pspline::PenalizedSpline;
@@ -15,7 +17,7 @@ use crate::morphology::MorphologyParams;
 use crate::polynomial::fit_weighted_polynomial;
 use crate::whittaker::{
     AirPlsParams, ArPlsParams, AsPlsParams, AslsParams, BrPlsParams, DerPsalsaParams, DrPlsParams,
-    IarPlsParams, IaslsParams, LsrPlsParams, PsalsaParams, arpls,
+    IarPlsParams, IaslsParams, LsrPlsParams, PsalsaParams,
 };
 use crate::workspace::validate_signal;
 use crate::{BaselineError, Result};
@@ -32,8 +34,6 @@ const IRSQR_DIFF_ORDER: usize = 3;
 const PSPLINE_MPLS_LAMBDA: f64 = 1.0e3;
 const PSPLINE_MPLS_P: f64 = 0.0;
 
-/// Parameters for mixture-model spline fitting.
-pub type MixtureModelParams = ArPlsParams;
 /// Parameters for iterative reweighted spline quantile regression.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct IrsqrParams {
@@ -98,15 +98,6 @@ impl IrsqrParams {
         }
         Ok(())
     }
-}
-
-/// Fits a mixture-model spline baseline.
-///
-/// # References
-///
-/// - `pybaselines.Baseline.mixture_model` is used as a behavioral reference.
-pub fn mixture_model(y: &[f64], params: MixtureModelParams) -> Result<Fit> {
-    arpls(y, params)
 }
 
 /// Fits an IRSQR spline baseline.
