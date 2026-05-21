@@ -36,6 +36,7 @@ is tightened with generated pybaselines fixtures.
   generated fixtures with algorithm-specific tolerances.
 - Replace compatibility wrappers with dedicated implementations family by
   family, preserving the public API and passing fixture tests.
-- Keep CubeCL WGPU behind `gpu-wgpu`; the first real kernel is a batched `f32`
-  moving-minimum morphology kernel. Further kernels should keep the unsafe
-  launch boundary isolated to `src/backend/cubecl_wgpu.rs`.
+- Keep CubeCL WGPU behind `gpu-wgpu`; current real-device-tested kernels cover
+  batched `f32` moving minimum, moving maximum, opening, and the top-hat
+  baseline primitive. Further kernels should keep the unsafe launch boundary
+  isolated to `src/backend/cubecl_wgpu.rs`.

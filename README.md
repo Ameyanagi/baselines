@@ -22,9 +22,9 @@ Whittaker, morphology, penalized spline, smoothing, classification, optimizer,
 and miscellaneous methods.
 
 Some algorithms currently share conservative Rust-native engines while golden
-fixtures are added. GPU support is feature-gated behind `gpu-wgpu`; the first
-experimental WGPU path provides a batched `f32` moving-minimum morphology
-kernel.
+fixtures are added. GPU support is feature-gated behind `gpu-wgpu`; the
+experimental WGPU path provides batched `f32` morphology kernels for moving
+minimum, moving maximum, opening, and the top-hat baseline primitive.
 
 ## Attribution
 
