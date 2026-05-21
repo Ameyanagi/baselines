@@ -9,6 +9,7 @@ use baselines::polynomial::{
     QuantRegParams, goldindec, imodpoly, modpoly, penalized_poly, poly, quant_reg,
 };
 use baselines::smoothing::{SmoothingParams, noise_median};
+use baselines::spline::pspline_asls;
 use baselines::whittaker::{
     AirPlsParams, ArPlsParams, AsPlsParams, AslsParams, BrPlsParams, DerPsalsaParams, DrPlsParams,
     IarPlsParams, IaslsParams, LsrPlsParams, PsalsaParams, WhittakerParams, airpls, arpls, asls,
@@ -213,6 +214,14 @@ fn core_algorithms_track_pybaselines_fixtures() {
         "lsrpls",
         &fixture,
         lsrpls(&fixture.signal, LsrPlsParams { whittaker })
+            .unwrap()
+            .baseline,
+        1e-8,
+    );
+    assert_close(
+        "pspline_asls",
+        &fixture,
+        pspline_asls(&fixture.signal, AslsParams { whittaker, p: 0.01 })
             .unwrap()
             .baseline,
         1e-8,

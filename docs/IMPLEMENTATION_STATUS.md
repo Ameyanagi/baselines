@@ -15,14 +15,15 @@ is tightened with generated pybaselines fixtures.
   `mormol`, `amormol`, `mpspline`, `jbcd`
 - Smoothing core: `noise_median`, `snip`, `swima`, `ipsa`, `ria`, `peak_filling`
 - Classification core: `rubberband`
+- Spline core: `pspline_asls`
 - Misc core: `interp_pts`
 
 ## Compatibility Entry Points Needing Fixture Tuning
 
 - Whittaker variants: none currently tracked
 - Morphology variants: none currently tracked
-- Spline family: `mixture_model`, `irsqr`, `corner_cutting`, all `pspline_*`
-  methods
+- Spline family: `mixture_model`, `irsqr`, `corner_cutting`, remaining
+  `pspline_*` methods
 - Classification variants: `dietrich`, `golotvin`, `std_distribution`,
   `fastchrom`, `cwt_br`, `fabc`
 - Optimizer/meta methods: `collab_pls`, `optimize_extended_range`,

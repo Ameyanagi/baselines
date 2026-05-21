@@ -55,6 +55,7 @@ def call_table() -> dict[str, Callable[[Baseline, list[float]], Any]]:
         "derpsalsa": lambda b, y: b.derpsalsa(y, lam=1e5, p=0.01),
         "brpls": lambda b, y: b.brpls(y, lam=1e5),
         "lsrpls": lambda b, y: b.lsrpls(y, lam=1e5),
+        "pspline_asls": lambda b, y: b.pspline_asls(y, lam=1e5, p=0.01),
         "rolling_ball": lambda b, y: b.rolling_ball(y, half_window=8),
         "mwmv": lambda b, y: b.mwmv(y, half_window=8),
         "tophat": lambda b, y: b.tophat(y, half_window=8),
