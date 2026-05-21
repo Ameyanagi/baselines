@@ -3,6 +3,7 @@
 use crate::BaselineError;
 use crate::Result;
 use crate::fit::{Fit, FitReport};
+use crate::linalg::pentadiagonal::{PentadiagonalWorkspace, solve_second_order};
 use crate::polynomial::fit_weighted_polynomial;
 use crate::whittaker::{AslsParams, asls};
 use crate::workspace::validate_signal;
@@ -232,12 +233,91 @@ pub fn adaptive_minmax(y: &[f64], params: AdaptiveMinmaxParams) -> Result<Fit> {
 ///
 /// # References
 ///
+/// - L. Chen et al., "Collaborative Penalized Least Squares for Background
+///   Correction of Multiple Raman Spectra", *Journal of Analytical Methods in
+///   Chemistry*, 2018.
 /// - `pybaselines.Baseline.collab_pls` is used as a behavioral reference.
 pub fn collab_pls(spectra: &[Vec<f64>], params: AslsParams) -> Result<Vec<Fit>> {
+    validate_spectra(spectra)?;
+    params.validate()?;
+
+    let n = spectra[0].len();
+    let mut average = vec![0.0; n];
+    for spectrum in spectra {
+        for (target, value) in average.iter_mut().zip(spectrum) {
+            *target += value;
+        }
+    }
+    let scale = 1.0 / spectra.len() as f64;
+    for value in &mut average {
+        *value *= scale;
+    }
+
+    let shared_weights = asls_weights(&average, params)?;
+    let mut solver = PentadiagonalWorkspace::new(n);
     spectra
         .iter()
-        .map(|spectrum| asls(spectrum, params))
+        .map(|spectrum| {
+            let mut baseline = vec![0.0; n];
+            solve_second_order(
+                spectrum,
+                &shared_weights,
+                params.whittaker.lambda,
+                &mut baseline,
+                &mut solver,
+            )?;
+            Ok(Fit {
+                baseline,
+                report: FitReport::new(1, true, 0.0),
+            })
+        })
         .collect()
+}
+
+fn validate_spectra(spectra: &[Vec<f64>]) -> Result<()> {
+    if spectra.is_empty() {
+        return Err(BaselineError::EmptyInput);
+    }
+    let expected = spectra[0].len();
+    for spectrum in spectra {
+        if spectrum.len() != expected {
+            return Err(BaselineError::LengthMismatch {
+                name: "spectrum",
+                expected,
+                actual: spectrum.len(),
+            });
+        }
+        validate_signal(spectrum)?;
+    }
+    Ok(())
+}
+
+fn asls_weights(y: &[f64], params: AslsParams) -> Result<Vec<f64>> {
+    let mut weights = vec![1.0; y.len()];
+    let mut previous = vec![1.0; y.len()];
+    let mut baseline = vec![0.0; y.len()];
+    let mut solver = PentadiagonalWorkspace::new(y.len());
+    for _ in 0..=params.whittaker.max_iter {
+        previous.copy_from_slice(&weights);
+        solve_second_order(
+            y,
+            &weights,
+            params.whittaker.lambda,
+            &mut baseline,
+            &mut solver,
+        )?;
+        for ((weight, observed), fitted) in weights.iter_mut().zip(y).zip(&baseline) {
+            *weight = if observed > fitted {
+                params.p
+            } else {
+                1.0 - params.p
+            };
+        }
+        if relative_change(&previous, &weights) < params.whittaker.tol {
+            break;
+        }
+    }
+    Ok(weights)
 }
 
 fn lambda_candidates(params: LambdaSearchParams) -> Vec<f64> {
@@ -330,4 +410,22 @@ fn extended_range_score(baseline: &[f64], added_left: &[f64], added_right: &[f64
         })
         .sum::<f64>();
     right_score + left_score
+}
+
+fn relative_change(previous: &[f64], current: &[f64]) -> f64 {
+    let numerator = previous
+        .iter()
+        .zip(current)
+        .map(|(old, new)| {
+            let diff = new - old;
+            diff * diff
+        })
+        .sum::<f64>()
+        .sqrt();
+    let denominator = previous
+        .iter()
+        .map(|value| value * value)
+        .sum::<f64>()
+        .sqrt();
+    numerator / denominator.max(f64::EPSILON)
 }

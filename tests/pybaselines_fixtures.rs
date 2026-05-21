@@ -8,7 +8,7 @@ use baselines::morphology::{
     MorphologyParams, imor, jbcd, mor, mormol, mpls, mpspline, mwmv, rolling_ball, snip, tophat,
 };
 use baselines::optimizers::{
-    AdaptiveMinmaxParams, LambdaSearchParams, adaptive_minmax, optimize_extended_range,
+    AdaptiveMinmaxParams, LambdaSearchParams, adaptive_minmax, collab_pls, optimize_extended_range,
 };
 use baselines::polynomial::{
     GoldindecParams, ImodPolyParams, ModPolyParams, PenalizedPolyParams, PolyParams,
@@ -538,12 +538,30 @@ fn core_algorithms_track_pybaselines_fixtures() {
         .baseline,
         1e-9,
     );
+    let collab = collab_pls(
+        &[fixture.signal.clone(), collab_signal(&fixture.signal)],
+        AslsParams { whittaker, p: 0.01 },
+    )
+    .unwrap();
+    assert_close("collab_pls_0", &fixture, collab[0].baseline.clone(), 1e-8);
+    assert_close("collab_pls_1", &fixture, collab[1].baseline.clone(), 1e-8);
     assert_close(
         "rubberband",
         &fixture,
         rubberband(&fixture.signal).unwrap().baseline,
         1e-12,
     );
+}
+
+fn collab_signal(values: &[f64]) -> Vec<f64> {
+    values
+        .iter()
+        .enumerate()
+        .map(|(index, value)| {
+            let x = index as f64 / (values.len() - 1) as f64;
+            value + 0.03 * x + 0.15 * (-((x - 0.55).powi(2)) / 0.002).exp()
+        })
+        .collect()
 }
 
 fn assert_close(name: &str, fixture: &Fixture, actual: Vec<f64>, tolerance: f64) {

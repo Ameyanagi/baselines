@@ -29,6 +29,17 @@ def signal(n: int = 128) -> list[float]:
     return values
 
 
+def collab_signal(values: list[float]) -> list[float]:
+    """Return a second deterministic signal for collaborative fixtures."""
+    n = len(values)
+    output: list[float] = []
+    for i, value in enumerate(values):
+        x = i / (n - 1)
+        shoulder = 0.15 * math.exp(-((x - 0.55) ** 2) / 0.002)
+        output.append(value + 0.03 * x + shoulder)
+    return output
+
+
 def as_list(result: Any) -> list[float]:
     """Extract the baseline array from a pybaselines result."""
     baseline = result[0] if isinstance(result, tuple) else result
@@ -128,6 +139,14 @@ def main() -> None:
 
     for name, call in call_table().items():
         payload["baselines"][name] = as_list(call(baseline, y))
+
+    collab_baselines, _ = baseline.collab_pls(
+        [y, collab_signal(y)],
+        method="asls",
+        method_kwargs={"lam": 1e5, "p": 0.01},
+    )
+    payload["baselines"]["collab_pls_0"] = [float(value) for value in collab_baselines[0]]
+    payload["baselines"]["collab_pls_1"] = [float(value) for value in collab_baselines[1]]
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
