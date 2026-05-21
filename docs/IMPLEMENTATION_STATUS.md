@@ -9,7 +9,7 @@ is tightened with generated pybaselines fixtures.
 
 - Whittaker core: `asls`, `airpls`, `arpls`, `psalsa`
 - Polynomial core: `poly`, `modpoly`, `imodpoly`, `loess`,
-  `penalized_poly`, `quant_reg`
+  `penalized_poly`, `quant_reg`, `goldindec`
 - Morphology core: `rolling_ball`, `mwmv`, `tophat`, `mor`, `imor`, `amormol`
 - Smoothing core: `noise_median`, `snip`, `swima`, `ipsa`, `ria`, `peak_filling`
 - Classification core: `rubberband`
@@ -27,7 +27,6 @@ is tightened with generated pybaselines fixtures.
 - Optimizer/meta methods: `collab_pls`, `optimize_extended_range`,
   `adaptive_minmax`, `custom_bc`
 - Misc: `beads`
-- Polynomial variants: `goldindec`
 
 ## Next Compatibility Work
 

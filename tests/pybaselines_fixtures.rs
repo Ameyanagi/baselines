@@ -3,8 +3,8 @@ use std::collections::BTreeMap;
 use baselines::classification::rubberband;
 use baselines::morphology::{MorphologyParams, mor, mwmv, rolling_ball, snip, tophat};
 use baselines::polynomial::{
-    ImodPolyParams, ModPolyParams, PenalizedPolyParams, PolyParams, QuantRegParams, imodpoly,
-    modpoly, penalized_poly, poly, quant_reg,
+    GoldindecParams, ImodPolyParams, ModPolyParams, PenalizedPolyParams, PolyParams,
+    QuantRegParams, goldindec, imodpoly, modpoly, penalized_poly, poly, quant_reg,
 };
 use baselines::smoothing::{SmoothingParams, noise_median};
 use baselines::whittaker::{
@@ -65,6 +65,14 @@ fn core_algorithms_track_pybaselines_fixtures() {
             .unwrap()
             .baseline,
         1e-3,
+    );
+    assert_close(
+        "goldindec",
+        &fixture,
+        goldindec(&fixture.signal, GoldindecParams::default())
+            .unwrap()
+            .baseline,
+        1e-12,
     );
 
     let whittaker = WhittakerParams {

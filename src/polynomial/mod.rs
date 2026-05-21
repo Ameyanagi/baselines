@@ -239,7 +239,43 @@ impl Default for QuantRegParams {
 }
 
 /// Parameters for Goldindec baseline fitting.
-pub type GoldindecParams = ModPolyParams;
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct GoldindecParams {
+    /// Polynomial order.
+    pub order: usize,
+    /// Maximum number of non-quadratic fit iterations for each threshold.
+    pub max_iter: usize,
+    /// Relative baseline-change tolerance for each threshold fit.
+    pub tol: f64,
+    /// Asymmetric non-quadratic loss function.
+    pub cost: PenalizedCost,
+    /// Expected fraction of peak points in `(0, 1)`.
+    pub peak_ratio: f64,
+    /// Scale factor for the non-quadratic penalty in `(0, 1]`.
+    pub alpha_factor: f64,
+    /// Maximum number of threshold-search iterations.
+    pub max_threshold_iter: usize,
+    /// Tolerance for the up/down-ratio objective.
+    pub ratio_tol: f64,
+    /// Relative threshold-change tolerance.
+    pub threshold_tol: f64,
+}
+
+impl Default for GoldindecParams {
+    fn default() -> Self {
+        Self {
+            order: 2,
+            max_iter: 250,
+            tol: 1.0e-3,
+            cost: PenalizedCost::AsymmetricIndec,
+            peak_ratio: 0.5,
+            alpha_factor: 0.99,
+            max_threshold_iter: 100,
+            ratio_tol: 1.0e-3,
+            threshold_tol: 1.0e-6,
+        }
+    }
+}
 
 /// Fits a penalized polynomial baseline.
 ///
@@ -312,9 +348,13 @@ pub fn quant_reg(y: &[f64], params: QuantRegParams) -> Result<Fit> {
 ///
 /// # References
 ///
+/// - J. Liu et al., "Goldindec: A Novel Algorithm for Raman Spectrum Baseline
+///   Correction", *Applied Spectroscopy*, 2015.
 /// - `pybaselines.Baseline.goldindec` is used as a behavioral reference.
 pub fn goldindec(y: &[f64], params: GoldindecParams) -> Result<Fit> {
-    modpoly(y, params)
+    let mut baseline = vec![0.0; y.len()];
+    let report = goldindec_into(y, params, &mut baseline)?;
+    Ok(Fit { baseline, report })
 }
 
 /// Fits a penalized polynomial baseline into an existing output buffer.
@@ -326,31 +366,93 @@ pub fn penalized_poly_into(
     validate_penalized_poly_params(params)?;
     validate_poly_input(y, params.order, baseline)?;
 
-    let weights = vec![1.0; y.len()];
-    let mut adjusted = y.to_vec();
-    let mut previous = vec![0.0; y.len()];
     let threshold = params
         .threshold
         .unwrap_or_else(|| standard_deviation(y) / 10.0);
+    let weights = vec![1.0; y.len()];
     fit_weighted_polynomial(y, &weights, params.order, baseline)?;
+    fit_penalized_polynomial_with_threshold(
+        y,
+        PenalizedFitParams {
+            order: params.order,
+            threshold,
+            alpha_factor: params.alpha_factor,
+            cost: params.cost,
+            max_iter: params.max_iter,
+            tol: params.tol,
+        },
+        baseline,
+    )
+}
+
+/// Fits a Goldindec baseline into an existing output buffer.
+pub fn goldindec_into(
+    y: &[f64],
+    params: GoldindecParams,
+    baseline: &mut [f64],
+) -> Result<FitReport> {
+    validate_goldindec_params(params)?;
+    validate_poly_input(y, params.order, baseline)?;
+
+    let weights = vec![1.0; y.len()];
+    fit_weighted_polynomial(y, &weights, params.order, baseline)?;
+    let initial = baseline.to_vec();
+    let goal = goldindec_up_down_ratio_goal(params.peak_ratio);
+    let mut lower = 0.0;
+    let mut upper = y
+        .iter()
+        .zip(&initial)
+        .map(|(observed, fitted)| observed - fitted)
+        .fold(f64::NEG_INFINITY, f64::max)
+        .abs();
+    if !upper.is_finite() || upper <= f64::EPSILON {
+        return Ok(FitReport::new(1, true, 0.0));
+    }
 
     let mut tolerance = f64::INFINITY;
-    for iter in 0..params.max_iter {
-        previous.copy_from_slice(baseline);
-        for ((target, observed), fitted) in adjusted.iter_mut().zip(y).zip(baseline.iter()) {
-            let residual = observed - fitted;
-            *target = observed
-                + non_quadratic_correction(residual, threshold, params.alpha_factor, params.cost);
+    let mut threshold = lower + 0.618 * (upper - lower);
+    for iter in 0..params.max_threshold_iter {
+        baseline.copy_from_slice(&initial);
+        fit_penalized_polynomial_with_threshold(
+            y,
+            PenalizedFitParams {
+                order: params.order,
+                threshold,
+                alpha_factor: params.alpha_factor,
+                cost: params.cost,
+                max_iter: params.max_iter,
+                tol: params.tol,
+            },
+            baseline,
+        )?;
+
+        let above = y
+            .iter()
+            .zip(baseline.iter())
+            .filter(|(observed, fitted)| observed > fitted)
+            .count();
+        let below_or_equal = y.len().saturating_sub(above).max(1);
+        tolerance = above as f64 / below_or_equal as f64 - goal;
+        if tolerance > params.ratio_tol {
+            lower = threshold;
+        } else if tolerance < -params.ratio_tol {
+            upper = threshold;
+        } else {
+            return Ok(FitReport::new(iter + 1, true, tolerance.abs()));
         }
 
-        fit_weighted_polynomial(&adjusted, &weights, params.order, baseline)?;
-        tolerance = relative_baseline_change(&previous, baseline);
-        if iter > 0 && tolerance <= params.tol {
-            return Ok(FitReport::new(iter + 1, true, tolerance));
+        let previous_threshold = threshold;
+        threshold = lower + 0.618 * (upper - lower);
+        if relative_scalar_change(previous_threshold, threshold) < params.threshold_tol {
+            return Ok(FitReport::new(iter + 1, true, tolerance.abs()));
         }
     }
 
-    Ok(FitReport::new(params.max_iter, false, tolerance))
+    Ok(FitReport::new(
+        params.max_threshold_iter,
+        false,
+        tolerance.abs(),
+    ))
 }
 
 /// Fits an improved modified polynomial baseline into an existing output buffer.
@@ -474,6 +576,107 @@ fn validate_penalized_poly_params(params: PenalizedPolyParams) -> Result<()> {
         });
     }
     Ok(())
+}
+
+fn validate_goldindec_params(params: GoldindecParams) -> Result<()> {
+    validate_iter_params(params.max_iter, params.tol)?;
+    if params.max_threshold_iter == 0 {
+        return Err(BaselineError::InvalidParameter {
+            name: "max_threshold_iter",
+            reason: "must be greater than zero",
+        });
+    }
+    if !params.peak_ratio.is_finite() || params.peak_ratio <= 0.0 || params.peak_ratio >= 1.0 {
+        return Err(BaselineError::InvalidParameter {
+            name: "peak_ratio",
+            reason: "must be finite and between 0 and 1",
+        });
+    }
+    if !params.alpha_factor.is_finite() || params.alpha_factor <= 0.0 || params.alpha_factor > 1.0 {
+        return Err(BaselineError::InvalidParameter {
+            name: "alpha_factor",
+            reason: "must be finite and in (0, 1]",
+        });
+    }
+    if !params.ratio_tol.is_finite() || params.ratio_tol <= 0.0 {
+        return Err(BaselineError::InvalidParameter {
+            name: "ratio_tol",
+            reason: "must be finite and positive",
+        });
+    }
+    if !params.threshold_tol.is_finite() || params.threshold_tol <= 0.0 {
+        return Err(BaselineError::InvalidParameter {
+            name: "threshold_tol",
+            reason: "must be finite and positive",
+        });
+    }
+    if !params.cost.is_asymmetric() {
+        return Err(BaselineError::InvalidParameter {
+            name: "cost",
+            reason: "goldindec requires an asymmetric cost",
+        });
+    }
+    Ok(())
+}
+
+#[derive(Debug, Clone, Copy)]
+struct PenalizedFitParams {
+    order: usize,
+    threshold: f64,
+    alpha_factor: f64,
+    cost: PenalizedCost,
+    max_iter: usize,
+    tol: f64,
+}
+
+fn fit_penalized_polynomial_with_threshold(
+    y: &[f64],
+    params: PenalizedFitParams,
+    baseline: &mut [f64],
+) -> Result<FitReport> {
+    let weights = vec![1.0; y.len()];
+    let mut adjusted = y.to_vec();
+    let mut previous = vec![0.0; y.len()];
+    let mut tolerance = f64::INFINITY;
+
+    for iter in 0..params.max_iter {
+        previous.copy_from_slice(baseline);
+        for ((target, observed), fitted) in adjusted.iter_mut().zip(y).zip(baseline.iter()) {
+            let residual = observed - fitted;
+            *target = observed
+                + non_quadratic_correction(
+                    residual,
+                    params.threshold,
+                    params.alpha_factor,
+                    params.cost,
+                );
+        }
+
+        fit_weighted_polynomial(&adjusted, &weights, params.order, baseline)?;
+        tolerance = relative_baseline_change(&previous, baseline);
+        if iter > 0 && tolerance <= params.tol {
+            return Ok(FitReport::new(iter + 1, true, tolerance));
+        }
+    }
+
+    Ok(FitReport::new(params.max_iter, false, tolerance))
+}
+
+fn goldindec_up_down_ratio_goal(peak_ratio: f64) -> f64 {
+    0.7679 + 11.2358 * peak_ratio - 39.7064 * peak_ratio.powi(2) + 92.3583 * peak_ratio.powi(3)
+}
+
+fn relative_scalar_change(previous: f64, current: f64) -> f64 {
+    (current - previous).abs() / previous.abs().max(f64::EPSILON)
+}
+
+impl PenalizedCost {
+    fn is_asymmetric(self) -> bool {
+        matches!(
+            self,
+            Self::AsymmetricTruncatedQuadratic | Self::AsymmetricHuber | Self::AsymmetricIndec
+        )
+    }
 }
 
 fn non_quadratic_correction(
