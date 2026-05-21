@@ -1,12 +1,54 @@
 //! Additional Whittaker-family algorithm entry points.
 
 use crate::fit::Fit;
+use crate::linalg::pentadiagonal::solve_second_order_with_first_order;
+use crate::polynomial::fit_weighted_polynomial;
 use crate::whittaker::engine::{Reweighter, WhittakerParams, fit_alloc, relative_change};
 use crate::whittaker::{ArPlsParams, AslsParams, arpls, asls};
-use crate::{BaselineError, Result};
+use crate::workspace::{validate_output, validate_signal};
+use crate::{BaselineError, FitReport, Result};
 
 /// Parameters for improved asymmetric least squares.
-pub type IaslsParams = AslsParams;
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct IaslsParams {
+    /// Shared Whittaker parameters.
+    pub whittaker: WhittakerParams,
+    /// Asymmetry parameter in `(0, 1)`.
+    pub p: f64,
+    /// Smoothness penalty for the first derivative of the residual.
+    pub lambda_1: f64,
+}
+
+impl Default for IaslsParams {
+    fn default() -> Self {
+        Self {
+            whittaker: WhittakerParams::default(),
+            p: 0.01,
+            lambda_1: 1.0e-4,
+        }
+    }
+}
+
+impl IaslsParams {
+    /// Validates IAsLS parameters.
+    pub fn validate(&self) -> Result<()> {
+        self.whittaker.validate()?;
+        if !self.p.is_finite() || self.p <= 0.0 || self.p >= 1.0 {
+            return Err(BaselineError::InvalidParameter {
+                name: "p",
+                reason: "must be finite and between 0 and 1",
+            });
+        }
+        if !self.lambda_1.is_finite() || self.lambda_1 <= 0.0 {
+            return Err(BaselineError::InvalidParameter {
+                name: "lambda_1",
+                reason: "must be finite and positive",
+            });
+        }
+        Ok(())
+    }
+}
+
 /// Parameters for doubly reweighted penalized least squares.
 pub type DrPlsParams = ArPlsParams;
 /// Parameters for improved asymmetrically reweighted penalized least squares.
@@ -71,9 +113,89 @@ impl PsalsaParams {
 ///
 /// # References
 ///
+/// - S. He et al., "Baseline correction for Raman spectra using an improved
+///   asymmetric least squares method", *Analytical Methods*, 2014.
 /// - `pybaselines.Baseline.iasls` is used as a behavioral reference.
 pub fn iasls(y: &[f64], params: IaslsParams) -> Result<Fit> {
-    asls(y, params)
+    let mut baseline = vec![0.0; y.len()];
+    let report = iasls_into(y, params, &mut baseline)?;
+    Ok(Fit { baseline, report })
+}
+
+/// Fits an IAsLS baseline into an existing output buffer.
+pub fn iasls_into(y: &[f64], params: IaslsParams, baseline: &mut [f64]) -> Result<FitReport> {
+    validate_signal(y)?;
+    validate_output("baseline", y.len(), baseline.len())?;
+    if y.len() < 3 {
+        return Err(BaselineError::TooShort {
+            algorithm: "iasls",
+            len: y.len(),
+            min: 3,
+        });
+    }
+    params.validate()?;
+
+    let n = y.len();
+    let mut workspace = crate::whittaker::WhittakerWorkspace::new(n);
+    workspace.iter.weights.fill(1.0);
+    fit_weighted_polynomial(y, &workspace.iter.weights, 2, &mut workspace.iter.residual)?;
+    for ((weight, observed), fitted) in workspace
+        .iter
+        .weights
+        .iter_mut()
+        .zip(y)
+        .zip(&workspace.iter.residual)
+    {
+        *weight = asls_weight(*observed, *fitted, params.p);
+    }
+    let mut first_order_rhs = vec![0.0; n];
+    first_order_penalty_rhs(y, params.lambda_1, &mut first_order_rhs);
+
+    let mut tolerance = f64::INFINITY;
+    for iter in 0..params.whittaker.max_iter {
+        workspace
+            .iter
+            .previous_weights
+            .copy_from_slice(&workspace.iter.weights);
+
+        for (((diagonal, rhs), weight), (observed, first_order_rhs)) in workspace
+            .iter
+            .residual
+            .iter_mut()
+            .zip(workspace.iter.rhs.iter_mut())
+            .zip(&workspace.iter.weights)
+            .zip(y.iter().zip(&first_order_rhs))
+        {
+            let weight_squared = weight * weight;
+            *diagonal = weight_squared;
+            *rhs = weight_squared * observed + first_order_rhs;
+        }
+
+        solve_second_order_with_first_order(
+            &workspace.iter.residual,
+            &workspace.iter.rhs,
+            params.whittaker.lambda,
+            params.lambda_1,
+            baseline,
+            &mut workspace.solver,
+        )?;
+
+        for ((weight, observed), fitted) in workspace
+            .iter
+            .weights
+            .iter_mut()
+            .zip(y)
+            .zip(baseline.iter())
+        {
+            *weight = asls_weight(*observed, *fitted, params.p);
+        }
+        tolerance = relative_change(&workspace.iter.previous_weights, &workspace.iter.weights);
+        if tolerance <= params.whittaker.tol {
+            return Ok(FitReport::new(iter + 1, true, tolerance));
+        }
+    }
+
+    Ok(FitReport::new(params.whittaker.max_iter, false, tolerance))
 }
 
 /// Fits a drPLS baseline.
@@ -186,4 +308,17 @@ fn standard_deviation(values: &[f64]) -> f64 {
         .sum::<f64>()
         / values.len() as f64;
     variance.sqrt()
+}
+
+fn asls_weight(observed: f64, fitted: f64, p: f64) -> f64 {
+    if observed > fitted { p } else { 1.0 - p }
+}
+
+fn first_order_penalty_rhs(y: &[f64], lambda_1: f64, output: &mut [f64]) {
+    output[0] = lambda_1 * (y[0] - y[1]);
+    for i in 1..y.len() - 1 {
+        output[i] = lambda_1 * (2.0 * y[i] - y[i - 1] - y[i + 1]);
+    }
+    let last = y.len() - 1;
+    output[last] = lambda_1 * (y[last] - y[last - 1]);
 }

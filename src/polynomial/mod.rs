@@ -802,7 +802,8 @@ fn validate_iter_params(max_iter: usize, tol: f64) -> Result<()> {
     Ok(())
 }
 
-fn fit_weighted_polynomial(
+/// Fits a weighted polynomial baseline into an existing output buffer.
+pub(crate) fn fit_weighted_polynomial(
     y: &[f64],
     weights: &[f64],
     order: usize,

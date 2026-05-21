@@ -95,6 +95,58 @@ pub fn solve_second_order(
         *rhs = observed * weight;
     }
 
+    factor_and_solve(baseline, workspace)
+}
+
+/// Solves a second-order Whittaker system with an added first-order penalty.
+pub(crate) fn solve_second_order_with_first_order(
+    diagonal: &[f64],
+    rhs: &[f64],
+    lambda_second: f64,
+    lambda_first: f64,
+    baseline: &mut [f64],
+    workspace: &mut PentadiagonalWorkspace,
+) -> Result<()> {
+    let n = diagonal.len();
+    if n != rhs.len() {
+        return Err(BaselineError::LengthMismatch {
+            name: "rhs",
+            expected: n,
+            actual: rhs.len(),
+        });
+    }
+    if n != baseline.len() {
+        return Err(BaselineError::LengthMismatch {
+            name: "baseline",
+            expected: n,
+            actual: baseline.len(),
+        });
+    }
+    if n < 3 {
+        return Err(BaselineError::TooShort {
+            algorithm: "whittaker",
+            len: n,
+            min: 3,
+        });
+    }
+    validate_positive_lambda("lambda_second", lambda_second)?;
+    validate_positive_lambda("lambda_first", lambda_first)?;
+
+    workspace.resize(n);
+    fill_second_order_bands(
+        diagonal,
+        lambda_second,
+        &mut workspace.diag,
+        &mut workspace.sub1,
+        &mut workspace.sub2,
+    );
+    add_first_order_penalty(lambda_first, &mut workspace.diag, &mut workspace.sub1);
+    workspace.tmp.copy_from_slice(rhs);
+
+    factor_and_solve(baseline, workspace)
+}
+
+fn factor_and_solve(baseline: &mut [f64], workspace: &mut PentadiagonalWorkspace) -> Result<()> {
     cholesky_factor(
         &workspace.diag,
         &workspace.sub1,
@@ -110,6 +162,16 @@ pub fn solve_second_order(
         &mut workspace.tmp,
     );
     baseline.copy_from_slice(&workspace.tmp);
+    Ok(())
+}
+
+fn validate_positive_lambda(name: &'static str, lambda: f64) -> Result<()> {
+    if !lambda.is_finite() || lambda <= 0.0 {
+        return Err(BaselineError::InvalidParameter {
+            name,
+            reason: "must be finite and positive",
+        });
+    }
     Ok(())
 }
 
@@ -141,6 +203,18 @@ fn fill_second_order_bands(
 
     for value in sub2 {
         *value = lambda;
+    }
+}
+
+fn add_first_order_penalty(lambda: f64, diag: &mut [f64], sub1: &mut [f64]) {
+    let n = diag.len();
+    diag[0] += lambda;
+    diag[n - 1] += lambda;
+    for value in &mut diag[1..n - 1] {
+        *value += 2.0 * lambda;
+    }
+    for value in sub1 {
+        *value -= lambda;
     }
 }
 

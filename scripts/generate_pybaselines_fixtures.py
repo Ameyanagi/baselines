@@ -45,6 +45,7 @@ def call_table() -> dict[str, Callable[[Baseline, list[float]], Any]]:
         "quant_reg": lambda b, y: b.quant_reg(y, poly_order=2, quantile=0.05),
         "goldindec": lambda b, y: b.goldindec(y, poly_order=2),
         "asls": lambda b, y: b.asls(y, lam=1e5, p=0.01),
+        "iasls": lambda b, y: b.iasls(y, lam=1e5, p=0.01, lam_1=1e-4),
         "airpls": lambda b, y: b.airpls(y, lam=1e5),
         "arpls": lambda b, y: b.arpls(y, lam=1e5),
         "psalsa": lambda b, y: b.psalsa(y, lam=1e5, p=0.5),
