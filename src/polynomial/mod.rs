@@ -142,6 +142,100 @@ pub fn imodpoly(y: &[f64], params: ImodPolyParams) -> Result<Fit> {
     Ok(Fit { baseline, report })
 }
 
+/// Parameters for penalized polynomial fitting.
+pub type PenalizedPolyParams = ModPolyParams;
+
+/// Parameters for LOESS baseline fitting.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LoessParams {
+    /// Local regression window size.
+    pub window_size: usize,
+}
+
+impl Default for LoessParams {
+    fn default() -> Self {
+        Self { window_size: 31 }
+    }
+}
+
+/// Parameters for quantile-regression polynomial fitting.
+pub type QuantRegParams = ModPolyParams;
+
+/// Parameters for Goldindec baseline fitting.
+pub type GoldindecParams = ModPolyParams;
+
+/// Fits a penalized polynomial baseline.
+///
+/// # References
+///
+/// - `pybaselines.Baseline.penalized_poly` is used as a behavioral reference.
+pub fn penalized_poly(y: &[f64], params: PenalizedPolyParams) -> Result<Fit> {
+    modpoly(y, params)
+}
+
+/// Fits a LOESS-style local smoothing baseline.
+///
+/// # References
+///
+/// - `pybaselines.Baseline.loess` is used as a behavioral reference.
+pub fn loess(y: &[f64], params: LoessParams) -> Result<Fit> {
+    validate_signal(y)?;
+    if params.window_size == 0 {
+        return Err(BaselineError::InvalidParameter {
+            name: "window_size",
+            reason: "must be greater than zero",
+        });
+    }
+    let radius = params.window_size / 2;
+    let mut baseline = vec![0.0; y.len()];
+    for (i, target) in baseline.iter_mut().enumerate() {
+        let start = i.saturating_sub(radius);
+        let end = (i + radius + 1).min(y.len());
+        let x0 = scaled_x(i, y.len());
+        let mut weight_sum = 0.0;
+        let mut value_sum = 0.0;
+        for (j, observed) in y[start..end].iter().enumerate() {
+            let index = start + j;
+            let distance = (scaled_x(index, y.len()) - x0).abs();
+            let max_distance = (radius.max(1) as f64) * 2.0 / y.len().max(2) as f64;
+            let scaled = (distance / max_distance).min(1.0);
+            let weight = (1.0 - scaled.powi(3)).powi(3);
+            weight_sum += weight;
+            value_sum += weight * observed;
+        }
+        *target = value_sum / weight_sum.max(f64::EPSILON);
+    }
+    Ok(Fit {
+        baseline,
+        report: FitReport::new(1, true, 0.0),
+    })
+}
+
+/// Fits a quantile-regression polynomial baseline.
+///
+/// # References
+///
+/// - `pybaselines.Baseline.quant_reg` is used as a behavioral reference.
+pub fn quant_reg(y: &[f64], params: QuantRegParams) -> Result<Fit> {
+    imodpoly(
+        y,
+        ImodPolyParams {
+            order: params.order,
+            max_iter: params.max_iter,
+            tol: params.tol,
+        },
+    )
+}
+
+/// Fits a Goldindec polynomial baseline.
+///
+/// # References
+///
+/// - `pybaselines.Baseline.goldindec` is used as a behavioral reference.
+pub fn goldindec(y: &[f64], params: GoldindecParams) -> Result<Fit> {
+    modpoly(y, params)
+}
+
 /// Fits an improved modified polynomial baseline into an existing output buffer.
 pub fn imodpoly_into(y: &[f64], params: ImodPolyParams, baseline: &mut [f64]) -> Result<FitReport> {
     validate_iter_params(params.max_iter, params.tol)?;

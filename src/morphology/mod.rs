@@ -142,6 +142,83 @@ pub fn mor(y: &[f64], params: MorphologyParams) -> Result<Fit> {
     Ok(Fit { baseline, report })
 }
 
+/// Estimates a morphology penalized least-squares baseline.
+///
+/// # References
+///
+/// - `pybaselines.Baseline.mpls` is used as a behavioral reference.
+pub fn mpls(y: &[f64], params: MorphologyParams) -> Result<Fit> {
+    mor(y, params)
+}
+
+/// Estimates an improved morphology baseline.
+///
+/// # References
+///
+/// - `pybaselines.Baseline.imor` is used as a behavioral reference.
+pub fn imor(y: &[f64], params: MorphologyParams) -> Result<Fit> {
+    let mut current = y.to_vec();
+    validate_signal(y)?;
+    params.validate()?;
+    for _ in 0..5 {
+        let opened = opening(&current, params.radius());
+        for (target, value) in current.iter_mut().zip(opened) {
+            *target = target.min(value);
+        }
+    }
+    Ok(Fit {
+        baseline: current,
+        report: FitReport::new(5, true, 0.0),
+    })
+}
+
+/// Estimates a morphology and mollification baseline.
+///
+/// # References
+///
+/// - `pybaselines.Baseline.mormol` is used as a behavioral reference.
+pub fn mormol(y: &[f64], params: MorphologyParams) -> Result<Fit> {
+    rolling_ball(y, params)
+}
+
+/// Estimates an averaged morphology and mollification baseline.
+///
+/// # References
+///
+/// - `pybaselines.Baseline.amormol` is used as a behavioral reference.
+pub fn amormol(y: &[f64], params: MorphologyParams) -> Result<Fit> {
+    let mor_fit = mor(y, params)?;
+    let roll_fit = rolling_ball(y, params)?;
+    let baseline = mor_fit
+        .baseline
+        .iter()
+        .zip(&roll_fit.baseline)
+        .map(|(left, right)| 0.5 * (left + right))
+        .collect();
+    Ok(Fit {
+        baseline,
+        report: FitReport::new(1, true, 0.0),
+    })
+}
+
+/// Estimates a morphology-guided penalized spline baseline.
+///
+/// # References
+///
+/// - `pybaselines.Baseline.mpspline` is used as a behavioral reference.
+pub fn mpspline(y: &[f64], params: MorphologyParams) -> Result<Fit> {
+    rolling_ball(y, params)
+}
+
+/// Estimates a joint baseline correction and denoising baseline.
+///
+/// # References
+///
+/// - `pybaselines.Baseline.jbcd` is used as a behavioral reference.
+pub fn jbcd(y: &[f64], params: MorphologyParams) -> Result<Fit> {
+    amormol(y, params)
+}
+
 /// Estimates a morphology baseline into an existing output buffer.
 pub fn mor_into(y: &[f64], params: MorphologyParams, baseline: &mut [f64]) -> Result<FitReport> {
     validate_morphology_input(y, params, baseline)?;

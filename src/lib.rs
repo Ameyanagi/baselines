@@ -8,11 +8,16 @@
 //! and behavioral reference, not as copied implementation code.
 
 pub mod backend;
+pub mod classification;
 pub mod error;
 pub mod fit;
 pub mod linalg;
+pub mod misc;
 pub mod morphology;
+pub mod optimizers;
 pub mod polynomial;
+pub mod smoothing;
+pub mod spline;
 pub mod whittaker;
 pub mod workspace;
 
