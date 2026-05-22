@@ -5,19 +5,20 @@ use baselines::classification::{
     StdDistributionParams, cwt_br, dietrich, fabc, fastchrom, golotvin, rubberband,
     std_distribution,
 };
-use baselines::misc::{BeadsParams, beads};
+use baselines::misc::{BeadsParams, beads, interp_pts};
 use baselines::morphology::{
-    MorphologyParams, imor, jbcd, mor, mormol, mpls, mpspline, mwmv, rolling_ball, snip, tophat,
+    MorphologyParams, amormol, imor, jbcd, mor, mormol, mpls, mpspline, mwmv, rolling_ball, snip,
+    tophat,
 };
 use baselines::optimizers::{
     AdaptiveMinmaxParams, CustomBcParams, LambdaSearchParams, adaptive_minmax, collab_pls,
     custom_bc, optimize_extended_range,
 };
 use baselines::polynomial::{
-    GoldindecParams, ImodPolyParams, ModPolyParams, PenalizedPolyParams, PolyParams,
-    QuantRegParams, goldindec, imodpoly, modpoly, penalized_poly, poly, quant_reg,
+    GoldindecParams, ImodPolyParams, LoessParams, ModPolyParams, PenalizedPolyParams, PolyParams,
+    QuantRegParams, goldindec, imodpoly, loess, modpoly, penalized_poly, poly, quant_reg,
 };
-use baselines::smoothing::{SmoothingParams, noise_median};
+use baselines::smoothing::{SmoothingParams, ipsa, noise_median, peak_filling, ria, swima};
 use baselines::spline::{
     CornerCuttingParams, IrsqrParams, MixtureModelParams, corner_cutting, irsqr, mixture_model,
     pspline_airpls, pspline_arpls, pspline_asls, pspline_aspls, pspline_brpls, pspline_derpsalsa,
@@ -33,8 +34,96 @@ use serde::Deserialize;
 #[derive(Debug, Deserialize)]
 struct Fixture {
     pybaselines_version: String,
+    pybaselines_methods: Vec<String>,
     signal: Vec<f64>,
     baselines: BTreeMap<String, Vec<f64>>,
+    cases: BTreeMap<String, FixtureCase>,
+}
+
+#[derive(Debug, Deserialize)]
+struct FixtureCase {
+    signal: Vec<f64>,
+    baselines: BTreeMap<String, Vec<f64>>,
+}
+
+const EXPECTED_PYBASELINES_METHODS: &[&str] = &[
+    "adaptive_minmax",
+    "airpls",
+    "amormol",
+    "arpls",
+    "asls",
+    "aspls",
+    "beads",
+    "brpls",
+    "collab_pls",
+    "corner_cutting",
+    "custom_bc",
+    "cwt_br",
+    "derpsalsa",
+    "dietrich",
+    "drpls",
+    "fabc",
+    "fastchrom",
+    "goldindec",
+    "golotvin",
+    "iarpls",
+    "iasls",
+    "imodpoly",
+    "imor",
+    "interp_pts",
+    "ipsa",
+    "irsqr",
+    "jbcd",
+    "loess",
+    "lsrpls",
+    "mixture_model",
+    "modpoly",
+    "mor",
+    "mormol",
+    "mpls",
+    "mpspline",
+    "mwmv",
+    "noise_median",
+    "optimize_extended_range",
+    "peak_filling",
+    "penalized_poly",
+    "poly",
+    "psalsa",
+    "pspline_airpls",
+    "pspline_arpls",
+    "pspline_asls",
+    "pspline_aspls",
+    "pspline_brpls",
+    "pspline_derpsalsa",
+    "pspline_drpls",
+    "pspline_iarpls",
+    "pspline_iasls",
+    "pspline_lsrpls",
+    "pspline_mpls",
+    "pspline_psalsa",
+    "quant_reg",
+    "ria",
+    "rolling_ball",
+    "rubberband",
+    "snip",
+    "std_distribution",
+    "swima",
+    "tophat",
+];
+
+#[test]
+fn pybaselines_method_list_has_not_drifted() {
+    let fixture: Fixture =
+        serde_json::from_str(include_str!("fixtures/pybaselines_1d_reference.json")).unwrap();
+    assert_eq!(fixture.pybaselines_version, "1.2.1");
+    let expected: Vec<String> = EXPECTED_PYBASELINES_METHODS
+        .iter()
+        .map(|method| (*method).to_owned())
+        .collect();
+    assert_eq!(
+        fixture.pybaselines_methods, expected,
+        "pinned pybaselines public method list changed"
+    );
 }
 
 #[test]
@@ -74,6 +163,14 @@ fn core_algorithms_track_pybaselines_fixtures() {
             .unwrap()
             .baseline,
         1e-12,
+    );
+    assert_close(
+        "loess",
+        &fixture,
+        loess(&fixture.signal, LoessParams { window_size: 25 })
+            .unwrap()
+            .baseline,
+        6e-1,
     );
     assert_close(
         "quant_reg",
@@ -434,6 +531,12 @@ fn core_algorithms_track_pybaselines_fixtures() {
         3e-4,
     );
     assert_close(
+        "amormol",
+        &fixture,
+        amormol(&fixture.signal, morphology).unwrap().baseline,
+        2e-1,
+    );
+    assert_close(
         "jbcd",
         &fixture,
         jbcd(&fixture.signal, morphology).unwrap().baseline,
@@ -469,6 +572,34 @@ fn core_algorithms_track_pybaselines_fixtures() {
         .unwrap()
         .baseline,
         1.3e-1,
+    );
+    let smooth = SmoothingParams {
+        window_size: 17,
+        max_iter: 20,
+    };
+    assert_close(
+        "swima",
+        &fixture,
+        swima(&fixture.signal, smooth).unwrap().baseline,
+        3.5e-1,
+    );
+    assert_close(
+        "ipsa",
+        &fixture,
+        ipsa(&fixture.signal, smooth).unwrap().baseline,
+        3.5e-1,
+    );
+    assert_close(
+        "ria",
+        &fixture,
+        ria(&fixture.signal, smooth).unwrap().baseline,
+        4e-1,
+    );
+    assert_close(
+        "peak_filling",
+        &fixture,
+        peak_filling(&fixture.signal, smooth).unwrap().baseline,
+        7e-1,
     );
     assert_close(
         "corner_cutting",
@@ -596,6 +727,133 @@ fn core_algorithms_track_pybaselines_fixtures() {
             .baseline,
         1e-8,
     );
+    assert_close(
+        "interp_pts",
+        &fixture,
+        interp_pts(
+            &fixture.signal,
+            &[
+                (0, fixture.signal[0]),
+                (
+                    fixture.signal.len() / 2,
+                    fixture.signal[fixture.signal.len() / 2],
+                ),
+                (
+                    fixture.signal.len() - 1,
+                    fixture.signal[fixture.signal.len() - 1],
+                ),
+            ],
+        )
+        .unwrap()
+        .baseline,
+        1e-12,
+    );
+}
+
+#[test]
+fn targeted_signal_cases_track_representative_methods() {
+    let fixture: Fixture =
+        serde_json::from_str(include_str!("fixtures/pybaselines_1d_reference.json")).unwrap();
+    let whittaker = WhittakerParams {
+        lambda: 1e5,
+        max_iter: 50,
+        tol: 1e-3,
+    };
+    let morphology = MorphologyParams { window_size: 17 };
+
+    for (case_name, case) in &fixture.cases {
+        if case_name == "reference" {
+            continue;
+        }
+        assert_case_close(
+            case_name,
+            "asls",
+            &case.baselines,
+            asls(&case.signal, AslsParams { whittaker, p: 0.01 })
+                .unwrap()
+                .baseline,
+            1e-8,
+        );
+        assert_case_close(
+            case_name,
+            "arpls",
+            &case.baselines,
+            arpls(&case.signal, ArPlsParams { whittaker })
+                .unwrap()
+                .baseline,
+            2e-3,
+        );
+        assert_case_close(
+            case_name,
+            "rolling_ball",
+            &case.baselines,
+            rolling_ball(&case.signal, morphology).unwrap().baseline,
+            1e-12,
+        );
+        assert_case_close(
+            case_name,
+            "pspline_asls",
+            &case.baselines,
+            pspline_asls(&case.signal, AslsParams { whittaker, p: 0.01 })
+                .unwrap()
+                .baseline,
+            5e-4,
+        );
+        if case.baselines.contains_key("cwt_br") {
+            assert_case_close(
+                case_name,
+                "cwt_br",
+                &case.baselines,
+                cwt_br(
+                    &case.signal,
+                    CwtBrParams {
+                        poly_order: 2,
+                        scales: Some(vec![8]),
+                        num_std: 1.0,
+                        min_length: 2,
+                        max_iter: 50,
+                        tol: 1e-3,
+                        symmetric: false,
+                    },
+                )
+                .unwrap()
+                .baseline,
+                3e-2,
+            );
+        }
+        assert_case_close(
+            case_name,
+            "custom_bc",
+            &case.baselines,
+            custom_bc(
+                &case.signal,
+                CustomBcParams {
+                    sampling: 4,
+                    asls: AslsParams { whittaker, p: 0.01 },
+                    ..CustomBcParams::default()
+                },
+            )
+            .unwrap()
+            .baseline,
+            1e-8,
+        );
+        assert_case_close(
+            case_name,
+            "rubberband",
+            &case.baselines,
+            rubberband(&case.signal).unwrap().baseline,
+            1e-12,
+        );
+        assert_case_close(
+            case_name,
+            "beads",
+            &case.baselines,
+            beads(&case.signal, BeadsParams::default())
+                .unwrap()
+                .baseline,
+            1e-8,
+        );
+    }
 }
 
 fn collab_signal(values: &[f64]) -> Vec<f64> {
@@ -610,9 +868,28 @@ fn collab_signal(values: &[f64]) -> Vec<f64> {
 }
 
 fn assert_close(name: &str, fixture: &Fixture, actual: Vec<f64>, tolerance: f64) {
-    let expected = fixture
-        .baselines
-        .get(name)
+    assert_baseline_close(name, &fixture.baselines, actual, tolerance);
+}
+
+fn assert_case_close(
+    case_name: &str,
+    method_name: &str,
+    baselines: &BTreeMap<String, Vec<f64>>,
+    actual: Vec<f64>,
+    tolerance: f64,
+) {
+    let label = format!("{case_name}.{method_name}");
+    assert_baseline_close(&label, baselines, actual, tolerance);
+}
+
+fn assert_baseline_close(
+    name: &str,
+    baselines: &BTreeMap<String, Vec<f64>>,
+    actual: Vec<f64>,
+    tolerance: f64,
+) {
+    let expected = baselines
+        .get(name.rsplit_once('.').map_or(name, |(_, method)| method))
         .unwrap_or_else(|| panic!("missing fixture for {name}"));
     assert_eq!(actual.len(), expected.len(), "{name} length mismatch");
     let max_error = actual

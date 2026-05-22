@@ -34,3 +34,7 @@ gpu-wgpu = ["dep:cubecl", "cubecl/wgpu"]
 fmt = "cargo fmt --all --check"
 clippy = "cargo clippy --workspace --all-targets --all-features -- -D warnings"
 test = "cargo test --workspace --all-features"
+
+[[bench]]
+name = "baseline_workloads"
+harness = false

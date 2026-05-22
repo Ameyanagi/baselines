@@ -27,6 +27,9 @@ feature-gated behind `gpu-wgpu`; the experimental WGPU path provides batched
 `f32` morphology kernels for moving minimum, moving maximum, opening, and the
 top-hat baseline primitive.
 
+See `docs/PARITY.md` for the current one-dimensional pybaselines parity matrix
+and known limits.
+
 ## Attribution
 
 This project does not copy implementation code from `pybaselines`. The Python
