@@ -4,6 +4,10 @@ use baselines::MatrixView;
 use baselines::two_d::morphology::{
     Morphology2DParams, imor, mor, noise_median, rolling_ball, tophat,
 };
+use baselines::two_d::polynomial::{
+    ImodPoly2DParams, ModPoly2DParams, PenalizedPoly2DParams, Poly2DParams, QuantReg2DParams,
+    imodpoly, modpoly, penalized_poly, poly, quant_reg,
+};
 use serde::Deserialize;
 
 const EXPECTED_PYBASELINES_2D_METHODS: &[&str] = &[
@@ -159,6 +163,82 @@ fn native_2d_morphology_tracks_reference_fixture() {
         "noise_median",
         &fixture.baselines,
         noise_median(input, params).unwrap().baseline,
+        3e-1,
+    );
+}
+
+#[test]
+fn native_2d_polynomial_tracks_reference_fixture() {
+    let fixture: Fixture2D =
+        serde_json::from_str(include_str!("fixtures/pybaselines_2d_reference.json")).unwrap();
+    let [rows, cols] = fixture.shape;
+    let input = MatrixView::row_major(&fixture.signal, rows, cols).unwrap();
+
+    assert_baseline_close(
+        "poly",
+        &fixture.baselines,
+        poly(input, Poly2DParams { order: 2 }).unwrap().baseline,
+        3e-1,
+    );
+    assert_baseline_close(
+        "modpoly",
+        &fixture.baselines,
+        modpoly(
+            input,
+            ModPoly2DParams {
+                order: 2,
+                max_iter: 20,
+                tol: 1e-3,
+            },
+        )
+        .unwrap()
+        .baseline,
+        3e-1,
+    );
+    assert_baseline_close(
+        "imodpoly",
+        &fixture.baselines,
+        imodpoly(
+            input,
+            ImodPoly2DParams {
+                order: 2,
+                max_iter: 20,
+                tol: 1e-3,
+            },
+        )
+        .unwrap()
+        .baseline,
+        3e-1,
+    );
+    assert_baseline_close(
+        "penalized_poly",
+        &fixture.baselines,
+        penalized_poly(
+            input,
+            PenalizedPoly2DParams {
+                order: 2,
+                max_iter: 20,
+                ..PenalizedPoly2DParams::default()
+            },
+        )
+        .unwrap()
+        .baseline,
+        3e-1,
+    );
+    assert_baseline_close(
+        "quant_reg",
+        &fixture.baselines,
+        quant_reg(
+            input,
+            QuantReg2DParams {
+                order: 2,
+                quantile: 0.05,
+                max_iter: 20,
+                ..QuantReg2DParams::default()
+            },
+        )
+        .unwrap()
+        .baseline,
         3e-1,
     );
 }

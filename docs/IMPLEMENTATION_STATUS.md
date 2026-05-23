@@ -22,8 +22,11 @@ is tightened with generated pybaselines fixtures.
 - Morphology/smoothing: `rolling_ball`, `tophat`, `mor`, `imor`, and
   `noise_median` are implemented under `baselines::two_d::morphology` with
   owned and `_into` row-major APIs.
+- Polynomial: `poly`, `modpoly`, `imodpoly`, `penalized_poly`, and `quant_reg`
+  are implemented under `baselines::two_d::polynomial` with owned and `_into`
+  row-major APIs.
 - Remaining 2D families are fixture-scaffolded but not yet implemented:
-  Whittaker, polynomial, penalized spline, and optimizer/meta methods.
+  Whittaker, penalized spline, and optimizer/meta methods.
 
 ## Dedicated First-Pass Implementations
 

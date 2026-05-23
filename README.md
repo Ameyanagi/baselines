@@ -20,8 +20,8 @@ The crate starts with CPU `f64` implementations and public entry points for
 the current one-dimensional `pybaselines.Baseline` algorithm families:
 polynomial, Whittaker, morphology, penalized spline, smoothing,
 classification, optimizer, and miscellaneous methods. Two-dimensional support
-is staged under `baselines::two_d`, with morphology/smoothing methods
-available first.
+is staged under `baselines::two_d`, with morphology/smoothing and polynomial
+methods available first.
 
 Algorithms are organized by family module. Core data types such as `Fit1D`,
 `Fit2D`, and row-major matrix views are available at the crate root.

@@ -43,6 +43,8 @@ methods.
   image-like surfaces for representative methods.
 - Native Rust 2D morphology/smoothing implementations currently cover
   `rolling_ball`, `tophat`, `mor`, `imor`, and `noise_median`.
+- Native Rust 2D polynomial implementations currently cover `poly`, `modpoly`,
+  `imodpoly`, `penalized_poly`, and `quant_reg`.
 - The remaining native Rust 2D families are still pending; the fixture tests
   lock the upstream method surface and fixture integrity while those methods
   are implemented.
@@ -60,6 +62,11 @@ tightened against pybaselines.
 | `mor` | 2D morphology | `3e-1` | Tighten opening/closing envelope averaging. |
 | `imor` | 2D morphology | `3e-1` | Align iterative morphology convergence and update policy. |
 | `noise_median` | 2D smoothing | `3e-1` | Match median padding and smoothing behavior. |
+| `poly` | 2D polynomial | `3e-1` | Align basis ordering and axis scaling with pybaselines. |
+| `modpoly` | 2D polynomial | `3e-1` | Tighten clipped least-squares update semantics. |
+| `imodpoly` | 2D polynomial | `3e-1` | Tighten improved clipping and weighting semantics. |
+| `penalized_poly` | 2D polynomial | `3e-1` | Expand cost-function support beyond the default asymmetric truncated quadratic path. |
+| `quant_reg` | 2D polynomial | `3e-1` | Align quantile IRLS weighting and convergence behavior. |
 
 ## Tolerance Ledger
 
