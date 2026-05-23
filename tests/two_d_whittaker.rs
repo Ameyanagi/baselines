@@ -67,6 +67,38 @@ fn two_d_whittaker_into_reuses_workspace_and_output_buffer() {
 }
 
 #[test]
+fn two_d_whittaker_accepts_axis_specific_lambdas() {
+    let rows = 5;
+    let cols = 6;
+    let data = (0..rows)
+        .flat_map(|row| {
+            (0..cols).map(move |col| {
+                1.0 + 0.15 * row as f64 + 0.03 * (col as f64).powi(2)
+                    - 0.02 * row as f64 * col as f64
+            })
+        })
+        .collect::<Vec<_>>();
+    let input = MatrixView::row_major(&data, rows, cols).unwrap();
+    let fit = arpls(
+        input,
+        ArPls2DParams {
+            whittaker: Whittaker2DParams {
+                lambda: 1.0,
+                lambda_rows: Some(1.0e2),
+                lambda_cols: Some(1.0e4),
+                max_iter: 4,
+                cg_max_iter: 100,
+                ..Whittaker2DParams::default()
+            },
+        },
+    )
+    .unwrap();
+
+    assert_eq!(fit.shape(), (rows, cols));
+    assert!(fit.baseline.iter().all(|value| value.is_finite()));
+}
+
+#[test]
 fn two_d_whittaker_rejects_invalid_parameters_and_shapes() {
     let data = vec![1.0; 12];
     let input = MatrixView::row_major(&data, 3, 4).unwrap();
@@ -86,6 +118,18 @@ fn two_d_whittaker_rejects_invalid_parameters_and_shapes() {
         ArPls2DParams {
             whittaker: Whittaker2DParams {
                 lambda: 0.0,
+                ..Whittaker2DParams::default()
+            },
+        },
+    )
+    .unwrap_err();
+    assert!(matches!(error, BaselineError::InvalidParameter { .. }));
+
+    let error = arpls(
+        input,
+        ArPls2DParams {
+            whittaker: Whittaker2DParams {
+                lambda_rows: Some(-1.0),
                 ..Whittaker2DParams::default()
             },
         },

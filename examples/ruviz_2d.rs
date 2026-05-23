@@ -23,6 +23,7 @@ fn main() -> std::result::Result<(), Box<dyn Error>> {
                 tol: 1.0e-3,
                 cg_max_iter: 500,
                 cg_tol: 1.0e-6,
+                ..Whittaker2DParams::default()
             },
             p: 0.01,
         },

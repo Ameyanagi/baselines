@@ -277,6 +277,8 @@ fn native_2d_whittaker_tracks_reference_fixture() {
     let input = MatrixView::row_major(&fixture.signal, rows, cols).unwrap();
     let whittaker = Whittaker2DParams {
         lambda: 1e4,
+        lambda_rows: None,
+        lambda_cols: None,
         max_iter: 50,
         tol: 1e-3,
         cg_max_iter: 500,

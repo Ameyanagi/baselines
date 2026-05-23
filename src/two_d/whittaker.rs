@@ -26,7 +26,14 @@ const MIN_WEIGHT: f64 = 1.0e-8;
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Whittaker2DParams {
     /// Smoothness penalty. Larger values produce smoother baselines.
+    ///
+    /// This scalar value is used for both axes unless `lambda_rows` and/or
+    /// `lambda_cols` override an axis.
     pub lambda: f64,
+    /// Optional smoothness penalty along rows.
+    pub lambda_rows: Option<f64>,
+    /// Optional smoothness penalty along columns.
+    pub lambda_cols: Option<f64>,
     /// Maximum number of reweighting iterations.
     pub max_iter: usize,
     /// Relative weight-change tolerance.
@@ -41,6 +48,8 @@ impl Default for Whittaker2DParams {
     fn default() -> Self {
         Self {
             lambda: 1.0e4,
+            lambda_rows: None,
+            lambda_cols: None,
             max_iter: 50,
             tol: 1.0e-3,
             cg_max_iter: 500,
@@ -55,6 +64,22 @@ impl Whittaker2DParams {
         if !self.lambda.is_finite() || self.lambda <= 0.0 {
             return Err(BaselineError::InvalidParameter {
                 name: "lambda",
+                reason: "must be finite and positive",
+            });
+        }
+        if let Some(lambda_rows) = self.lambda_rows
+            && (!lambda_rows.is_finite() || lambda_rows <= 0.0)
+        {
+            return Err(BaselineError::InvalidParameter {
+                name: "lambda_rows",
+                reason: "must be finite and positive",
+            });
+        }
+        if let Some(lambda_cols) = self.lambda_cols
+            && (!lambda_cols.is_finite() || lambda_cols <= 0.0)
+        {
+            return Err(BaselineError::InvalidParameter {
+                name: "lambda_cols",
                 reason: "must be finite and positive",
             });
         }
@@ -83,6 +108,14 @@ impl Whittaker2DParams {
             });
         }
         Ok(())
+    }
+
+    fn lambda_rows(self) -> f64 {
+        self.lambda_rows.unwrap_or(self.lambda)
+    }
+
+    fn lambda_cols(self) -> f64 {
+        self.lambda_cols.unwrap_or(self.lambda)
     }
 }
 
@@ -655,7 +688,15 @@ fn solve_weighted_system(
     cg_direction: &mut [f64],
     cg_operator: &mut [f64],
 ) -> Result<()> {
-    apply_operator(rows, cols, params.lambda, weights, solution, cg_operator);
+    apply_operator(
+        rows,
+        cols,
+        params.lambda_rows(),
+        params.lambda_cols(),
+        weights,
+        solution,
+        cg_operator,
+    );
     for ((residual, rhs), applied) in cg_residual.iter_mut().zip(rhs).zip(&*cg_operator) {
         *residual = rhs - applied;
     }
@@ -670,7 +711,8 @@ fn solve_weighted_system(
         apply_operator(
             rows,
             cols,
-            params.lambda,
+            params.lambda_rows(),
+            params.lambda_cols(),
             weights,
             cg_direction,
             cg_operator,
@@ -707,7 +749,8 @@ fn solve_weighted_system(
 fn apply_operator(
     rows: usize,
     cols: usize,
-    lambda: f64,
+    lambda_rows: f64,
+    lambda_cols: f64,
     weights: &[f64],
     input: &[f64],
     output: &mut [f64],
@@ -716,8 +759,8 @@ fn apply_operator(
         for col in 0..cols {
             let index = row * cols + col;
             let mut value = weights[index].max(MIN_WEIGHT) * input[index];
-            value += lambda * second_order_penalty_col(input, rows, cols, row, col);
-            value += lambda * second_order_penalty_row(input, rows, cols, row, col);
+            value += lambda_rows * second_order_penalty_col(input, rows, cols, row, col);
+            value += lambda_cols * second_order_penalty_row(input, rows, cols, row, col);
             output[index] = value;
         }
     }
