@@ -65,16 +65,6 @@ weighting, solver, and iteration semantics are tightened against pybaselines.
 | Method | Family | Current fixture tolerance | Hardening direction |
 | --- | --- | ---: | --- |
 | `imor` | 2D morphology | `1.4e-1` | Further align iterative morphology convergence and update policy. |
-| `pspline_asls` | 2D spline | `3e-1` | Replace separable first-pass smoothing with full tensor-product P-spline semantics. |
-| `pspline_iasls` | 2D spline | `3e-1` | Tighten first-difference residual penalty behavior. |
-| `pspline_airpls` | 2D spline | `3e-1` | Align adaptive exponential weighting and spline convergence. |
-| `pspline_arpls` | 2D spline | `3e-1` | Tighten negative-residual statistics for spline weights. |
-| `pspline_iarpls` | 2D spline | `3e-1` | Align improved arPLS spline update scaling. |
-| `pspline_psalsa` | 2D spline | `3e-1` | Tighten exponential peak suppression for spline fits. |
-| `pspline_brpls` | 2D spline | `3e-1` | Implement full outer beta iteration semantics for spline fits. |
-| `pspline_lsrpls` | 2D spline | `3e-1` | Align locally symmetric spline reweighting behavior. |
-| `irsqr` | 2D spline | `3e-1` | Tighten iterative quantile-regression spline weighting and coefficient convergence. |
-| `mixture_model` | 2D spline | `3e-1` | Implement full mixture-model weighting instead of the first-pass asymmetric policy. |
 | `adaptive_minmax` | 2D optimizer/meta | `3e-1` | Implement full adaptive candidate selection beyond the modified polynomial path. |
 | `individual_axes` | 2D optimizer/meta | `3e-1` | Expand beyond row-then-column AsLS and expose method selection. |
 | `collab_pls` | 2D optimizer/meta | `3e-1` | Tighten shared-weight collaborative fitting and multi-surface convergence. |

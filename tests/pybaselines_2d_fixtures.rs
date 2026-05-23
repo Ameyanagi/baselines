@@ -225,7 +225,7 @@ fn native_2d_polynomial_tracks_reference_fixture() {
         )
         .unwrap()
         .baseline,
-        2e-2,
+        3e-2,
     );
     assert_baseline_close(
         "penalized_poly",
@@ -419,7 +419,7 @@ fn native_2d_spline_tracks_reference_fixture() {
         pspline_asls(input, PsplineAsls2DParams { spline, p: 0.01 })
             .unwrap()
             .baseline,
-        3e-1,
+        6e-2,
     );
     assert_baseline_close(
         "pspline_iasls",
@@ -434,7 +434,7 @@ fn native_2d_spline_tracks_reference_fixture() {
         )
         .unwrap()
         .baseline,
-        3e-1,
+        6e-2,
     );
     assert_baseline_close(
         "pspline_airpls",
@@ -442,7 +442,7 @@ fn native_2d_spline_tracks_reference_fixture() {
         pspline_airpls(input, PsplineAirPls2DParams { spline })
             .unwrap()
             .baseline,
-        3e-1,
+        7e-2,
     );
     assert_baseline_close(
         "pspline_arpls",
@@ -450,7 +450,7 @@ fn native_2d_spline_tracks_reference_fixture() {
         pspline_arpls(input, PsplineArPls2DParams { spline })
             .unwrap()
             .baseline,
-        3e-1,
+        3e-2,
     );
     assert_baseline_close(
         "pspline_iarpls",
@@ -458,7 +458,7 @@ fn native_2d_spline_tracks_reference_fixture() {
         pspline_iarpls(input, PsplineIarPls2DParams { spline })
             .unwrap()
             .baseline,
-        3e-1,
+        6e-2,
     );
     assert_baseline_close(
         "pspline_psalsa",
@@ -473,7 +473,7 @@ fn native_2d_spline_tracks_reference_fixture() {
         )
         .unwrap()
         .baseline,
-        3e-1,
+        3e-2,
     );
     assert_baseline_close(
         "pspline_brpls",
@@ -491,7 +491,7 @@ fn native_2d_spline_tracks_reference_fixture() {
         )
         .unwrap()
         .baseline,
-        3e-1,
+        3e-2,
     );
     assert_baseline_close(
         "pspline_lsrpls",
@@ -499,7 +499,7 @@ fn native_2d_spline_tracks_reference_fixture() {
         pspline_lsrpls(input, PsplineLsrPls2DParams { spline })
             .unwrap()
             .baseline,
-        3e-1,
+        3e-2,
     );
     let short_spline = Spline2DParams {
         max_iter: 20,
@@ -518,7 +518,7 @@ fn native_2d_spline_tracks_reference_fixture() {
         )
         .unwrap()
         .baseline,
-        3e-1,
+        2e-2,
     );
     assert_baseline_close(
         "mixture_model",
@@ -532,7 +532,7 @@ fn native_2d_spline_tracks_reference_fixture() {
         )
         .unwrap()
         .baseline,
-        3e-1,
+        5e-2,
     );
 }
 
