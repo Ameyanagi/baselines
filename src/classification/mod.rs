@@ -10,6 +10,41 @@ use crate::polynomial::{evaluate_polynomial_coefficients, fit_weighted_polynomia
 use crate::workspace::validate_signal;
 use crate::{BaselineError, Result};
 
+/// Classification baseline output with the final baseline mask.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ClassificationFit {
+    /// Estimated baseline.
+    pub baseline: Vec<f64>,
+    /// Fit metadata.
+    pub report: FitReport,
+    /// Mask indicating points classified as baseline points.
+    pub mask: Vec<bool>,
+}
+
+impl ClassificationFit {
+    /// Returns `y - baseline`.
+    pub fn corrected(&self, y: &[f64]) -> Result<Vec<f64>> {
+        if y.len() != self.baseline.len() {
+            return Err(BaselineError::LengthMismatch {
+                name: "y",
+                expected: self.baseline.len(),
+                actual: y.len(),
+            });
+        }
+        Ok(y.iter()
+            .zip(&self.baseline)
+            .map(|(observed, baseline)| observed - baseline)
+            .collect())
+    }
+
+    fn into_fit(self) -> Fit {
+        Fit {
+            baseline: self.baseline,
+            report: self.report,
+        }
+    }
+}
+
 /// Parameters for Golotvin-style baseline classification.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct GolotvinParams {
@@ -447,6 +482,19 @@ pub fn golotvin(y: &[f64], params: GolotvinParams) -> Result<Fit> {
 ///   *Analytical Chemistry*, 2013.
 /// - `pybaselines.Baseline.std_distribution` is used as a behavioral reference.
 pub fn std_distribution(y: &[f64], params: StdDistributionParams) -> Result<Fit> {
+    std_distribution_with_mask(y, params).map(ClassificationFit::into_fit)
+}
+
+/// Estimates a baseline using standard-deviation distribution classification and returns the mask.
+///
+/// # References
+///
+/// - `pybaselines.Baseline.std_distribution` returns a `mask` parameter; this
+///   function exposes the same diagnostic information in a typed Rust result.
+pub fn std_distribution_with_mask(
+    y: &[f64],
+    params: StdDistributionParams,
+) -> Result<ClassificationFit> {
     validate_signal(y)?;
     params.validate()?;
 
@@ -467,9 +515,10 @@ pub fn std_distribution(y: &[f64], params: StdDistributionParams) -> Result<Fit>
 
     let rough_baseline = averaged_interp(y, &mask, params.interp_half_window);
     let baseline = moving_average_extrapolated(&rough_baseline, params.smooth_half_window);
-    Ok(Fit {
+    Ok(ClassificationFit {
         baseline,
         report: FitReport::new(1, true, 0.0),
+        mask,
     })
 }
 
@@ -481,6 +530,16 @@ pub fn std_distribution(y: &[f64], params: StdDistributionParams) -> Result<Fit>
 ///   finding and peak grouping in chromatographic data", *Analyst*, 2013.
 /// - `pybaselines.Baseline.fastchrom` is used as a behavioral reference.
 pub fn fastchrom(y: &[f64], params: FastChromParams) -> Result<Fit> {
+    fastchrom_with_mask(y, params).map(ClassificationFit::into_fit)
+}
+
+/// Estimates a FastChrom-style baseline and returns the final classification mask.
+///
+/// # References
+///
+/// - `pybaselines.Baseline.fastchrom` returns a `mask` parameter; this function
+///   exposes the same diagnostic information in a typed Rust result.
+pub fn fastchrom_with_mask(y: &[f64], params: FastChromParams) -> Result<ClassificationFit> {
     validate_signal(y)?;
     params.validate()?;
 
@@ -532,9 +591,10 @@ pub fn fastchrom(y: &[f64], params: FastChromParams) -> Result<Fit> {
     }
 
     let baseline = moving_average_extrapolated(&rough_baseline, params.smooth_half_window);
-    Ok(Fit {
+    Ok(ClassificationFit {
         baseline,
         report: FitReport::new(1, true, 0.0),
+        mask,
     })
 }
 
@@ -1255,5 +1315,38 @@ mod tests {
                 .iter()
                 .all(|value| (*value - 4.0).abs() < 1e-12)
         );
+    }
+
+    #[test]
+    fn classification_variants_return_masks() {
+        let y: Vec<f64> = (0..80)
+            .map(|index| {
+                let x = index as f64 / 79.0;
+                1.0 + 0.1 * x + (-(x - 0.45).powi(2) / 0.002).exp()
+            })
+            .collect();
+
+        let std_fit = std_distribution_with_mask(
+            &y,
+            StdDistributionParams {
+                half_window: 4,
+                ..StdDistributionParams::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(std_fit.mask.len(), y.len());
+        assert!(std_fit.mask.iter().any(|value| *value));
+
+        let fastchrom_fit = fastchrom_with_mask(
+            &y,
+            FastChromParams {
+                half_window: 4,
+                threshold: Some(0.5),
+                ..FastChromParams::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(fastchrom_fit.mask.len(), y.len());
+        assert!(fastchrom_fit.mask.iter().any(|value| *value));
     }
 }

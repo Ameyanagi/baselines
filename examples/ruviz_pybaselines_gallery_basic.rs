@@ -1,7 +1,8 @@
 mod common;
 
 use baselines::classification::{
-    FastChromParams, StdDistributionParams, fastchrom, std_distribution,
+    FastChromParams, StdDistributionParams, fastchrom_with_mask, std_distribution,
+    std_distribution_with_mask,
 };
 use baselines::morphology::{MorphologyParams, mor};
 use baselines::optimizers::{CustomBcParams, custom_bc_with};
@@ -626,7 +627,7 @@ fn classification_masks() -> std::result::Result<(), Box<dyn Error>> {
         .zip(&baseline)
         .map(|(signal, baseline)| signal + baseline + noise.sample(0.1))
         .collect();
-    let fit_15 = std_distribution(
+    let fit_15 = std_distribution_with_mask(
         &y,
         StdDistributionParams {
             half_window: 15,
@@ -634,7 +635,7 @@ fn classification_masks() -> std::result::Result<(), Box<dyn Error>> {
             ..StdDistributionParams::default()
         },
     )?;
-    let fit_45 = std_distribution(
+    let fit_45 = std_distribution_with_mask(
         &y,
         StdDistributionParams {
             half_window: 45,
@@ -669,6 +670,30 @@ fn classification_masks() -> std::result::Result<(), Box<dyn Error>> {
         &path,
     )?;
     print_output(&path);
+
+    let mask_15 = mask_as_float(&fit_15.mask);
+    let mask_45 = mask_as_float(&fit_45.mask);
+    let mask_path = output_path("pybaselines_gallery_classifier_mask_diagnostics.png");
+    save_lines(
+        "pybaselines classification mask diagnostics",
+        "x",
+        "baseline mask",
+        &x,
+        &[
+            LineSeries {
+                label: "half_window=15 mask",
+                y: &mask_15,
+                color: Color::new(218, 111, 76),
+            },
+            LineSeries {
+                label: "half_window=45 mask",
+                y: &mask_45,
+                color: Color::new(118, 85, 148),
+            },
+        ],
+        &mask_path,
+    )?;
+    print_output(&mask_path);
     Ok(())
 }
 
@@ -689,7 +714,7 @@ fn classification_fastchrom_threshold() -> std::result::Result<(), Box<dyn Error
     let fixed_threshold = 1.5;
     let default_threshold = percentile(&rolling_std, 15.0);
     let custom_threshold = median(&rolling_std);
-    let fit_default = fastchrom(
+    let fit_default = fastchrom_with_mask(
         &y,
         FastChromParams {
             half_window: 15,
@@ -697,7 +722,7 @@ fn classification_fastchrom_threshold() -> std::result::Result<(), Box<dyn Error
             ..FastChromParams::default()
         },
     )?;
-    let fit_fixed = fastchrom(
+    let fit_fixed = fastchrom_with_mask(
         &y,
         FastChromParams {
             half_window: 15,
@@ -705,7 +730,7 @@ fn classification_fastchrom_threshold() -> std::result::Result<(), Box<dyn Error
             ..FastChromParams::default()
         },
     )?;
-    let fit_custom = fastchrom(
+    let fit_custom = fastchrom_with_mask(
         &y,
         FastChromParams {
             half_window: 15,
@@ -780,6 +805,36 @@ fn classification_fastchrom_threshold() -> std::result::Result<(), Box<dyn Error
         &threshold_path,
     )?;
     print_output(&threshold_path);
+
+    let mask_default = mask_as_float(&fit_default.mask);
+    let mask_fixed = mask_as_float(&fit_fixed.mask);
+    let mask_custom = mask_as_float(&fit_custom.mask);
+    let mask_path = output_path("pybaselines_gallery_fastchrom_masks.png");
+    save_lines(
+        "pybaselines fastchrom masks",
+        "x",
+        "baseline mask",
+        &x,
+        &[
+            LineSeries {
+                label: "default mask",
+                y: &mask_default,
+                color: Color::new(218, 111, 76),
+            },
+            LineSeries {
+                label: "fixed mask",
+                y: &mask_fixed,
+                color: Color::new(118, 85, 148),
+            },
+            LineSeries {
+                label: "custom median mask",
+                y: &mask_custom,
+                color: Color::new(84, 151, 160),
+            },
+        ],
+        &mask_path,
+    )?;
+    print_output(&mask_path);
     Ok(())
 }
 
@@ -989,4 +1044,10 @@ fn standard_noisy_dataset(
 
 fn offset(values: &[f64], amount: f64) -> Vec<f64> {
     values.iter().map(|value| value + amount).collect()
+}
+
+fn mask_as_float(mask: &[bool]) -> Vec<f64> {
+    mask.iter()
+        .map(|is_baseline| if *is_baseline { 1.0 } else { 0.0 })
+        .collect()
 }
