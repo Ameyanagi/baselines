@@ -167,10 +167,10 @@ fn core_algorithms_track_pybaselines_fixtures() {
     assert_close(
         "loess",
         &fixture,
-        loess(&fixture.signal, LoessParams { window_size: 25 })
+        loess(&fixture.signal, LoessParams { window_size: 26 })
             .unwrap()
             .baseline,
-        6e-1,
+        1e-12,
     );
     assert_close(
         "quant_reg",

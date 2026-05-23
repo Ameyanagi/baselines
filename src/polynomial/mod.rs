@@ -293,42 +293,61 @@ pub fn penalized_poly(y: &[f64], params: PenalizedPolyParams) -> Result<Fit> {
     Ok(Fit { baseline, report })
 }
 
-/// Fits a LOESS-style local smoothing baseline.
+/// Fits a robust local-constant LOESS baseline.
 ///
 /// # References
 ///
+/// - A. F. Ruckstuhl et al., "Baseline subtraction using robust local
+///   regression estimation", *Journal of Quantitative Spectroscopy and
+///   Radiative Transfer*, 2001.
+/// - W. S. Cleveland, "Robust locally weighted regression and smoothing
+///   scatterplots", *Journal of the American Statistical Association*, 1979.
 /// - `pybaselines.Baseline.loess` is used as a behavioral reference.
 pub fn loess(y: &[f64], params: LoessParams) -> Result<Fit> {
+    let mut baseline = vec![0.0; y.len()];
+    let report = loess_into(y, params, &mut baseline)?;
+    Ok(Fit { baseline, report })
+}
+
+/// Fits a robust local-constant LOESS baseline into an existing output buffer.
+pub fn loess_into(y: &[f64], params: LoessParams, baseline: &mut [f64]) -> Result<FitReport> {
     validate_signal(y)?;
+    validate_output("baseline", y.len(), baseline.len())?;
     if params.window_size == 0 {
         return Err(BaselineError::InvalidParameter {
             name: "window_size",
             reason: "must be greater than zero",
         });
     }
-    let radius = params.window_size / 2;
-    let mut baseline = vec![0.0; y.len()];
-    for (i, target) in baseline.iter_mut().enumerate() {
-        let start = i.saturating_sub(radius);
-        let end = (i + radius + 1).min(y.len());
-        let x0 = scaled_x(i, y.len());
-        let mut weight_sum = 0.0;
-        let mut value_sum = 0.0;
-        for (j, observed) in y[start..end].iter().enumerate() {
-            let index = start + j;
-            let distance = (scaled_x(index, y.len()) - x0).abs();
-            let max_distance = (radius.max(1) as f64) * 2.0 / y.len().max(2) as f64;
-            let scaled = (distance / max_distance).min(1.0);
-            let weight = (1.0 - scaled.powi(3)).powi(3);
-            weight_sum += weight;
-            value_sum += weight * observed;
-        }
-        *target = value_sum / weight_sum.max(f64::EPSILON);
+    if params.window_size > y.len() {
+        return Err(BaselineError::InvalidParameter {
+            name: "window_size",
+            reason: "must not be greater than the input length",
+        });
     }
-    Ok(Fit {
-        baseline,
-        report: FitReport::new(1, true, 0.0),
-    })
+
+    const LOESS_MAX_ITER: usize = 10;
+    const LOESS_TOL: f64 = 1.0e-3;
+    const TUKEY_SCALE: f64 = 3.0;
+
+    let x: Vec<f64> = (0..y.len()).map(|index| scaled_x(index, y.len())).collect();
+    let windows = loess_windows(&x, params.window_size);
+    let mut robust_weights = vec![1.0; y.len()];
+    let mut previous = y.to_vec();
+    let mut tolerance = f64::INFINITY;
+
+    for iter in 0..=LOESS_MAX_ITER {
+        previous.copy_from_slice(if iter == 0 { y } else { baseline });
+        fit_local_constant_loess(y, &x, &windows, &robust_weights, baseline);
+        tolerance = relative_baseline_change(&previous, baseline);
+        if tolerance < LOESS_TOL {
+            return Ok(FitReport::new(iter + 1, true, tolerance));
+        }
+
+        update_loess_robust_weights(y, baseline, &mut robust_weights, TUKEY_SCALE);
+    }
+
+    Ok(FitReport::new(LOESS_MAX_ITER + 1, false, tolerance))
 }
 
 /// Fits a quantile-regression polynomial baseline.
@@ -747,6 +766,102 @@ fn indec_correction(residual: f64, threshold: f64, alpha: f64, symmetric: bool) 
     }
 }
 
+fn loess_windows(x: &[f64], window_size: usize) -> Vec<(usize, usize)> {
+    let len = x.len();
+    let mut windows = Vec::with_capacity(len);
+    let mut left = 0;
+    let mut right = window_size;
+    windows.push((0, window_size));
+
+    for i in 1..len.saturating_sub(1) {
+        while right < len && x[i] - x[left] > x[right] - x[i] {
+            left += 1;
+            right += 1;
+        }
+        windows.push((left, right));
+    }
+
+    if len > 1 {
+        windows.push((len - window_size, len));
+    }
+    windows
+}
+
+fn fit_local_constant_loess(
+    y: &[f64],
+    x: &[f64],
+    windows: &[(usize, usize)],
+    robust_weights: &[f64],
+    baseline: &mut [f64],
+) {
+    for (i, target) in baseline.iter_mut().enumerate() {
+        let (left, right) = windows[i];
+        let max_distance = (x[i] - x[left]).abs().max((x[right - 1] - x[i]).abs());
+        let mut weight_sum = 0.0;
+        let mut value_sum = 0.0;
+
+        for j in left..right {
+            let scaled = if max_distance > 0.0 {
+                ((x[j] - x[i]).abs() / max_distance).min(1.0)
+            } else {
+                0.0
+            };
+            let distance_weight = (1.0 - scaled.powi(3)).powi(3);
+            let weight = distance_weight * robust_weights[j];
+            weight_sum += weight;
+            value_sum += weight * y[j];
+        }
+
+        *target = if weight_sum > 0.0 {
+            value_sum / weight_sum
+        } else {
+            y[i]
+        };
+    }
+}
+
+fn update_loess_robust_weights(
+    y: &[f64],
+    baseline: &[f64],
+    robust_weights: &mut [f64],
+    scale: f64,
+) {
+    let residuals: Vec<f64> = y
+        .iter()
+        .zip(baseline)
+        .map(|(observed, fitted)| observed - fitted)
+        .collect();
+    let spread = median_absolute_value(&residuals);
+    if spread <= f64::EPSILON {
+        robust_weights.fill(1.0);
+        return;
+    }
+
+    for (weight, residual) in robust_weights.iter_mut().zip(residuals) {
+        if residual <= 0.0 {
+            *weight = 1.0;
+        } else {
+            let inner = residual / (spread * scale);
+            let sqrt_weight = (1.0 - inner * inner).max(0.0);
+            *weight = sqrt_weight * sqrt_weight;
+        }
+    }
+}
+
+fn median_absolute_value(values: &[f64]) -> f64 {
+    const NORMAL_MEDIAN_SCALE: f64 = 0.674_489_750_196_081_7;
+
+    let mut absolute: Vec<f64> = values.iter().map(|value| value.abs()).collect();
+    absolute.sort_by(|left, right| left.total_cmp(right));
+    let median = if absolute.len().is_multiple_of(2) {
+        let upper = absolute.len() / 2;
+        0.5 * (absolute[upper - 1] + absolute[upper])
+    } else {
+        absolute[absolute.len() / 2]
+    };
+    median / NORMAL_MEDIAN_SCALE
+}
+
 fn signal_scale(y: &[f64]) -> f64 {
     let (min, max) = y
         .iter()
@@ -956,5 +1071,15 @@ mod tests {
 
         let fit = modpoly(&y, ModPolyParams::default()).unwrap();
         assert!(fit.baseline.iter().all(|value| value.is_finite()));
+    }
+
+    #[test]
+    fn loess_preserves_constant_signal() {
+        let y = vec![2.5; 64];
+        let fit = loess(&y, LoessParams { window_size: 13 }).unwrap();
+
+        for value in fit.baseline {
+            assert!((value - 2.5).abs() < 1.0e-12);
+        }
     }
 }
