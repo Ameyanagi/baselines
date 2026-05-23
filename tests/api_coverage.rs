@@ -1,4 +1,4 @@
-use baselines::Fit;
+use baselines::Fit1D;
 use baselines::classification::{
     CwtBrParams, DietrichParams, FabcParams, FastChromParams, GolotvinParams,
     StdDistributionParams, cwt_br, dietrich, fabc, fastchrom, golotvin, rubberband,
@@ -42,7 +42,7 @@ fn exposed_1d_algorithms_return_finite_baselines() {
         steps: 3,
     };
 
-    let mut fits: Vec<Fit> = vec![
+    let mut fits: Vec<Fit1D> = vec![
         poly(&y, PolyParams { order: 2 }).unwrap(),
         modpoly(&y, ModPolyParams::default()).unwrap(),
         imodpoly(&y, ImodPolyParams::default()).unwrap(),
@@ -87,7 +87,7 @@ fn exposed_1d_algorithms_return_finite_baselines() {
         pspline_brpls(&y, BrPlsParams::default()).unwrap(),
         pspline_lsrpls(&y, LsrPlsParams::default()).unwrap(),
         noise_median(&y, smooth).unwrap(),
-        snip(&y, baselines::SnipParams { max_half_window: 8 }).unwrap(),
+        snip(&y, baselines::morphology::SnipParams { max_half_window: 8 }).unwrap(),
         swima(&y, smooth).unwrap(),
         ipsa(&y, smooth).unwrap(),
         ria(&y, smooth).unwrap(),

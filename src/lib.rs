@@ -9,6 +9,7 @@
 
 pub mod backend;
 pub mod classification;
+pub mod data;
 pub mod error;
 pub mod fit;
 pub mod linalg;
@@ -21,8 +22,6 @@ pub mod spline;
 pub mod whittaker;
 pub mod workspace;
 
+pub use data::{MatrixLayout, MatrixShape, MatrixView, MatrixViewMut};
 pub use error::{BaselineError, Result};
-pub use fit::{Fit, FitReport};
-pub use morphology::{MorphologyParams, SnipParams, mor, mwmv, rolling_ball, snip, tophat};
-pub use polynomial::{ImodPolyParams, ModPolyParams, PolyParams, imodpoly, modpoly, poly};
-pub use whittaker::{AirPlsParams, ArPlsParams, AslsParams, WhittakerParams, airpls, arpls, asls};
+pub use fit::{Fit, Fit1D, Fit2D, FitReport};

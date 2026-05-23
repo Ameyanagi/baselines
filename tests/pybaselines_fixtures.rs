@@ -553,7 +553,7 @@ fn core_algorithms_track_pybaselines_fixtures() {
         &fixture,
         snip(
             &fixture.signal,
-            baselines::SnipParams { max_half_window: 8 },
+            baselines::morphology::SnipParams { max_half_window: 8 },
         )
         .unwrap()
         .baseline,

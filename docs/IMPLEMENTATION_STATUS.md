@@ -5,6 +5,18 @@ This crate exposes public entry points for the current one-dimensional
 staged: APIs and safety/quality gates are in place first, then behavior parity
 is tightened with generated pybaselines fixtures.
 
+## Rust API Foundation
+
+- Public algorithm entry points live in their family modules, such as
+  `baselines::whittaker::asls`; root exports are reserved for core data and
+  error types.
+- `Fit1D` is the primary one-dimensional output type. `Fit` remains as a
+  compatibility alias while call sites migrate.
+- `Fit2D`, `MatrixView`, and `MatrixViewMut` provide the row-major,
+  slice-based foundation for the upcoming two-dimensional algorithms.
+- Correction helpers validate input and output lengths instead of silently
+  truncating mismatched slices.
+
 ## Dedicated First-Pass Implementations
 
 - Whittaker core: `asls`, `airpls`, `arpls`, `drpls`, `iasls`, `iarpls`,

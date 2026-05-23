@@ -6,11 +6,11 @@ correction literature and by the public behavior of
 [`pybaselines`](https://pybaselines.readthedocs.io/).
 
 ```rust
-use baselines::{asls, AslsParams};
+use baselines::whittaker::{AslsParams, asls};
 
 let y = vec![1.0, 1.1, 4.2, 1.2, 1.0];
 let fit = asls(&y, AslsParams::default())?;
-let corrected = fit.corrected(&y);
+let corrected = fit.corrected(&y)?;
 # Ok::<(), baselines::BaselineError>(())
 ```
 
@@ -20,6 +20,9 @@ The crate starts with CPU `f64` implementations and public entry points for the
 current one-dimensional `pybaselines.Baseline` algorithm families: polynomial,
 Whittaker, morphology, penalized spline, smoothing, classification, optimizer,
 and miscellaneous methods.
+
+Algorithms are organized by family module. Core data types such as `Fit1D`,
+`Fit2D`, and row-major matrix views are available at the crate root.
 
 Golden fixtures generated from a pinned `pybaselines` release check the
 one-dimensional algorithms with algorithm-specific tolerances. GPU support is
