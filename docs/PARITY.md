@@ -32,10 +32,26 @@ methods.
   `asls`, `arpls`, `rolling_ball`, `pspline_asls`, `cwt_br`, `custom_bc`,
   `rubberband`, and `beads`.
 
+## Tolerance Ledger
+
+The table below lists fixture tolerances above `1e-1`. These are the current
+1D hardening priorities; each entry remains fixture-backed but should be
+tightened before broader 2D work depends on the same primitive.
+
+| Method | Family | Current fixture tolerance | Hardening direction |
+| --- | --- | ---: | --- |
+| `peak_filling` | Smoothing | `7e-1` | Match pybaselines' iterative peak-fill window behavior instead of the current conservative neighbor fill. |
+| `loess` | Polynomial | `6e-1` | Replace the first-pass moving local constant estimate with weighted local regression semantics. |
+| `ria` | Smoothing | `4e-1` | Align the range-independent averaging update and stopping behavior. |
+| `swima` | Smoothing | `3.5e-1` | Align the moving-average window adaptation with pybaselines. |
+| `ipsa` | Smoothing | `3.5e-1` | Align the iterative polynomial-style averaging limiter and iteration policy. |
+| `amormol` | Morphology | `2e-1` | Tighten adaptive morphology weighting around peak regions. |
+| `noise_median` | Smoothing | `1.3e-1` | Match median padding and optional smoothing behavior more closely. |
+
 ## Known Limits
 
 - This parity document covers one-dimensional `pybaselines.Baseline` methods;
-  two-dimensional pybaselines APIs are outside this milestone.
+  two-dimensional pybaselines APIs are planned next and not yet implemented.
 - Some Rust implementations intentionally use first-pass native solvers or
   approximations while retaining fixture-backed behavior for the tested
   parameter sets.
