@@ -126,24 +126,15 @@ pub fn individual_axes_into(
     validate_individual_axes_input(input, &output, params)?;
     let rows = input.rows();
     let cols = input.cols();
-    let mut temp = vec![0.0; input.len()];
     let mut workspace = Whittaker1DWorkspace::new(cols.max(rows));
-
-    for row in 0..rows {
-        let start = row * cols;
-        asls_1d_into(
-            &input.as_slice()[start..start + cols],
-            params.asls,
-            &mut temp[start..start + cols],
-            &mut workspace,
-        )?;
-    }
+    output.as_mut_slice().fill(0.0);
 
     let mut column_input = vec![0.0; rows];
     let mut column_output = vec![0.0; rows];
     for col in 0..cols {
-        for row in 0..rows {
-            column_input[row] = temp[row * cols + col];
+        for (row, value) in column_input.iter_mut().enumerate() {
+            let index = row * cols + col;
+            *value = input.as_slice()[index] - output.as_slice()[index];
         }
         asls_1d_into(
             &column_input,
@@ -152,11 +143,29 @@ pub fn individual_axes_into(
             &mut workspace,
         )?;
         for (row, value) in column_output.iter().enumerate() {
-            output.as_mut_slice()[row * cols + col] = *value;
+            output.as_mut_slice()[row * cols + col] += *value;
         }
     }
 
-    Ok(FitReport::new(params.asls.whittaker.max_iter, true, 0.0))
+    let mut row_input = vec![0.0; cols];
+    let mut row_output = vec![0.0; cols];
+    for row in 0..rows {
+        let start = row * cols;
+        for (col, value) in row_input.iter_mut().enumerate() {
+            let index = start + col;
+            *value = input.as_slice()[index] - output.as_slice()[index];
+        }
+        asls_1d_into(&row_input, params.asls, &mut row_output, &mut workspace)?;
+        for (col, value) in row_output.iter().enumerate() {
+            output.as_mut_slice()[start + col] += *value;
+        }
+    }
+
+    Ok(FitReport::new(
+        params.asls.whittaker.max_iter * 2,
+        true,
+        0.0,
+    ))
 }
 
 /// Fits collaborative PLS baselines for related row-major surfaces.

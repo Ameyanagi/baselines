@@ -556,7 +556,7 @@ fn native_2d_optimizer_tracks_reference_fixture() {
         )
         .unwrap()
         .baseline,
-        3e-1,
+        3e-2,
     );
     assert_baseline_close(
         "individual_axes",
@@ -575,7 +575,7 @@ fn native_2d_optimizer_tracks_reference_fixture() {
         )
         .unwrap()
         .baseline,
-        3e-1,
+        1e-8,
     );
 
     let collab = collab_surface(&fixture.signal, rows, cols);
@@ -586,13 +586,13 @@ fn native_2d_optimizer_tracks_reference_fixture() {
         "collab_pls_0",
         &fixture.baselines,
         fits[0].baseline.clone(),
-        3e-1,
+        6e-2,
     );
     assert_baseline_close(
         "collab_pls_1",
         &fixture.baselines,
         fits[1].baseline.clone(),
-        3e-1,
+        6e-2,
     );
 }
 

@@ -65,9 +65,6 @@ weighting, solver, and iteration semantics are tightened against pybaselines.
 | Method | Family | Current fixture tolerance | Hardening direction |
 | --- | --- | ---: | --- |
 | `imor` | 2D morphology | `1.4e-1` | Further align iterative morphology convergence and update policy. |
-| `adaptive_minmax` | 2D optimizer/meta | `3e-1` | Implement full adaptive candidate selection beyond the modified polynomial path. |
-| `individual_axes` | 2D optimizer/meta | `3e-1` | Expand beyond row-then-column AsLS and expose method selection. |
-| `collab_pls` | 2D optimizer/meta | `3e-1` | Tighten shared-weight collaborative fitting and multi-surface convergence. |
 
 ## Tolerance Ledger
 
