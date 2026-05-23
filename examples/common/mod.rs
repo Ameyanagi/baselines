@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use ruviz::prelude::*;
 use std::error::Error;
 use std::path::{Path, PathBuf};
@@ -40,6 +42,41 @@ pub fn standard_signal(x: &[f64]) -> Vec<f64> {
                 + gaussian(value, 9.0, 880.0, 7.0)
         })
         .collect()
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum PybaselinesBaseline {
+    Exponential,
+    Gaussian,
+    Linear,
+    Sine,
+}
+
+pub fn pybaselines_make_data(
+    count: usize,
+    baseline_kind: PybaselinesBaseline,
+) -> (Vec<f64>, Vec<f64>, Vec<f64>) {
+    let x = linspace(0.0, 1000.0, count);
+    let signal = standard_signal(&x);
+    let baseline: Vec<f64> = x
+        .iter()
+        .map(|&value| match baseline_kind {
+            PybaselinesBaseline::Exponential => 5.0 + 15.0 * (-value / 200.0).exp(),
+            PybaselinesBaseline::Gaussian => 30.0 + gaussian(value, 20.0, 500.0, 150.0),
+            PybaselinesBaseline::Linear => 1.0 + value * 0.005,
+            PybaselinesBaseline::Sine => 70.0 + 5.0 * (value / 50.0).sin(),
+        })
+        .collect();
+    let mut noise = NormalNoise::new(0);
+    let y = add3(
+        &signal,
+        &baseline,
+        &baseline
+            .iter()
+            .map(|_| noise.sample(0.1))
+            .collect::<Vec<_>>(),
+    );
+    (x, y, baseline)
 }
 
 pub fn add3(left: &[f64], middle: &[f64], right: &[f64]) -> Vec<f64> {

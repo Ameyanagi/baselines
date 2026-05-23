@@ -4,9 +4,8 @@ use crate::fit::{Fit, FitReport};
 use crate::linalg::pspline::PenalizedSpline;
 use crate::{BaselineError, Result};
 
-use super::{PSPLINE_DEGREE, PSPLINE_NUM_KNOTS, relative_change, validate_spline_signal};
+use super::{PSPLINE_DEGREE, relative_change, validate_spline_signal};
 
-const MIXTURE_DIFF_ORDER: usize = 3;
 const MIN_PDF: f64 = f64::MIN_POSITIVE;
 
 /// Parameters for mixture-model spline fitting.
@@ -14,6 +13,10 @@ const MIN_PDF: f64 = f64::MIN_POSITIVE;
 pub struct MixtureModelParams {
     /// P-spline smoothing parameter.
     pub lambda: f64,
+    /// Number of spline knots.
+    pub num_knots: usize,
+    /// Difference order for the spline penalty.
+    pub diff_order: usize,
     /// Initial asymmetric least-squares weight for points above the baseline.
     pub p: f64,
     /// Maximum number of expectation-maximization iterations.
@@ -28,6 +31,8 @@ impl Default for MixtureModelParams {
     fn default() -> Self {
         Self {
             lambda: 1.0e5,
+            num_knots: 100,
+            diff_order: 3,
             p: 1.0e-2,
             max_iter: 50,
             tol: 1.0e-3,
@@ -42,6 +47,18 @@ impl MixtureModelParams {
             return Err(BaselineError::InvalidParameter {
                 name: "lambda",
                 reason: "must be finite and positive",
+            });
+        }
+        if self.num_knots < 2 {
+            return Err(BaselineError::InvalidParameter {
+                name: "num_knots",
+                reason: "must be at least 2",
+            });
+        }
+        if self.diff_order == 0 {
+            return Err(BaselineError::InvalidParameter {
+                name: "diff_order",
+                reason: "must be greater than zero",
             });
         }
         if !self.p.is_finite() || self.p <= 0.0 || self.p >= 1.0 {
@@ -80,12 +97,8 @@ pub fn mixture_model(y: &[f64], params: MixtureModelParams) -> Result<Fit> {
     validate_spline_signal("mixture_model", y)?;
 
     let (scaled_y, domain) = scale_to_unit_range(y);
-    let pspline = PenalizedSpline::new(
-        y.len(),
-        PSPLINE_NUM_KNOTS.min(y.len()).max(2),
-        PSPLINE_DEGREE,
-        MIXTURE_DIFF_ORDER,
-    );
+    let pspline =
+        PenalizedSpline::new(y.len(), params.num_knots, PSPLINE_DEGREE, params.diff_order);
     let mut weights = vec![1.0; y.len()];
     let mut baseline = Vec::new();
 

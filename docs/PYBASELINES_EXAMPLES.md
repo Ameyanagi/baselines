@@ -8,6 +8,7 @@ The examples write PNGs to `target/baselines-ruviz/`.
 ```console
 cargo run --example ruviz_pybaselines_lam_effects
 cargo run --example ruviz_pybaselines_gallery_basic
+cargo run --release --example ruviz_pybaselines_gallery_whittaker_sweeps
 ```
 
 ## Coverage
@@ -22,10 +23,10 @@ cargo run --example ruviz_pybaselines_gallery_basic
 | `general/plot_reuse_Baseline.py` | `ruviz_pybaselines_gallery_basic` | Uses matching data and matching method parameter values where Rust APIs exist; the timing comparison is not an exact analogue because Rust does not have a reusable `Baseline` object. |
 | `general/plot_sorted_data.py` | `ruviz_pybaselines_gallery_basic` | Uses matching data and `iarpls(lam=1e6)` on forward and reversed input. |
 | `whittaker/plot_lam_effects.py` | `ruviz_pybaselines_lam_effects` | Uses matching signal, baseline, noise scale, arPLS, and lambda values `1`, `1e3`, `1e6`, and `1e10`. |
-| `whittaker/plot_lam_vs_data_size.py` | pending | Heavy parameter sweep; not yet ported. |
+| `whittaker/plot_lam_vs_data_size.py` | `ruviz_pybaselines_gallery_whittaker_sweeps` | Uses the same `_make_data` baseline formulas, data sizes `[499, 1045, 2186, 4573, 9563, 20000]`, algorithms, coarse/fine lambda search, `tol=1e-2`, and `max_iter=50`. Candidate lambda values that fail a solve are skipped, matching the upstream example behavior. |
 | `whittaker/plot_whittaker_solvers.py` | pending | Compares Python solver implementations; Rust solver comparison needs a separate native benchmark. |
 | `morphological/plot_half_window_effects.py` | `ruviz_pybaselines_gallery_basic` | Uses matching data and `half_window` values `30`, `60`, and `120` through Rust full-window sizes `61`, `121`, and `241`. |
-| `spline/plot_lam_vs_num_knots.py` | pending | Heavy parameter sweep; Rust `mixture_model` does not yet expose `num_knots`. |
+| `spline/plot_lam_vs_num_knots.py` | pending | Heavy parameter sweep; Rust `mixture_model` now exposes `num_knots` and `diff_order`, but the dense P-spline solver still needs optimization before the full `num_knots=[20, 53, 141, 376, 1000]` sweep is practical. |
 | `spline/plot_pspline_whittaker.py` | pending | Heavy parameter sweep; planned after the sweep harness is shared with Whittaker examples. |
 | `classification/plot_classifier_masks.py` | `ruviz_pybaselines_gallery_basic` | Uses matching data, `std_distribution`, `half_window` values `15` and `45`, and `smooth_half_window=10`; Rust does not yet return classifier masks. |
 | `classification/plot_fastchrom_threshold.py` | `ruviz_pybaselines_gallery_basic` | Uses matching data, `half_window=15`, fixed threshold `1.5`, and default percentile threshold; callable threshold is represented by the median fallback. |
