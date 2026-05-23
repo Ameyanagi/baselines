@@ -1,8 +1,8 @@
 use baselines::two_d::whittaker::{
     AirPls2DParams, ArPls2DParams, AsPls2DParams, Asls2DParams, BrPls2DParams, DrPls2DParams,
-    IarPls2DParams, Iasls2DParams, LsrPls2DParams, Psalsa2DParams, Whittaker2DParams,
-    Whittaker2DWorkspace, airpls, arpls, asls, asls_into, aspls, brpls, drpls, iarpls, iasls,
-    lsrpls, psalsa,
+    IarPls2DParams, Iasls2DParams, LsrPls2DParams, Psalsa2DParams, Whittaker2DEigenParams,
+    Whittaker2DParams, Whittaker2DWorkspace, airpls, arpls, arpls_eigen, asls, asls_into, aspls,
+    brpls, drpls, iarpls, iasls, lsrpls, psalsa,
 };
 use baselines::{BaselineError, MatrixView, MatrixViewMut};
 
@@ -99,6 +99,66 @@ fn two_d_whittaker_accepts_axis_specific_lambdas() {
 }
 
 #[test]
+fn two_d_whittaker_eigen_returns_finite_baseline_and_dof() {
+    let rows = 8;
+    let cols = 9;
+    let data = (0..rows)
+        .flat_map(|row| {
+            (0..cols).map(move |col| {
+                let row_value = row as f64 / rows as f64;
+                let col_value = col as f64 / cols as f64;
+                1.0 + 0.2 * row_value + 0.1 * col_value + (row_value * col_value).sin()
+            })
+        })
+        .collect::<Vec<_>>();
+    let input = MatrixView::row_major(&data, rows, cols).unwrap();
+    let fit = arpls_eigen(
+        input,
+        baselines::two_d::whittaker::ArPls2DEigenParams {
+            whittaker: Whittaker2DEigenParams {
+                lambda: 10.0,
+                num_eigens: (4, 5),
+                return_dof: true,
+                max_iter: 4,
+                cg_max_iter: 80,
+                ..Whittaker2DEigenParams::default()
+            },
+        },
+    )
+    .unwrap();
+
+    assert_eq!(fit.shape(), (rows, cols));
+    assert_eq!(fit.dof_shape(), (4, 5));
+    assert_eq!(fit.dof.as_ref().unwrap().len(), 20);
+    assert!(fit.baseline.iter().all(|value| value.is_finite()));
+    assert!(fit.weights.iter().all(|value| value.is_finite()));
+    assert!(fit.dof.unwrap().iter().all(|value| value.is_finite()));
+}
+
+#[test]
+fn two_d_whittaker_eigen_preserves_constant_surface() {
+    let data = vec![3.25; 36];
+    let input = MatrixView::row_major(&data, 6, 6).unwrap();
+    let fit = arpls_eigen(
+        input,
+        baselines::two_d::whittaker::ArPls2DEigenParams {
+            whittaker: Whittaker2DEigenParams {
+                num_eigens: (4, 4),
+                max_iter: 3,
+                ..Whittaker2DEigenParams::default()
+            },
+        },
+    )
+    .unwrap();
+
+    assert!(
+        fit.baseline
+            .iter()
+            .all(|value| (*value - 3.25).abs() < 1e-5)
+    );
+}
+
+#[test]
 fn two_d_whittaker_rejects_invalid_parameters_and_shapes() {
     let data = vec![1.0; 12];
     let input = MatrixView::row_major(&data, 3, 4).unwrap();
@@ -169,4 +229,16 @@ fn two_d_whittaker_rejects_invalid_parameters_and_shapes() {
     let mut workspace = Whittaker2DWorkspace::new(data.len());
     let error = asls_into(input, Asls2DParams::default(), output, &mut workspace).unwrap_err();
     assert!(matches!(error, BaselineError::LengthMismatch { .. }));
+
+    let error = arpls_eigen(
+        input,
+        baselines::two_d::whittaker::ArPls2DEigenParams {
+            whittaker: Whittaker2DEigenParams {
+                num_eigens: (2, 3),
+                ..Whittaker2DEigenParams::default()
+            },
+        },
+    )
+    .unwrap_err();
+    assert!(matches!(error, BaselineError::InvalidParameter { .. }));
 }

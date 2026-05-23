@@ -13,6 +13,7 @@ cargo run --release --example ruviz_pybaselines_gallery_whittaker_solver_timings
 cargo run --release --example ruviz_pybaselines_gallery_beads_preprocessing
 cargo run --release --example ruviz_pybaselines_gallery_pspline_whittaker
 cargo run --release --example ruviz_pybaselines_gallery_spline_lam_vs_num_knots
+cargo run --release --example ruviz_pybaselines_gallery_whittaker_2d_dof
 ```
 
 ## Coverage
@@ -37,7 +38,7 @@ cargo run --release --example ruviz_pybaselines_gallery_spline_lam_vs_num_knots
 | `misc/plot_beads_preprocessing.py` | `ruviz_pybaselines_gallery_beads_preprocessing` | Uses the same 1000-point grid, signal, three baseline formulas, noise scale, endpoint parabola preprocessing formula, and BEADS parameter sets. The Rust implementation now uses a banded BEADS solve for this workload. |
 | `optimizers/plot_custom_bc_1_whittaker.py` | `ruviz_pybaselines_gallery_basic` | Uses matching data, `lam_flexible=1e2`, `lam_stiff=5e5`, `crossover_index` near `x=160`, `sampling=15`, and smoothing `lam=1e1`. |
 | `two_d/plot_along_axes_1d_baseline.py` | `ruviz_pybaselines_gallery_basic` | Uses matching data and `lam=1e4`; Rust `individual_axes` currently uses AsLS rather than pybaselines' `pspline_arpls`. |
-| `two_d/plot_whittaker_2d_dof.py` | pending | Rust now supports row/column-specific lambda values for native 2D Whittaker fits, but does not yet expose pybaselines' eigensolver, `num_eigens`, or DOF output. The native 2D CG counterpart should be split into a dedicated heavy example. |
+| `two_d/plot_whittaker_2d_dof.py` | `ruviz_pybaselines_gallery_whittaker_2d_dof` | Uses the same 100x100 grid, `gaussian2d` peak parameters, polynomial and sinusoidal baselines, `lam_poly=(1e2, 1e4)`, `lam_sine=(1e2, 1e0)`, analytical solves, eigen-count cases `(40, 40)`, `(10, 4)`, `(8, 35)`, `(3, 3)`, and `(5, 12)`, `return_dof=true`, `tol=1e-3`, and `max_iter=50`. Rust exposes this through a reduced eigenspace `arpls_eigen` API and returns a diagonal DOF estimate for the plotted eigenvector-selection surface. |
 
 Generated examples should cite pybaselines as a behavioral and documentation
 reference only. The Rust implementation does not copy pybaselines implementation

@@ -5,3 +5,4 @@ pub mod optimizers;
 pub mod polynomial;
 pub mod spline;
 pub mod whittaker;
+pub(crate) mod whittaker_eigen;

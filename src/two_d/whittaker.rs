@@ -20,6 +20,10 @@ use crate::fit::{Fit2D, FitReport};
 use crate::workspace::logistic;
 use crate::{BaselineError, Result};
 
+pub use super::whittaker_eigen::{
+    ArPls2DEigenParams, Whittaker2DEigenFit, Whittaker2DEigenParams, arpls_eigen,
+};
+
 const MIN_WEIGHT: f64 = 1.0e-8;
 
 /// Common parameters for two-dimensional Whittaker-style algorithms.
