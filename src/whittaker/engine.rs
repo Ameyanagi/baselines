@@ -1,6 +1,6 @@
 //! Shared Whittaker iteration engine.
 
-use crate::fit::{Fit, FitReport};
+use crate::fit::{Fit, FitHistory, FitReport};
 use crate::linalg::pentadiagonal::{PentadiagonalWorkspace, solve_second_order};
 use crate::workspace::{IterWorkspace, validate_output, validate_signal};
 use crate::{BaselineError, Result};
@@ -94,6 +94,30 @@ pub fn fit_alloc<R: Reweighter>(y: &[f64], params: WhittakerParams, reweighter: 
     Ok(Fit { baseline, report })
 }
 
+/// Fits a Whittaker baseline and returns per-iteration tolerance history.
+pub fn fit_alloc_with_history<R: Reweighter>(
+    y: &[f64],
+    params: WhittakerParams,
+    reweighter: R,
+) -> Result<FitHistory> {
+    let mut baseline = vec![0.0; y.len()];
+    let mut workspace = WhittakerWorkspace::new(y.len());
+    let mut tol_history = Vec::with_capacity(params.max_iter);
+    let report = fit_into_with_history(
+        y,
+        params,
+        reweighter,
+        &mut baseline,
+        &mut workspace,
+        &mut tol_history,
+    )?;
+    Ok(FitHistory {
+        baseline,
+        report,
+        tol_history,
+    })
+}
+
 /// Fits a Whittaker baseline into an existing output buffer.
 pub fn fit_into<R: Reweighter>(
     y: &[f64],
@@ -101,6 +125,36 @@ pub fn fit_into<R: Reweighter>(
     reweighter: R,
     baseline: &mut [f64],
     workspace: &mut WhittakerWorkspace,
+) -> Result<FitReport> {
+    fit_into_impl(y, params, reweighter, baseline, workspace, None)
+}
+
+/// Fits a Whittaker baseline into an existing output buffer and records tolerance history.
+pub fn fit_into_with_history<R: Reweighter>(
+    y: &[f64],
+    params: WhittakerParams,
+    reweighter: R,
+    baseline: &mut [f64],
+    workspace: &mut WhittakerWorkspace,
+    tol_history: &mut Vec<f64>,
+) -> Result<FitReport> {
+    fit_into_impl(
+        y,
+        params,
+        reweighter,
+        baseline,
+        workspace,
+        Some(tol_history),
+    )
+}
+
+fn fit_into_impl<R: Reweighter>(
+    y: &[f64],
+    params: WhittakerParams,
+    reweighter: R,
+    baseline: &mut [f64],
+    workspace: &mut WhittakerWorkspace,
+    mut tol_history: Option<&mut Vec<f64>>,
 ) -> Result<FitReport> {
     validate_signal(y)?;
     validate_output("baseline", y.len(), baseline.len())?;
@@ -114,6 +168,9 @@ pub fn fit_into<R: Reweighter>(
     params.validate()?;
     workspace.resize(y.len());
     reweighter.initialize(y, &mut workspace.iter.weights);
+    if let Some(history) = tol_history.as_deref_mut() {
+        history.clear();
+    }
 
     let mut tolerance = f64::INFINITY;
     for iter in 0..params.max_iter {
@@ -131,6 +188,9 @@ pub fn fit_into<R: Reweighter>(
         )?;
 
         tolerance = reweighter.update(y, baseline, &mut workspace.iter.weights, iter);
+        if let Some(history) = tol_history.as_deref_mut() {
+            history.push(tolerance);
+        }
         if tolerance <= params.tol {
             return Ok(FitReport::new(iter + 1, true, tolerance));
         }

@@ -10,7 +10,8 @@ use baselines::polynomial::{ImodPolyParams, ModPolyParams, imodpoly, modpoly};
 use baselines::smoothing::{SmoothingParams, ria};
 use baselines::spline::pspline_arpls;
 use baselines::whittaker::{
-    ArPlsParams, AsPlsParams, AslsParams, WhittakerParams, arpls, asls, aspls, iarpls,
+    ArPlsParams, AsPlsParams, AslsParams, WhittakerParams, arpls, asls_with_history,
+    aspls_with_history, iarpls,
 };
 use common::{
     LineSeries, NormalNoise, PadMode, add3, ensure_output_dir, gaussian, linear_interpolate_masked,
@@ -46,8 +47,8 @@ fn general_algorithm_convergence() -> std::result::Result<(), Box<dyn Error>> {
         tol: 1.0e-3,
         max_iter: 20,
     };
-    let asls_20 = asls(&y, AslsParams { whittaker, p: 0.01 })?;
-    let aspls_20 = aspls(
+    let asls_20 = asls_with_history(&y, AslsParams { whittaker, p: 0.01 })?;
+    let aspls_20 = aspls_with_history(
         &y,
         AsPlsParams {
             whittaker,
@@ -59,14 +60,14 @@ fn general_algorithm_convergence() -> std::result::Result<(), Box<dyn Error>> {
         max_iter: 100,
         ..whittaker
     };
-    let asls_100 = asls(
+    let asls_100 = asls_with_history(
         &y,
         AslsParams {
             whittaker: whittaker_100,
             p: 0.01,
         },
     )?;
-    let aspls_100 = aspls(
+    let aspls_100 = aspls_with_history(
         &y,
         AsPlsParams {
             whittaker: whittaker_100,
@@ -110,6 +111,37 @@ fn general_algorithm_convergence() -> std::result::Result<(), Box<dyn Error>> {
         &path,
     )?;
     print_output(&path);
+
+    let history_path = output_path("pybaselines_gallery_algorithm_convergence_tolerance.png");
+    save_history_lines(
+        "pybaselines algorithm convergence tolerance",
+        "iteration",
+        "log10(relative difference)",
+        &[
+            HistorySeries {
+                label: "asls max_iter=20",
+                y: &asls_20.tol_history,
+                color: Color::new(218, 111, 76),
+            },
+            HistorySeries {
+                label: "aspls max_iter=20",
+                y: &aspls_20.tol_history,
+                color: Color::new(118, 85, 148),
+            },
+            HistorySeries {
+                label: "asls max_iter=100",
+                y: &asls_100.tol_history,
+                color: Color::new(232, 168, 72),
+            },
+            HistorySeries {
+                label: "aspls max_iter=100",
+                y: &aspls_100.tol_history,
+                color: Color::new(84, 151, 160),
+            },
+        ],
+        &history_path,
+    )?;
+    print_output(&history_path);
     Ok(())
 }
 
@@ -1049,5 +1081,44 @@ fn offset(values: &[f64], amount: f64) -> Vec<f64> {
 fn mask_as_float(mask: &[bool]) -> Vec<f64> {
     mask.iter()
         .map(|is_baseline| if *is_baseline { 1.0 } else { 0.0 })
+        .collect()
+}
+
+struct HistorySeries<'a> {
+    label: &'a str,
+    y: &'a [f64],
+    color: Color,
+}
+
+fn save_history_lines(
+    title: &str,
+    x_label: &str,
+    y_label: &str,
+    series: &[HistorySeries<'_>],
+    path: &std::path::Path,
+) -> std::result::Result<(), Box<dyn Error>> {
+    let mut plot = Plot::new()
+        .title(title)
+        .xlabel(x_label)
+        .ylabel(y_label)
+        .max_resolution(1800, 1200)
+        .legend_position(LegendPosition::Best);
+    for item in series {
+        let x = history_iterations(item.y);
+        let y = log10_history(item.y);
+        plot = plot.line(&x, &y).label(item.label).color(item.color).into();
+    }
+    plot.save(path)?;
+    Ok(())
+}
+
+fn history_iterations(values: &[f64]) -> Vec<f64> {
+    (1..=values.len()).map(|index| index as f64).collect()
+}
+
+fn log10_history(values: &[f64]) -> Vec<f64> {
+    values
+        .iter()
+        .map(|value| value.max(f64::MIN_POSITIVE).log10())
         .collect()
 }

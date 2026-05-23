@@ -25,4 +25,4 @@ pub mod workspace;
 
 pub use data::{MatrixLayout, MatrixShape, MatrixView, MatrixViewMut};
 pub use error::{BaselineError, Result};
-pub use fit::{Fit, Fit1D, Fit2D, FitReport};
+pub use fit::{Fit, Fit1D, Fit2D, FitHistory, FitReport};

@@ -20,7 +20,7 @@ cargo run --release --example ruviz_pybaselines_gallery_whittaker_2d_dof
 
 | pybaselines example | Rust example | Parameter status |
 | --- | --- | --- |
-| `general/plot_algorithm_convergence.py` | `ruviz_pybaselines_gallery_basic` | Uses `lam=5e6`, `tol=1e-3`, `max_iter=20` and `100`; Rust reports final tolerance, but does not yet expose full `tol_history`. |
+| `general/plot_algorithm_convergence.py` | `ruviz_pybaselines_gallery_basic` | Uses `lam=5e6`, `tol=1e-3`, `max_iter=20` and `100`; Rust now exposes and renders full `tol_history` diagnostics for the AsLS and asPLS fits used in this example. |
 | `general/plot_masked_data.py` | `ruviz_pybaselines_gallery_basic` | Uses the same synthetic data, mask region, `lam=1e5`, and `half_window=35`; Rust does not yet expose weighted classifier fits or arPLS output weights. |
 | `general/plot_noisy_data.py` | `ruviz_pybaselines_gallery_basic` | Uses the same signal, baseline, noise scale, 11-point smoothing, `modpoly(poly_order=3)`, and `imodpoly(poly_order=3, num_std=0.7)` settings. |
 | `general/plot_padding.py` | `ruviz_pybaselines_gallery_basic` | Uses `half_window=80`, `num_points=1000`, `pad_len=161`, and the same padding mode names. |

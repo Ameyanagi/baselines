@@ -1,6 +1,6 @@
 //! Additional Whittaker-family algorithm entry points.
 
-use crate::fit::Fit;
+use crate::fit::{Fit, FitHistory};
 use crate::linalg::pentadiagonal::{
     GeneralPentadiagonalSystem, GeneralPentadiagonalWorkspace, solve_general_pentadiagonal,
     solve_second_order_with_first_order,
@@ -475,8 +475,44 @@ pub fn aspls(y: &[f64], params: AsPlsParams) -> Result<Fit> {
     Ok(Fit { baseline, report })
 }
 
+/// Fits an asPLS baseline and returns per-iteration tolerance history.
+///
+/// # References
+///
+/// - `pybaselines.Baseline.aspls` returns `tol_history`; this function exposes
+///   the same diagnostic information in a typed Rust result.
+pub fn aspls_with_history(y: &[f64], params: AsPlsParams) -> Result<FitHistory> {
+    let mut baseline = vec![0.0; y.len()];
+    let mut tol_history = Vec::with_capacity(params.whittaker.max_iter);
+    let report = aspls_into_with_history(y, params, &mut baseline, &mut tol_history)?;
+    Ok(FitHistory {
+        baseline,
+        report,
+        tol_history,
+    })
+}
+
 /// Fits an asPLS baseline into an existing output buffer.
 pub fn aspls_into(y: &[f64], params: AsPlsParams, baseline: &mut [f64]) -> Result<FitReport> {
+    aspls_into_impl(y, params, baseline, None)
+}
+
+/// Fits an asPLS baseline into an existing output buffer and records tolerance history.
+pub fn aspls_into_with_history(
+    y: &[f64],
+    params: AsPlsParams,
+    baseline: &mut [f64],
+    tol_history: &mut Vec<f64>,
+) -> Result<FitReport> {
+    aspls_into_impl(y, params, baseline, Some(tol_history))
+}
+
+fn aspls_into_impl(
+    y: &[f64],
+    params: AsPlsParams,
+    baseline: &mut [f64],
+    mut tol_history: Option<&mut Vec<f64>>,
+) -> Result<FitReport> {
     validate_signal(y)?;
     validate_output("baseline", y.len(), baseline.len())?;
     if y.len() < 3 {
@@ -500,6 +536,9 @@ pub fn aspls_into(y: &[f64], params: AsPlsParams, baseline: &mut [f64]) -> Resul
     let mut rhs = vec![0.0; n];
     let mut new_weights = vec![1.0; n];
     workspace.iter.weights.fill(1.0);
+    if let Some(history) = tol_history.as_deref_mut() {
+        history.clear();
+    }
 
     let mut tolerance = f64::INFINITY;
     for iter in 0..params.whittaker.max_iter {
@@ -540,6 +579,9 @@ pub fn aspls_into(y: &[f64], params: AsPlsParams, baseline: &mut [f64]) -> Resul
             break;
         }
         tolerance = relative_change(&workspace.iter.weights, &new_weights);
+        if let Some(history) = tol_history.as_deref_mut() {
+            history.push(tolerance);
+        }
         if tolerance <= params.whittaker.tol {
             return Ok(FitReport::new(iter + 1, true, tolerance));
         }

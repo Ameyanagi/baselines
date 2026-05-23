@@ -1,8 +1,9 @@
 //! Asymmetric least-squares smoothing.
 
-use crate::fit::{Fit, FitReport};
+use crate::fit::{Fit, FitHistory, FitReport};
 use crate::whittaker::engine::{
-    Reweighter, WhittakerParams, WhittakerWorkspace, fit_alloc, fit_into, relative_change,
+    Reweighter, WhittakerParams, WhittakerWorkspace, fit_alloc, fit_alloc_with_history, fit_into,
+    fit_into_with_history, relative_change,
 };
 use crate::{BaselineError, Result};
 
@@ -50,6 +51,17 @@ pub fn asls(y: &[f64], params: AslsParams) -> Result<Fit> {
     fit_alloc(y, params.whittaker, AslsWeights { p: params.p })
 }
 
+/// Fits an AsLS baseline and returns per-iteration tolerance history.
+///
+/// # References
+///
+/// - `pybaselines.Baseline.asls` returns `tol_history`; this function exposes
+///   the same diagnostic information in a typed Rust result.
+pub fn asls_with_history(y: &[f64], params: AslsParams) -> Result<FitHistory> {
+    params.validate()?;
+    fit_alloc_with_history(y, params.whittaker, AslsWeights { p: params.p })
+}
+
 /// Fits an AsLS baseline into an existing output buffer.
 pub fn asls_into(
     y: &[f64],
@@ -64,6 +76,25 @@ pub fn asls_into(
         AslsWeights { p: params.p },
         baseline,
         workspace,
+    )
+}
+
+/// Fits an AsLS baseline into an existing output buffer and records tolerance history.
+pub fn asls_into_with_history(
+    y: &[f64],
+    params: AslsParams,
+    baseline: &mut [f64],
+    workspace: &mut WhittakerWorkspace,
+    tol_history: &mut Vec<f64>,
+) -> Result<FitReport> {
+    params.validate()?;
+    fit_into_with_history(
+        y,
+        params.whittaker,
+        AslsWeights { p: params.p },
+        baseline,
+        workspace,
+        tol_history,
     )
 }
 

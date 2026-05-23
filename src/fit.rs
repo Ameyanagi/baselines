@@ -57,6 +57,47 @@ impl Fit1D {
     }
 }
 
+/// One-dimensional baseline output with per-iteration tolerance history.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FitHistory {
+    /// Estimated baseline.
+    pub baseline: Vec<f64>,
+    /// Fit metadata.
+    pub report: FitReport,
+    /// Convergence metric recorded after each iteration.
+    pub tol_history: Vec<f64>,
+}
+
+impl FitHistory {
+    /// Returns `y - baseline`.
+    pub fn corrected(&self, y: &[f64]) -> Result<Vec<f64>> {
+        validate_output("y", self.baseline.len(), y.len())?;
+        Ok(y.iter()
+            .zip(&self.baseline)
+            .map(|(observed, baseline)| observed - baseline)
+            .collect())
+    }
+
+    /// Writes `y - baseline` into an existing output buffer.
+    pub fn corrected_into(&self, y: &[f64], output: &mut [f64]) -> Result<()> {
+        validate_output("y", self.baseline.len(), y.len())?;
+        validate_output("output", self.baseline.len(), output.len())?;
+        for ((target, observed), baseline) in output.iter_mut().zip(y).zip(&self.baseline) {
+            *target = observed - baseline;
+        }
+        Ok(())
+    }
+
+    /// Drops the tolerance history and returns a regular [`Fit1D`].
+    #[must_use]
+    pub fn into_fit(self) -> Fit1D {
+        Fit1D {
+            baseline: self.baseline,
+            report: self.report,
+        }
+    }
+}
+
 /// Backward-compatible alias for one-dimensional fit output.
 pub type Fit = Fit1D;
 

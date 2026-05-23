@@ -19,9 +19,10 @@ mod variants;
 
 pub use airpls::{AirPlsParams, airpls, airpls_into};
 pub use arpls::{ArPlsParams, arpls, arpls_into};
-pub use asls::{AslsParams, asls, asls_into};
+pub use asls::{AslsParams, asls, asls_into, asls_into_with_history, asls_with_history};
 pub use engine::{WhittakerParams, WhittakerWorkspace};
 pub use variants::{
     AsPlsParams, BrPlsParams, DerPsalsaParams, DrPlsParams, IarPlsParams, IaslsParams,
-    LsrPlsParams, PsalsaParams, aspls, brpls, derpsalsa, drpls, iarpls, iasls, lsrpls, psalsa,
+    LsrPlsParams, PsalsaParams, aspls, aspls_into_with_history, aspls_with_history, brpls,
+    derpsalsa, drpls, iarpls, iasls, lsrpls, psalsa,
 };

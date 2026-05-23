@@ -24,8 +24,8 @@ use baselines::spline::{
 };
 use baselines::whittaker::{
     AirPlsParams, ArPlsParams, AsPlsParams, AslsParams, BrPlsParams, DerPsalsaParams, DrPlsParams,
-    IarPlsParams, IaslsParams, LsrPlsParams, PsalsaParams, airpls, arpls, asls, aspls, brpls,
-    derpsalsa, drpls, iarpls, iasls, lsrpls, psalsa,
+    IarPlsParams, IaslsParams, LsrPlsParams, PsalsaParams, airpls, arpls, asls, asls_with_history,
+    aspls, aspls_with_history, brpls, derpsalsa, drpls, iarpls, iasls, lsrpls, psalsa,
 };
 
 #[test]
@@ -119,6 +119,19 @@ fn exposed_1d_algorithms_return_finite_baselines() {
     ];
 
     fits.extend(collab_pls(&[y.clone(), y.clone()], AslsParams::default()).unwrap());
+
+    let asls_history = asls_with_history(&y, AslsParams::default()).unwrap();
+    let aspls_history = aspls_with_history(&y, AsPlsParams::default()).unwrap();
+    assert!(!asls_history.tol_history.is_empty());
+    assert!(!aspls_history.tol_history.is_empty());
+    assert_eq!(
+        asls_history.report.iterations,
+        asls_history.tol_history.len()
+    );
+    assert_eq!(
+        aspls_history.report.iterations,
+        aspls_history.tol_history.len()
+    );
 
     for fit in fits {
         assert_eq!(fit.baseline.len(), y.len());
