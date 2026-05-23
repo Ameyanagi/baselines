@@ -1,6 +1,9 @@
 use std::collections::BTreeMap;
 
 use baselines::MatrixView;
+use baselines::two_d::morphology::{
+    Morphology2DParams, imor, mor, noise_median, rolling_ball, tophat,
+};
 use serde::Deserialize;
 
 const EXPECTED_PYBASELINES_2D_METHODS: &[&str] = &[
@@ -117,6 +120,49 @@ fn two_d_fixture_arrays_are_row_major_and_finite() {
     }
 }
 
+#[test]
+fn native_2d_morphology_tracks_reference_fixture() {
+    let fixture: Fixture2D =
+        serde_json::from_str(include_str!("fixtures/pybaselines_2d_reference.json")).unwrap();
+    let [rows, cols] = fixture.shape;
+    let input = MatrixView::row_major(&fixture.signal, rows, cols).unwrap();
+    let params = Morphology2DParams {
+        window_rows: 7,
+        window_cols: 7,
+    };
+
+    assert_baseline_close(
+        "rolling_ball",
+        &fixture.baselines,
+        rolling_ball(input, params).unwrap().baseline,
+        3e-1,
+    );
+    assert_baseline_close(
+        "tophat",
+        &fixture.baselines,
+        tophat(input, params).unwrap().baseline,
+        3e-1,
+    );
+    assert_baseline_close(
+        "mor",
+        &fixture.baselines,
+        mor(input, params).unwrap().baseline,
+        3e-1,
+    );
+    assert_baseline_close(
+        "imor",
+        &fixture.baselines,
+        imor(input, params).unwrap().baseline,
+        3e-1,
+    );
+    assert_baseline_close(
+        "noise_median",
+        &fixture.baselines,
+        noise_median(input, params).unwrap().baseline,
+        3e-1,
+    );
+}
+
 fn assert_case_arrays(
     case_name: &str,
     shape: [usize; 2],
@@ -134,4 +180,25 @@ fn assert_case_arrays(
             panic!("{case_name}.{method} baseline should be a valid row-major matrix: {error}")
         });
     }
+}
+
+fn assert_baseline_close(
+    name: &str,
+    baselines: &BTreeMap<String, Vec<f64>>,
+    actual: Vec<f64>,
+    tolerance: f64,
+) {
+    let expected = baselines
+        .get(name)
+        .unwrap_or_else(|| panic!("missing 2D fixture for {name}"));
+    assert_eq!(actual.len(), expected.len(), "{name} length mismatch");
+    let max_error = actual
+        .iter()
+        .zip(expected)
+        .map(|(left, right)| (left - right).abs())
+        .fold(0.0, f64::max);
+    assert!(
+        max_error <= tolerance,
+        "{name} max error {max_error} exceeded tolerance {tolerance}"
+    );
 }

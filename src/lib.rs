@@ -19,6 +19,7 @@ pub mod optimizers;
 pub mod polynomial;
 pub mod smoothing;
 pub mod spline;
+pub mod two_d;
 pub mod whittaker;
 pub mod workspace;
 

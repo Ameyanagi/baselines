@@ -41,8 +41,25 @@ methods.
   `collab_pls` represented by two collaborative output baselines.
 - Targeted 2D cases currently cover tilted-plane, ridge/valley, and noisy
   image-like surfaces for representative methods.
-- Native Rust 2D algorithm implementations are still pending; the fixture tests
-  currently lock the upstream method surface and fixture integrity.
+- Native Rust 2D morphology/smoothing implementations currently cover
+  `rolling_ball`, `tophat`, `mor`, `imor`, and `noise_median`.
+- The remaining native Rust 2D families are still pending; the fixture tests
+  lock the upstream method surface and fixture integrity while those methods
+  are implemented.
+
+## Two-Dimensional Tolerance Ledger
+
+The first native 2D morphology/smoothing methods are fixture-backed with a
+`3e-1` tolerance while their padding, window, and iteration semantics are
+tightened against pybaselines.
+
+| Method | Family | Current fixture tolerance | Hardening direction |
+| --- | --- | ---: | --- |
+| `rolling_ball` | 2D morphology | `3e-1` | Align rolling-ball padding and smoothing behavior. |
+| `tophat` | 2D morphology | `3e-1` | Match pybaselines' 2D morphological opening behavior. |
+| `mor` | 2D morphology | `3e-1` | Tighten opening/closing envelope averaging. |
+| `imor` | 2D morphology | `3e-1` | Align iterative morphology convergence and update policy. |
+| `noise_median` | 2D smoothing | `3e-1` | Match median padding and smoothing behavior. |
 
 ## Tolerance Ledger
 

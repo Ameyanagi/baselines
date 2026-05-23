@@ -17,6 +17,14 @@ is tightened with generated pybaselines fixtures.
 - Correction helpers validate input and output lengths instead of silently
   truncating mismatched slices.
 
+## Two-Dimensional Implementations
+
+- Morphology/smoothing: `rolling_ball`, `tophat`, `mor`, `imor`, and
+  `noise_median` are implemented under `baselines::two_d::morphology` with
+  owned and `_into` row-major APIs.
+- Remaining 2D families are fixture-scaffolded but not yet implemented:
+  Whittaker, polynomial, penalized spline, and optimizer/meta methods.
+
 ## Dedicated First-Pass Implementations
 
 - Whittaker core: `asls`, `airpls`, `arpls`, `drpls`, `iasls`, `iarpls`,
@@ -48,6 +56,7 @@ is tightened with generated pybaselines fixtures.
 ## Future Hardening Work
 
 - Broaden the fixture matrix with more signal shapes and parameter sets.
+- Add native implementations for the remaining pinned `Baseline2D` methods.
 - Optimize dense first-pass paths such as BEADS with banded or sparse solvers.
 - Keep CubeCL WGPU behind `gpu-wgpu`; current real-device-tested kernels cover
   batched `f32` moving minimum, moving maximum, opening, and the top-hat
