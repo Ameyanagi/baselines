@@ -7,9 +7,11 @@ use baselines::classification::{
 use baselines::linalg::pentadiagonal::{PentadiagonalWorkspace, solve_second_order};
 use baselines::morphology::{MorphologyParams, mor};
 use baselines::optimizers::{CustomBcParams, custom_bc_with};
-use baselines::polynomial::{ImodPolyParams, ModPolyParams, imodpoly, modpoly};
+use baselines::polynomial::{
+    ImodPolyParams, ModPolyParams, PenalizedPolyParams, imodpoly, modpoly, penalized_poly,
+};
 use baselines::smoothing::{SmoothingParams, ria};
-use baselines::spline::pspline_arpls;
+use baselines::spline::{MixtureModelParams, mixture_model, pspline_arpls};
 use baselines::whittaker::{
     ArPlsParams, AsPlsParams, AslsParams, WhittakerParams, WhittakerWorkspace, arpls, arpls_into,
     asls_with_history, aspls_with_history, iarpls,
@@ -452,7 +454,7 @@ fn general_padding_extrapolate() -> std::result::Result<(), Box<dyn Error>> {
 }
 
 fn general_reuse_baseline() -> std::result::Result<(), Box<dyn Error>> {
-    let x = linspace(0.0, 1000.0, 10_000);
+    let x = linspace(0.0, 1000.0, 1000);
     let signal: Vec<f64> = x
         .iter()
         .map(|&value| {
@@ -474,6 +476,20 @@ fn general_reuse_baseline() -> std::result::Result<(), Box<dyn Error>> {
         .zip(&baseline)
         .map(|(signal, baseline)| signal + baseline + noise.sample(0.1))
         .collect();
+    let penalized_poly_fit = penalized_poly(
+        &y,
+        PenalizedPolyParams {
+            order: 4,
+            ..PenalizedPolyParams::default()
+        },
+    )?;
+    let mixture_model_fit = mixture_model(
+        &y,
+        MixtureModelParams {
+            lambda: 1.0e5,
+            ..MixtureModelParams::default()
+        },
+    )?;
     let iarpls_fit = iarpls(
         &y,
         ArPlsParams {
@@ -510,6 +526,16 @@ fn general_reuse_baseline() -> std::result::Result<(), Box<dyn Error>> {
                 label: "data",
                 y: &y,
                 color: Color::new(43, 70, 104),
+            },
+            LineSeries {
+                label: "penalized_poly poly_order=4",
+                y: &penalized_poly_fit.baseline,
+                color: Color::new(232, 168, 72),
+            },
+            LineSeries {
+                label: "mixture_model lam=1e5",
+                y: &mixture_model_fit.baseline,
+                color: Color::new(160, 96, 80),
             },
             LineSeries {
                 label: "iarpls lam=1e5",
