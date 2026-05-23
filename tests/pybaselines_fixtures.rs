@@ -587,7 +587,7 @@ fn core_algorithms_track_pybaselines_fixtures() {
         "ipsa",
         &fixture,
         ipsa(&fixture.signal, smooth).unwrap().baseline,
-        3.5e-1,
+        1e-3,
     );
     assert_close(
         "ria",

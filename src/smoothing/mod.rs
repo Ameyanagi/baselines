@@ -5,6 +5,7 @@
 //! golden fixture tests.
 
 use crate::fit::{Fit, FitReport};
+use crate::linalg::dense::solve_dense;
 use crate::morphology::{SnipParams, snip as morphology_snip, snip_into as morphology_snip_into};
 use crate::workspace::{validate_output, validate_signal};
 use crate::{BaselineError, Result};
@@ -103,7 +104,37 @@ pub fn swima(y: &[f64], params: SmoothingParams) -> Result<Fit> {
 ///
 /// - `pybaselines.Baseline.ipsa` is used as a behavioral reference.
 pub fn ipsa(y: &[f64], params: SmoothingParams) -> Result<Fit> {
-    iterative_smoother(y, params, BaselineLimiter::Observed)
+    validate_signal(y)?;
+    params.validate()?;
+    let radius = params.window_size / 2;
+    let window_size = 2 * radius + 1;
+    let pad_len = window_size;
+    let original = pad_extrapolated(y, pad_len);
+    let mut working = original.clone();
+    let mut baseline = vec![0.0; original.len()];
+    let mut previous = original[pad_len..pad_len + y.len()].to_vec();
+    let kernel = savitzky_golay_kernel(window_size, 2)?;
+    let mut tolerance = f64::INFINITY;
+
+    for iter in 0..=params.max_iter {
+        baseline = convolve_edge(&working, &kernel);
+        tolerance = relative_change(&previous, &baseline[pad_len..pad_len + y.len()]);
+        if tolerance < 1.0e-3 {
+            return Ok(Fit {
+                baseline: baseline[pad_len..pad_len + y.len()].to_vec(),
+                report: FitReport::new(iter + 1, true, tolerance),
+            });
+        }
+        for ((target, observed), smooth) in working.iter_mut().zip(&original).zip(&baseline) {
+            *target = observed.min(*smooth);
+        }
+        previous.copy_from_slice(&baseline[pad_len..pad_len + y.len()]);
+    }
+
+    Ok(Fit {
+        baseline: baseline[pad_len..pad_len + y.len()].to_vec(),
+        report: FitReport::new(params.max_iter + 1, false, tolerance),
+    })
 }
 
 /// Estimates a baseline with range-independent averaging.
@@ -144,7 +175,6 @@ pub fn peak_filling(y: &[f64], params: SmoothingParams) -> Result<Fit> {
 
 enum BaselineLimiter {
     Minimum,
-    Observed,
     Smoothed,
 }
 
@@ -155,10 +185,9 @@ fn iterative_smoother(y: &[f64], params: SmoothingParams, limiter: BaselineLimit
     let mut smoothed = vec![0.0; y.len()];
     for _ in 0..params.max_iter {
         moving_average(&baseline, params.window_size / 2, &mut smoothed);
-        for ((target, observed), smooth) in baseline.iter_mut().zip(y).zip(&smoothed) {
+        for (target, smooth) in baseline.iter_mut().zip(&smoothed) {
             *target = match limiter {
                 BaselineLimiter::Minimum => target.min(*smooth),
-                BaselineLimiter::Observed => observed.min(*smooth),
                 BaselineLimiter::Smoothed => *smooth,
             };
         }
@@ -229,6 +258,21 @@ fn convolve_reflect(data: &[f64], kernel: &[f64]) -> Vec<f64> {
     output
 }
 
+fn convolve_edge(data: &[f64], kernel: &[f64]) -> Vec<f64> {
+    let radius = kernel.len() / 2;
+    let mut output = vec![0.0; data.len()];
+    for (index, target) in output.iter_mut().enumerate() {
+        let mut sum = 0.0;
+        for (kernel_index, weight) in kernel.iter().enumerate() {
+            let shifted = index as isize + kernel_index as isize - radius as isize;
+            let source = shifted.clamp(0, data.len() as isize - 1) as usize;
+            sum += data[source] * weight;
+        }
+        *target = sum;
+    }
+    output
+}
+
 fn reflect_index(index: isize, len: usize) -> usize {
     if len <= 1 {
         return 0;
@@ -239,6 +283,46 @@ fn reflect_index(index: isize, len: usize) -> usize {
         reflected = period - reflected;
     }
     reflected as usize
+}
+
+fn savitzky_golay_kernel(window_size: usize, poly_order: usize) -> Result<Vec<f64>> {
+    let window_size = window_size.max(1);
+    let poly_order = poly_order.min(window_size - 1);
+    let radius = window_size / 2;
+    let basis_len = poly_order + 1;
+    let mut normal = vec![vec![0.0; basis_len]; basis_len];
+    for offset in 0..window_size {
+        let x = offset as f64 - radius as f64;
+        let powers = powers(x, poly_order);
+        for row in 0..basis_len {
+            for col in 0..basis_len {
+                normal[row][col] += powers[row] * powers[col];
+            }
+        }
+    }
+    let mut rhs = vec![0.0; basis_len];
+    rhs[0] = 1.0;
+    let projection = solve_dense(normal, rhs)?;
+    Ok((0..window_size)
+        .map(|offset| {
+            let x = offset as f64 - radius as f64;
+            powers(x, poly_order)
+                .iter()
+                .zip(&projection)
+                .map(|(basis, coeff)| basis * coeff)
+                .sum()
+        })
+        .collect())
+}
+
+fn powers(x: f64, order: usize) -> Vec<f64> {
+    let mut values = Vec::with_capacity(order + 1);
+    let mut current = 1.0;
+    for _ in 0..=order {
+        values.push(current);
+        current *= x;
+    }
+    values
 }
 
 fn pad_extrapolated(y: &[f64], radius: usize) -> Vec<f64> {
@@ -373,6 +457,24 @@ fn interpolate_piecewise_linear(x: f64, x_fit: &[f64], y_fit: &[f64]) -> f64 {
         }
     }
     *y_fit.last().expect("fit values are non-empty")
+}
+
+fn relative_change(previous: &[f64], current: &[f64]) -> f64 {
+    let numerator = previous
+        .iter()
+        .zip(current)
+        .map(|(old, new)| {
+            let diff = new - old;
+            diff * diff
+        })
+        .sum::<f64>()
+        .sqrt();
+    let denominator = previous
+        .iter()
+        .map(|value| value * value)
+        .sum::<f64>()
+        .sqrt();
+    numerator / denominator.max(f64::EPSILON)
 }
 
 #[cfg(test)]

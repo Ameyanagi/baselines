@@ -110,7 +110,6 @@ tightened before broader 2D work depends on the same primitive.
 | `loess` | Polynomial | `6e-1` | Replace the first-pass moving local constant estimate with weighted local regression semantics. |
 | `ria` | Smoothing | `4e-1` | Align the range-independent averaging update and stopping behavior. |
 | `swima` | Smoothing | `3.5e-1` | Align the moving-average window adaptation with pybaselines. |
-| `ipsa` | Smoothing | `3.5e-1` | Align the iterative polynomial-style averaging limiter and iteration policy. |
 | `amormol` | Morphology | `2e-1` | Tighten adaptive morphology weighting around peak regions. |
 
 ## Known Limits
