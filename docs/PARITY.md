@@ -45,15 +45,18 @@ methods.
   `rolling_ball`, `tophat`, `mor`, `imor`, and `noise_median`.
 - Native Rust 2D polynomial implementations currently cover `poly`, `modpoly`,
   `imodpoly`, `penalized_poly`, and `quant_reg`.
-- The remaining native Rust 2D families are still pending; the fixture tests
-  lock the upstream method surface and fixture integrity while those methods
-  are implemented.
+- Native Rust 2D Whittaker implementations currently cover `asls`, `iasls`,
+  `airpls`, `arpls`, `drpls`, `iarpls`, `aspls`, `psalsa`, `brpls`, and
+  `lsrpls`.
+- The remaining native Rust 2D families are penalized spline and optimizer/meta;
+  the fixture tests lock the upstream method surface and fixture integrity while
+  those methods are implemented.
 
 ## Two-Dimensional Tolerance Ledger
 
-The first native 2D morphology/smoothing methods are fixture-backed with a
-`3e-1` tolerance while their padding, window, and iteration semantics are
-tightened against pybaselines.
+The first native 2D morphology/smoothing, polynomial, and Whittaker methods are
+fixture-backed with a `3e-1` tolerance while their padding, basis, weighting,
+and iteration semantics are tightened against pybaselines.
 
 | Method | Family | Current fixture tolerance | Hardening direction |
 | --- | --- | ---: | --- |
@@ -67,6 +70,16 @@ tightened against pybaselines.
 | `imodpoly` | 2D polynomial | `3e-1` | Tighten improved clipping and weighting semantics. |
 | `penalized_poly` | 2D polynomial | `3e-1` | Expand cost-function support beyond the default asymmetric truncated quadratic path. |
 | `quant_reg` | 2D polynomial | `3e-1` | Align quantile IRLS weighting and convergence behavior. |
+| `asls` | 2D Whittaker | `3e-1` | Tighten matrix-free solve settings and weight-update parity. |
+| `iasls` | 2D Whittaker | `3e-1` | Add the first-derivative contribution used by pybaselines. |
+| `airpls` | 2D Whittaker | `3e-1` | Align adaptive exponential weighting and stopping behavior. |
+| `arpls` | 2D Whittaker | `3e-1` | Tighten negative-residual statistics and logistic weighting. |
+| `drpls` | 2D Whittaker | `3e-1` | Add full doubly reweighted penalty behavior. |
+| `iarpls` | 2D Whittaker | `3e-1` | Align improved arPLS update scaling. |
+| `aspls` | 2D Whittaker | `3e-1` | Add adaptive smoothness behavior beyond the first-pass weight policy. |
+| `psalsa` | 2D Whittaker | `3e-1` | Tighten exponential peak suppression and default `k` behavior. |
+| `brpls` | 2D Whittaker | `3e-1` | Implement the full outer beta iteration semantics. |
+| `lsrpls` | 2D Whittaker | `3e-1` | Align locally symmetric reweighting update behavior. |
 
 ## Tolerance Ledger
 
@@ -86,8 +99,9 @@ tightened before broader 2D work depends on the same primitive.
 
 ## Known Limits
 
-- This parity document covers one-dimensional `pybaselines.Baseline` methods;
-  two-dimensional pybaselines APIs are planned next and not yet implemented.
+- Two-dimensional support currently covers morphology/smoothing, polynomial,
+  and Whittaker methods; penalized spline and optimizer/meta methods remain
+  pending.
 - Some Rust implementations intentionally use first-pass native solvers or
   approximations while retaining fixture-backed behavior for the tested
   parameter sets.

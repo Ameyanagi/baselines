@@ -2,3 +2,4 @@
 
 pub mod morphology;
 pub mod polynomial;
+pub mod whittaker;

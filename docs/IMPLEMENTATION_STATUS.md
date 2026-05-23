@@ -25,8 +25,12 @@ is tightened with generated pybaselines fixtures.
 - Polynomial: `poly`, `modpoly`, `imodpoly`, `penalized_poly`, and `quant_reg`
   are implemented under `baselines::two_d::polynomial` with owned and `_into`
   row-major APIs.
+- Whittaker: `asls`, `iasls`, `airpls`, `arpls`, `drpls`, `iarpls`, `aspls`,
+  `psalsa`, `brpls`, and `lsrpls` are implemented under
+  `baselines::two_d::whittaker` with owned and `_into` row-major APIs backed by
+  a matrix-free conjugate-gradient smoother.
 - Remaining 2D families are fixture-scaffolded but not yet implemented:
-  Whittaker, penalized spline, and optimizer/meta methods.
+  penalized spline and optimizer/meta methods.
 
 ## Dedicated First-Pass Implementations
 

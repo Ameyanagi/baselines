@@ -8,6 +8,11 @@ use baselines::two_d::polynomial::{
     ImodPoly2DParams, ModPoly2DParams, PenalizedPoly2DParams, Poly2DParams, QuantReg2DParams,
     imodpoly, modpoly, penalized_poly, poly, quant_reg,
 };
+use baselines::two_d::whittaker::{
+    AirPls2DParams, ArPls2DParams, AsPls2DParams, Asls2DParams, BrPls2DParams, DrPls2DParams,
+    IarPls2DParams, Iasls2DParams, LsrPls2DParams, Psalsa2DParams, Whittaker2DParams, airpls,
+    arpls, asls, aspls, brpls, drpls, iarpls, iasls, lsrpls, psalsa,
+};
 use serde::Deserialize;
 
 const EXPECTED_PYBASELINES_2D_METHODS: &[&str] = &[
@@ -235,6 +240,145 @@ fn native_2d_polynomial_tracks_reference_fixture() {
                 quantile: 0.05,
                 max_iter: 20,
                 ..QuantReg2DParams::default()
+            },
+        )
+        .unwrap()
+        .baseline,
+        3e-1,
+    );
+}
+
+#[test]
+fn native_2d_whittaker_tracks_reference_fixture() {
+    let fixture: Fixture2D =
+        serde_json::from_str(include_str!("fixtures/pybaselines_2d_reference.json")).unwrap();
+    let [rows, cols] = fixture.shape;
+    let input = MatrixView::row_major(&fixture.signal, rows, cols).unwrap();
+    let whittaker = Whittaker2DParams {
+        lambda: 1e4,
+        max_iter: 50,
+        tol: 1e-3,
+        cg_max_iter: 500,
+        cg_tol: 1e-6,
+    };
+
+    assert_baseline_close(
+        "asls",
+        &fixture.baselines,
+        asls(input, Asls2DParams { whittaker, p: 0.01 })
+            .unwrap()
+            .baseline,
+        3e-1,
+    );
+    assert_baseline_close(
+        "iasls",
+        &fixture.baselines,
+        iasls(
+            input,
+            Iasls2DParams {
+                whittaker,
+                p: 0.01,
+                lambda_1: 1e-4,
+            },
+        )
+        .unwrap()
+        .baseline,
+        3e-1,
+    );
+    assert_baseline_close(
+        "airpls",
+        &fixture.baselines,
+        airpls(input, AirPls2DParams { whittaker })
+            .unwrap()
+            .baseline,
+        3e-1,
+    );
+    assert_baseline_close(
+        "arpls",
+        &fixture.baselines,
+        arpls(input, ArPls2DParams { whittaker }).unwrap().baseline,
+        3e-1,
+    );
+    assert_baseline_close(
+        "drpls",
+        &fixture.baselines,
+        drpls(
+            input,
+            DrPls2DParams {
+                whittaker,
+                eta: 0.5,
+            },
+        )
+        .unwrap()
+        .baseline,
+        3e-1,
+    );
+    assert_baseline_close(
+        "iarpls",
+        &fixture.baselines,
+        iarpls(input, IarPls2DParams { whittaker })
+            .unwrap()
+            .baseline,
+        3e-1,
+    );
+    assert_baseline_close(
+        "aspls",
+        &fixture.baselines,
+        aspls(
+            input,
+            AsPls2DParams {
+                whittaker: Whittaker2DParams {
+                    max_iter: 100,
+                    ..whittaker
+                },
+                asymmetric_coef: 0.5,
+            },
+        )
+        .unwrap()
+        .baseline,
+        3e-1,
+    );
+    assert_baseline_close(
+        "psalsa",
+        &fixture.baselines,
+        psalsa(
+            input,
+            Psalsa2DParams {
+                whittaker,
+                p: 0.5,
+                k: None,
+            },
+        )
+        .unwrap()
+        .baseline,
+        3e-1,
+    );
+    let low_lambda = Whittaker2DParams {
+        lambda: 1e3,
+        ..whittaker
+    };
+    assert_baseline_close(
+        "brpls",
+        &fixture.baselines,
+        brpls(
+            input,
+            BrPls2DParams {
+                whittaker: low_lambda,
+                max_iter_2: 50,
+                tol_2: 1e-3,
+            },
+        )
+        .unwrap()
+        .baseline,
+        3e-1,
+    );
+    assert_baseline_close(
+        "lsrpls",
+        &fixture.baselines,
+        lsrpls(
+            input,
+            LsrPls2DParams {
+                whittaker: low_lambda,
             },
         )
         .unwrap()
