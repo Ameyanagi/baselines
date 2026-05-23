@@ -100,4 +100,30 @@ mod tests {
         assert!(asls_fit.baseline.iter().all(|value| value.is_finite()));
         assert!(arpls_fit.baseline.iter().all(|value| value.is_finite()));
     }
+
+    #[test]
+    fn non_positive_tolerance_forces_max_iterations() {
+        let y: Vec<f64> = (0..100)
+            .map(|i| {
+                let x = i as f64 / 99.0;
+                0.5 + 0.2 * x + (-(x - 0.45).powi(2) / 0.002).exp()
+            })
+            .collect();
+
+        let fit = asls(
+            &y,
+            AslsParams {
+                whittaker: crate::whittaker::WhittakerParams {
+                    tol: -1.0,
+                    max_iter: 3,
+                    ..crate::whittaker::WhittakerParams::default()
+                },
+                p: 0.01,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(fit.report.iterations, 3);
+        assert!(!fit.report.converged);
+    }
 }

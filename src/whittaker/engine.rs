@@ -13,6 +13,10 @@ pub struct WhittakerParams {
     /// Maximum number of reweighting iterations.
     pub max_iter: usize,
     /// Relative weight-change tolerance.
+    ///
+    /// Values less than or equal to zero disable early convergence and force
+    /// `max_iter` iterations, matching pybaselines examples that use
+    /// `tol=-1`.
     pub tol: f64,
 }
 
@@ -41,10 +45,10 @@ impl WhittakerParams {
                 reason: "must be greater than zero",
             });
         }
-        if !self.tol.is_finite() || self.tol <= 0.0 {
+        if !self.tol.is_finite() {
             return Err(BaselineError::InvalidParameter {
                 name: "tol",
-                reason: "must be finite and positive",
+                reason: "must be finite",
             });
         }
         Ok(())

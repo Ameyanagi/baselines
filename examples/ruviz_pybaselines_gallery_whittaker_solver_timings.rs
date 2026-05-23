@@ -55,9 +55,8 @@ where
             whittaker: WhittakerParams {
                 lambda,
                 // pybaselines uses tol=-1 to force the same number of
-                // iterations. The public Rust API requires positive tolerance,
-                // so use the smallest positive value available.
-                tol: f64::MIN_POSITIVE,
+                // iterations.
+                tol: -1.0,
                 max_iter: 8,
             },
             p: 0.01,
