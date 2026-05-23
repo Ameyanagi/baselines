@@ -28,6 +28,8 @@ const IMOR_MAX_ITER: usize = 200;
 const IMOR_TOL: f64 = 1.0e-3;
 const MORMOL_MAX_ITER: usize = 250;
 const MORMOL_TOL: f64 = 1.0e-3;
+const AMORMOL_MAX_ITER: usize = 200;
+const AMORMOL_TOL: f64 = 1.0e-3;
 const JBCD_ALPHA: f64 = 0.1;
 const JBCD_BETA: f64 = 10.0;
 const JBCD_GAMMA: f64 = 1.0;
@@ -215,20 +217,14 @@ pub fn mormol(y: &[f64], params: MorphologyParams) -> Result<Fit> {
 ///
 /// # References
 ///
+/// - H. Chen et al., "An Adaptive and Fully Automated Baseline Correction
+///   Method for Raman Spectroscopy Based on Morphological Operations and
+///   Mollifications", *Applied Spectroscopy*, 2019.
 /// - `pybaselines.Baseline.amormol` is used as a behavioral reference.
 pub fn amormol(y: &[f64], params: MorphologyParams) -> Result<Fit> {
-    let mor_fit = mor(y, params)?;
-    let roll_fit = rolling_ball(y, params)?;
-    let baseline = mor_fit
-        .baseline
-        .iter()
-        .zip(&roll_fit.baseline)
-        .map(|(left, right)| 0.5 * (left + right))
-        .collect();
-    Ok(Fit {
-        baseline,
-        report: FitReport::new(1, true, 0.0),
-    })
+    let mut baseline = vec![0.0; y.len()];
+    let report = amormol_into(y, params, &mut baseline)?;
+    Ok(Fit { baseline, report })
 }
 
 /// Estimates a morphology-guided penalized spline baseline.
@@ -352,6 +348,49 @@ pub fn mormol_into(y: &[f64], params: MorphologyParams, baseline: &mut [f64]) ->
 
     baseline.copy_from_slice(&padded_baseline[bounds]);
     Ok(FitReport::new(MORMOL_MAX_ITER + 1, false, tolerance))
+}
+
+/// Estimates an aMorMol baseline into an existing output buffer.
+pub fn amormol_into(
+    y: &[f64],
+    params: MorphologyParams,
+    baseline: &mut [f64],
+) -> Result<FitReport> {
+    validate_morphology_input(y, params, baseline)?;
+    let radius = params.radius();
+    let full_window = 2 * radius + 1;
+    let padded_y = pad_extrapolated(y, full_window);
+    let bounds = full_window..full_window + y.len();
+    let kernel = mollifier_kernel(full_window);
+    let mut padded_baseline = padded_y.clone();
+    let mut next = vec![0.0; padded_y.len()];
+    let mut morphology_average = vec![0.0; padded_y.len()];
+    let mut tolerance = f64::INFINITY;
+
+    for iter in 0..=AMORMOL_MAX_ITER {
+        let closed = closing_reflect(&padded_baseline, radius);
+        let opened = opening_reflect(&padded_baseline, radius);
+        for (((target, observed), closed), opened) in morphology_average
+            .iter_mut()
+            .zip(&padded_y)
+            .zip(closed)
+            .zip(opened)
+        {
+            *target = observed.min(0.5 * (closed + opened));
+        }
+
+        let convolved = convolve_reflect_same(&morphology_average, &kernel);
+        next.copy_from_slice(&convolved);
+        tolerance = relative_change(&padded_baseline[bounds.clone()], &next[bounds.clone()]);
+        padded_baseline.copy_from_slice(&next);
+        if tolerance < AMORMOL_TOL {
+            baseline.copy_from_slice(&padded_baseline[bounds]);
+            return Ok(FitReport::new(iter + 1, true, tolerance));
+        }
+    }
+
+    baseline.copy_from_slice(&padded_baseline[bounds]);
+    Ok(FitReport::new(AMORMOL_MAX_ITER + 1, false, tolerance))
 }
 
 /// Estimates a JBCD baseline into an existing output buffer.
@@ -800,6 +839,9 @@ mod tests {
             mwmv(&y, MorphologyParams::default()).unwrap(),
             mor(&y, MorphologyParams::default()).unwrap(),
             mpls(&y, MorphologyParams::default()).unwrap(),
+            imor(&y, MorphologyParams::default()).unwrap(),
+            mormol(&y, MorphologyParams::default()).unwrap(),
+            amormol(&y, MorphologyParams::default()).unwrap(),
             snip(&y, SnipParams::default()).unwrap(),
         ] {
             for value in fit.baseline {

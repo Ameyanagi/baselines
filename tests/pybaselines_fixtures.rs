@@ -534,7 +534,7 @@ fn core_algorithms_track_pybaselines_fixtures() {
         "amormol",
         &fixture,
         amormol(&fixture.signal, morphology).unwrap().baseline,
-        2e-1,
+        1e-3,
     );
     assert_close(
         "jbcd",
