@@ -156,31 +156,31 @@ fn native_2d_morphology_tracks_reference_fixture() {
         "rolling_ball",
         &fixture.baselines,
         rolling_ball(input, params).unwrap().baseline,
-        3e-1,
+        1e-12,
     );
     assert_baseline_close(
         "tophat",
         &fixture.baselines,
         tophat(input, params).unwrap().baseline,
-        3e-1,
+        1e-12,
     );
     assert_baseline_close(
         "mor",
         &fixture.baselines,
         mor(input, params).unwrap().baseline,
-        3e-1,
+        1e-12,
     );
     assert_baseline_close(
         "imor",
         &fixture.baselines,
         imor(input, params).unwrap().baseline,
-        3e-1,
+        1.4e-1,
     );
     assert_baseline_close(
         "noise_median",
         &fixture.baselines,
         noise_median(input, params).unwrap().baseline,
-        3e-1,
+        6e-2,
     );
 }
 

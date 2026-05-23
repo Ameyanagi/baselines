@@ -59,17 +59,12 @@ methods.
 
 ## Two-Dimensional Tolerance Ledger
 
-The native 2D methods are fixture-backed with a first-pass `3e-1` tolerance
-while their padding, basis, weighting, solver, and iteration semantics are
-tightened against pybaselines.
+The native 2D methods are fixture-backed while their padding, basis,
+weighting, solver, and iteration semantics are tightened against pybaselines.
 
 | Method | Family | Current fixture tolerance | Hardening direction |
 | --- | --- | ---: | --- |
-| `rolling_ball` | 2D morphology | `3e-1` | Align rolling-ball padding and smoothing behavior. |
-| `tophat` | 2D morphology | `3e-1` | Match pybaselines' 2D morphological opening behavior. |
-| `mor` | 2D morphology | `3e-1` | Tighten opening/closing envelope averaging. |
-| `imor` | 2D morphology | `3e-1` | Align iterative morphology convergence and update policy. |
-| `noise_median` | 2D smoothing | `3e-1` | Match median padding and smoothing behavior. |
+| `imor` | 2D morphology | `1.4e-1` | Further align iterative morphology convergence and update policy. |
 | `poly` | 2D polynomial | `3e-1` | Align basis ordering and axis scaling with pybaselines. |
 | `modpoly` | 2D polynomial | `3e-1` | Tighten clipped least-squares update semantics. |
 | `imodpoly` | 2D polynomial | `3e-1` | Tighten improved clipping and weighting semantics. |

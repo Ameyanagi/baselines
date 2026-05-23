@@ -207,7 +207,6 @@ pub fn imor_into(
         }
         tolerance = relative_change(output.as_slice(), &next);
         if tolerance < IMOR_TOL {
-            output.as_mut_slice().copy_from_slice(&next);
             return Ok(FitReport::new(iter + 1, true, tolerance));
         }
         output.as_mut_slice().copy_from_slice(&next);
@@ -300,13 +299,12 @@ fn average_opening_from_opened_reflect(
     row_radius: usize,
     col_radius: usize,
 ) -> Vec<f64> {
-    let mut closed = vec![0.0; opened.len()];
     let dilated = moving_max_reflect_alloc(opened, rows, cols, row_radius, col_radius);
-    moving_min_reflect_into(&dilated, rows, cols, row_radius, col_radius, &mut closed);
-    opened
-        .iter()
-        .zip(closed)
-        .map(|(opened, closed)| 0.5 * (opened + closed))
+    let eroded = moving_min_reflect(opened, rows, cols, row_radius, col_radius);
+    dilated
+        .into_iter()
+        .zip(eroded)
+        .map(|(dilated, eroded)| 0.5 * (dilated + eroded))
         .collect()
 }
 
@@ -448,22 +446,33 @@ fn reflect_index(index: isize, len: usize) -> usize {
     if len == 1 {
         return 0;
     }
-    let period = 2 * len as isize - 2;
-    let wrapped = index.rem_euclid(period);
-    if wrapped < len as isize {
-        wrapped as usize
-    } else {
-        (period - wrapped) as usize
+    let len = len as isize;
+    let mut reflected = index;
+    while reflected < 0 || reflected >= len {
+        if reflected < 0 {
+            reflected = -reflected - 1;
+        } else {
+            reflected = 2 * len - reflected - 1;
+        }
     }
+    reflected as usize
 }
 
 fn relative_change(previous: &[f64], next: &[f64]) -> f64 {
     let numerator = previous
         .iter()
         .zip(next)
-        .map(|(left, right)| (left - right).abs())
-        .sum::<f64>();
-    let denominator = previous.iter().map(|value| value.abs()).sum::<f64>();
+        .map(|(left, right)| {
+            let diff = right - left;
+            diff * diff
+        })
+        .sum::<f64>()
+        .sqrt();
+    let denominator = previous
+        .iter()
+        .map(|value| value * value)
+        .sum::<f64>()
+        .sqrt();
     numerator / denominator.max(f64::EPSILON)
 }
 
