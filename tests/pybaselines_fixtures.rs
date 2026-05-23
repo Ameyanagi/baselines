@@ -571,7 +571,7 @@ fn core_algorithms_track_pybaselines_fixtures() {
         )
         .unwrap()
         .baseline,
-        1.3e-1,
+        1e-3,
     );
     let smooth = SmoothingParams {
         window_size: 17,
@@ -599,7 +599,7 @@ fn core_algorithms_track_pybaselines_fixtures() {
         "peak_filling",
         &fixture,
         peak_filling(&fixture.signal, smooth).unwrap().baseline,
-        7e-1,
+        1e-3,
     );
     assert_close(
         "corner_cutting",
