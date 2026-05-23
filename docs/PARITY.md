@@ -32,6 +32,18 @@ methods.
   `asls`, `arpls`, `rolling_ball`, `pspline_asls`, `cwt_br`, `custom_bc`,
   `rubberband`, and `beads`.
 
+## Two-Dimensional Fixture Status
+
+- `tests/fixtures/pybaselines_2d_reference.json` records the pinned
+  `pybaselines.Baseline2D` 1.2.1 method list and deterministic row-major
+  reference outputs.
+- The reference 2D surface covers all 33 public `Baseline2D` methods, with
+  `collab_pls` represented by two collaborative output baselines.
+- Targeted 2D cases currently cover tilted-plane, ridge/valley, and noisy
+  image-like surfaces for representative methods.
+- Native Rust 2D algorithm implementations are still pending; the fixture tests
+  currently lock the upstream method surface and fixture integrity.
+
 ## Tolerance Ledger
 
 The table below lists fixture tolerances above `1e-1`. These are the current
