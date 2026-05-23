@@ -69,8 +69,8 @@ is tightened with generated pybaselines fixtures.
 ## Future Hardening Work
 
 - Broaden the fixture matrix with more signal shapes and parameter sets.
-- Tighten native 2D tolerances against pybaselines beyond the first-pass
-  `3e-1` fixture ledger.
+- Broaden 2D fixture coverage across additional parameter sets and surface
+  shapes while keeping the current pinned fixture tolerances below `1e-1`.
 - Optimize dense first-pass paths such as BEADS with banded or sparse solvers.
 - Keep CubeCL WGPU behind `gpu-wgpu`; current real-device-tested kernels cover
   batched `f32` moving minimum, moving maximum, opening, and the top-hat
