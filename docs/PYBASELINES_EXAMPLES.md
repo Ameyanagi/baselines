@@ -9,6 +9,7 @@ The examples write PNGs to `target/baselines-ruviz/`.
 cargo run --example ruviz_pybaselines_lam_effects
 cargo run --example ruviz_pybaselines_gallery_basic
 cargo run --release --example ruviz_pybaselines_gallery_whittaker_sweeps
+cargo run --release --example ruviz_pybaselines_gallery_whittaker_solver_timings
 ```
 
 ## Coverage
@@ -24,7 +25,7 @@ cargo run --release --example ruviz_pybaselines_gallery_whittaker_sweeps
 | `general/plot_sorted_data.py` | `ruviz_pybaselines_gallery_basic` | Uses matching data and `iarpls(lam=1e6)` on forward and reversed input. |
 | `whittaker/plot_lam_effects.py` | `ruviz_pybaselines_lam_effects` | Uses matching signal, baseline, noise scale, arPLS, and lambda values `1`, `1e3`, `1e6`, and `1e10`. |
 | `whittaker/plot_lam_vs_data_size.py` | `ruviz_pybaselines_gallery_whittaker_sweeps` | Uses the same `_make_data` baseline formulas, data sizes `[499, 1045, 2186, 4573, 9563, 20000]`, algorithms, coarse/fine lambda search, `tol=1e-2`, and `max_iter=50`. Candidate lambda values that fail a solve are skipped, matching the upstream example behavior. |
-| `whittaker/plot_whittaker_solvers.py` | pending | Compares Python solver implementations; Rust solver comparison needs a separate native benchmark. |
+| `whittaker/plot_whittaker_solvers.py` | `ruviz_pybaselines_gallery_whittaker_solver_timings` | Uses the same `_make_data` default signal, lambda equation, data sizes `[499, 935, 1748, 3270, 6115, 11437, 21388, 40000]`, `repeats=25`, AsLS, and `max_iter=8`. The Rust example compares allocating `asls` against reusable-workspace `asls_into` because this crate has one native pentadiagonal solver rather than SciPy/pentapy solver backends; `tol=f64::MIN_POSITIVE` is used because the Rust API requires positive tolerance while pybaselines uses `tol=-1` to force fixed iterations. |
 | `morphological/plot_half_window_effects.py` | `ruviz_pybaselines_gallery_basic` | Uses matching data and `half_window` values `30`, `60`, and `120` through Rust full-window sizes `61`, `121`, and `241`. |
 | `spline/plot_lam_vs_num_knots.py` | pending | Heavy parameter sweep; Rust `mixture_model` now exposes `num_knots` and `diff_order`, but the dense P-spline solver still needs optimization before the full `num_knots=[20, 53, 141, 376, 1000]` sweep is practical. |
 | `spline/plot_pspline_whittaker.py` | pending | Heavy parameter sweep; planned after the sweep harness is shared with Whittaker examples. |
