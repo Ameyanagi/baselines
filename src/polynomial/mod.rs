@@ -60,6 +60,11 @@ impl Default for ModPolyParams {
 pub struct ImodPolyParams {
     /// Polynomial order.
     pub order: usize,
+    /// Number of negative-residual standard deviations allowed above the fit.
+    ///
+    /// Lower values clip noisy positive excursions more aggressively.
+    /// pybaselines' noisy-data gallery uses `0.7`.
+    pub num_std: f64,
     /// Maximum number of clipped least-squares iterations.
     pub max_iter: usize,
     /// Relative baseline-change tolerance.
@@ -70,6 +75,7 @@ impl Default for ImodPolyParams {
     fn default() -> Self {
         Self {
             order: 2,
+            num_std: 1.0,
             max_iter: 100,
             tol: 1.0e-3,
         }
@@ -477,6 +483,12 @@ pub fn goldindec_into(
 /// Fits an improved modified polynomial baseline into an existing output buffer.
 pub fn imodpoly_into(y: &[f64], params: ImodPolyParams, baseline: &mut [f64]) -> Result<FitReport> {
     validate_iter_params(params.max_iter, params.tol)?;
+    if !params.num_std.is_finite() || params.num_std < 0.0 {
+        return Err(BaselineError::InvalidParameter {
+            name: "num_std",
+            reason: "must be finite and non-negative",
+        });
+    }
     validate_poly_input(y, params.order, baseline)?;
     let mut clipped = y.to_vec();
     let mut previous = vec![0.0; y.len()];
@@ -508,7 +520,7 @@ pub fn imodpoly_into(y: &[f64], params: ImodPolyParams, baseline: &mut [f64]) ->
             .zip(y)
             .zip(baseline.iter())
         {
-            let limit = fitted + spread;
+            let limit = fitted + params.num_std * spread;
             *target = observed.min(limit);
             *weight = if observed > &limit { 0.0 } else { 1.0 };
         }
@@ -1071,6 +1083,37 @@ mod tests {
 
         let fit = modpoly(&y, ModPolyParams::default()).unwrap();
         assert!(fit.baseline.iter().all(|value| value.is_finite()));
+    }
+
+    #[test]
+    fn imodpoly_accepts_num_std() {
+        let y: Vec<f64> = (0..100)
+            .map(|i| {
+                let x = scaled_x(i, 100);
+                1.0 + 0.3 * x + (-(x - 0.2).powi(2) / 0.01).exp()
+            })
+            .collect();
+
+        let fit = imodpoly(
+            &y,
+            ImodPolyParams {
+                order: 3,
+                num_std: 0.7,
+                ..ImodPolyParams::default()
+            },
+        )
+        .unwrap();
+        assert!(fit.baseline.iter().all(|value| value.is_finite()));
+
+        let error = imodpoly(
+            &y,
+            ImodPolyParams {
+                num_std: -1.0,
+                ..ImodPolyParams::default()
+            },
+        )
+        .unwrap_err();
+        assert!(matches!(error, BaselineError::InvalidParameter { .. }));
     }
 
     #[test]

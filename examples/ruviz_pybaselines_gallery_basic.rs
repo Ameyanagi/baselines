@@ -1,6 +1,5 @@
 mod common;
 
-use baselines::MatrixView;
 use baselines::classification::{
     FastChromParams, StdDistributionParams, fastchrom, std_distribution,
 };
@@ -8,7 +7,7 @@ use baselines::morphology::{MorphologyParams, mor};
 use baselines::optimizers::{CustomBcParams, custom_bc_with};
 use baselines::polynomial::{ImodPolyParams, ModPolyParams, imodpoly, modpoly};
 use baselines::smoothing::{SmoothingParams, ria};
-use baselines::two_d::optimizers::{IndividualAxes2DParams, individual_axes};
+use baselines::spline::pspline_arpls;
 use baselines::whittaker::{
     ArPlsParams, AsPlsParams, AslsParams, WhittakerParams, arpls, asls, aspls, iarpls,
 };
@@ -134,6 +133,7 @@ fn general_noisy_data() -> std::result::Result<(), Box<dyn Error>> {
         &y,
         ImodPolyParams {
             order: 3,
+            num_std: 0.7,
             ..ImodPolyParams::default()
         },
     )?;
@@ -141,6 +141,7 @@ fn general_noisy_data() -> std::result::Result<(), Box<dyn Error>> {
         &smooth_y,
         ImodPolyParams {
             order: 3,
+            num_std: 0.7,
             ..ImodPolyParams::default()
         },
     )?;
@@ -168,12 +169,12 @@ fn general_noisy_data() -> std::result::Result<(), Box<dyn Error>> {
                 color: Color::new(232, 168, 72),
             },
             LineSeries {
-                label: "imodpoly poly_order=3",
+                label: "imodpoly poly_order=3 num_std=0.7",
                 y: &regular_imodpoly.baseline,
                 color: Color::new(118, 85, 148),
             },
             LineSeries {
-                label: "smoothed imodpoly",
+                label: "smoothed imodpoly num_std=0.7",
                 y: &smoothed_imodpoly.baseline,
                 color: Color::new(84, 151, 160),
             },
@@ -917,20 +918,26 @@ fn two_d_individual_axes() -> std::result::Result<(), Box<dyn Error>> {
             data.push(signal + baseline + noise.sample(0.1));
         }
     }
-    let input = MatrixView::row_major(&data, len_temperature, wavenumber.len())?;
-    let fit = individual_axes(
-        input,
-        IndividualAxes2DParams {
-            asls: AslsParams {
+    let mut baseline = vec![0.0; data.len()];
+    for row in 0..len_temperature {
+        let start = row * wavenumber.len();
+        let end = start + wavenumber.len();
+        let fit = pspline_arpls(
+            &data[start..end],
+            ArPlsParams {
                 whittaker: WhittakerParams {
                     lambda: 1.0e4,
                     ..WhittakerParams::default()
                 },
-                p: 0.01,
             },
-        },
-    )?;
-    let corrected = fit.corrected(&data)?;
+        )?;
+        baseline[start..end].copy_from_slice(&fit.baseline);
+    }
+    let corrected: Vec<f64> = data
+        .iter()
+        .zip(&baseline)
+        .map(|(observed, baseline)| observed - baseline)
+        .collect();
 
     let observed_path = output_path("pybaselines_gallery_2d_individual_axes_observed.png");
     save_heatmap(

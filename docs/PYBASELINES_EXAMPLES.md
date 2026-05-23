@@ -22,7 +22,7 @@ cargo run --release --example ruviz_pybaselines_gallery_whittaker_2d_dof
 | --- | --- | --- |
 | `general/plot_algorithm_convergence.py` | `ruviz_pybaselines_gallery_basic` | Uses `lam=5e6`, `tol=1e-3`, `max_iter=20` and `100`; Rust reports final tolerance, but does not yet expose full `tol_history`. |
 | `general/plot_masked_data.py` | `ruviz_pybaselines_gallery_basic` | Uses the same synthetic data, mask region, `lam=1e5`, and `half_window=35`; Rust does not yet expose weighted classifier fits or arPLS output weights. |
-| `general/plot_noisy_data.py` | `ruviz_pybaselines_gallery_basic` | Uses the same signal, baseline, noise scale, 11-point smoothing, and `poly_order=3`; Rust `imodpoly` does not yet expose pybaselines' `num_std=0.7` parameter. |
+| `general/plot_noisy_data.py` | `ruviz_pybaselines_gallery_basic` | Uses the same signal, baseline, noise scale, 11-point smoothing, `modpoly(poly_order=3)`, and `imodpoly(poly_order=3, num_std=0.7)` settings. |
 | `general/plot_padding.py` | `ruviz_pybaselines_gallery_basic` | Uses `half_window=80`, `num_points=1000`, `pad_len=161`, and the same padding mode names. |
 | `general/plot_padding_extrapolate.py` | `ruviz_pybaselines_gallery_basic` | Uses `num_points=1000`, `pad_len=100`, and `extrapolate_window` values `1`, `100`, and `[100, 40]`. |
 | `general/plot_reuse_Baseline.py` | `ruviz_pybaselines_gallery_basic` | Uses matching data and matching method parameter values where Rust APIs exist; the timing comparison is not an exact analogue because Rust does not have a reusable `Baseline` object. |
@@ -37,7 +37,7 @@ cargo run --release --example ruviz_pybaselines_gallery_whittaker_2d_dof
 | `classification/plot_fastchrom_threshold.py` | `ruviz_pybaselines_gallery_basic` | Uses matching data, `half_window=15`, fixed threshold `1.5`, and default percentile threshold; callable threshold is represented by the median fallback. |
 | `misc/plot_beads_preprocessing.py` | `ruviz_pybaselines_gallery_beads_preprocessing` | Uses the same 1000-point grid, signal, three baseline formulas, noise scale, endpoint parabola preprocessing formula, and BEADS parameter sets. The Rust implementation now uses a banded BEADS solve for this workload. |
 | `optimizers/plot_custom_bc_1_whittaker.py` | `ruviz_pybaselines_gallery_basic` | Uses matching data, `lam_flexible=1e2`, `lam_stiff=5e5`, `crossover_index` near `x=160`, `sampling=15`, and smoothing `lam=1e1`. |
-| `two_d/plot_along_axes_1d_baseline.py` | `ruviz_pybaselines_gallery_basic` | Uses matching data and `lam=1e4`; Rust `individual_axes` currently uses AsLS rather than pybaselines' `pspline_arpls`. |
+| `two_d/plot_along_axes_1d_baseline.py` | `ruviz_pybaselines_gallery_basic` | Uses matching data and the same axis-1 row-wise `pspline_arpls` correction with `lam=1e4`; this is implemented directly in the gallery example because the Rust `individual_axes` helper is intentionally narrower than pybaselines' dynamic method dispatch. |
 | `two_d/plot_whittaker_2d_dof.py` | `ruviz_pybaselines_gallery_whittaker_2d_dof` | Uses the same 100x100 grid, `gaussian2d` peak parameters, polynomial and sinusoidal baselines, `lam_poly=(1e2, 1e4)`, `lam_sine=(1e2, 1e0)`, analytical solves, eigen-count cases `(40, 40)`, `(10, 4)`, `(8, 35)`, `(3, 3)`, and `(5, 12)`, `return_dof=true`, `tol=1e-3`, and `max_iter=50`. Rust exposes this through a reduced eigenspace `arpls_eigen` API and returns a diagonal DOF estimate for the plotted eigenvector-selection surface. |
 
 Generated examples should cite pybaselines as a behavioral and documentation
