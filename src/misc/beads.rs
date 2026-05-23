@@ -4,6 +4,36 @@ use crate::fit::{Fit, FitReport};
 use crate::workspace::validate_signal;
 use crate::{BaselineError, Result};
 
+const BEADS_SYSTEM_BANDWIDTH: usize = 4;
+const BEADS_PENALTY_BANDWIDTH: usize = 2;
+const BEADS_DENSE_COMPAT_THRESHOLD: usize = 256;
+
+#[derive(Debug, Clone, Copy)]
+struct TridiagonalCoefficients {
+    offdiag: f64,
+    diag: f64,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct BeadsSystemCoefficients {
+    a: TridiagonalCoefficients,
+    b: TridiagonalCoefficients,
+}
+
+struct BeadsPenaltyInputs<'a> {
+    d1_x: &'a [f64],
+    d2_x: &'a [f64],
+    diagonal: &'a [f64],
+}
+
+#[derive(Debug, Clone, Copy)]
+struct BeadsPenaltyParams {
+    lam_1: f64,
+    lam_2: f64,
+    cost_function: BeadsCostFunction,
+    eps_1: f64,
+}
+
 /// Approximation used for the BEADS sparse absolute-value penalty.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BeadsCostFunction {
@@ -181,12 +211,19 @@ fn beads_filter_type_one(
 ) -> Result<(Vec<f64>, FitReport)> {
     let n = y.len();
     let (a_offdiag, a_diag, b_offdiag, b_diag) = filter_coefficients(params.freq_cutoff);
-    let a_matrix = tridiagonal_matrix(n, a_offdiag, a_diag);
-    let b_matrix = tridiagonal_matrix(n, b_offdiag, b_diag);
-    let btb = mat_mul(&b_matrix, &b_matrix);
+    let coefficients = BeadsSystemCoefficients {
+        a: TridiagonalCoefficients {
+            offdiag: a_offdiag,
+            diag: a_diag,
+        },
+        b: TridiagonalCoefficients {
+            offdiag: b_offdiag,
+            diag: b_diag,
+        },
+    };
 
     let a_inv_y = solve_tridiagonal(a_offdiag, a_diag, y)?;
-    let mut d = mat_vec(&btb, &a_inv_y);
+    let mut d = apply_btb_tridiagonal(b_offdiag, b_diag, &a_inv_y);
     let asymmetry_shift = params.lam_0 * (1.0 - params.asymmetry) / 2.0;
     let shifted = vec![asymmetry_shift; n];
     for (target, value) in d
@@ -206,25 +243,38 @@ fn beads_filter_type_one(
     let mut iterations = 0usize;
 
     for iter in 0..=params.max_iter {
-        let mut penalty = derivative_penalty_matrix(
+        let diagonal_penalty: Vec<f64> = abs_x
+            .iter()
+            .zip(&big_x)
+            .map(|(abs_value, is_big)| {
+                if *is_big {
+                    gamma_factor / abs_value
+                } else {
+                    gamma_factor / eps_0
+                }
+            })
+            .collect();
+        let mut system = beads_system_bands(
             n,
-            &d1_x,
-            &d2_x,
-            params.lam_1,
-            params.lam_2,
-            params.cost_function,
-            eps_1,
+            coefficients,
+            BeadsPenaltyInputs {
+                d1_x: &d1_x,
+                d2_x: &d2_x,
+                diagonal: &diagonal_penalty,
+            },
+            BeadsPenaltyParams {
+                lam_1: params.lam_1,
+                lam_2: params.lam_2,
+                cost_function: params.cost_function,
+                eps_1,
+            },
         );
-        for (index, row) in penalty.iter_mut().enumerate() {
-            row[index] += if big_x[index] {
-                gamma_factor / abs_x[index]
-            } else {
-                gamma_factor / eps_0
-            };
-        }
 
-        let temp = add_matrices(&btb, &mat_mul(&a_matrix, &mat_mul(&penalty, &a_matrix)));
-        let solved = solve_dense(temp, d.clone())?;
+        let solved = if n <= BEADS_DENSE_COMPAT_THRESHOLD {
+            solve_dense(symmetric_bands_to_dense(&system), d.clone())?
+        } else {
+            solve_spd_banded(&mut system, &d)?
+        };
         x = apply_tridiagonal(a_offdiag, a_diag, &solved);
 
         let diff: Vec<f64> = y
@@ -300,33 +350,132 @@ fn filter_coefficients(freq_cutoff: f64) -> (f64, f64, f64, f64) {
     (-1.0 + t, 2.0 + 2.0 * t, -1.0, 2.0)
 }
 
-fn derivative_penalty_matrix(
+fn beads_system_bands(
     n: usize,
-    d1_x: &[f64],
-    d2_x: &[f64],
-    lam_1: f64,
-    lam_2: f64,
-    cost_function: BeadsCostFunction,
-    eps_1: f64,
+    coefficients: BeadsSystemCoefficients,
+    inputs: BeadsPenaltyInputs<'_>,
+    params: BeadsPenaltyParams,
 ) -> Vec<Vec<f64>> {
-    let mut matrix = vec![vec![0.0; n]; n];
-    for (index, value) in d1_x.iter().enumerate() {
-        let weight = lam_1 * beads_weighting(*value, cost_function, eps_1);
-        matrix[index][index] += weight;
-        matrix[index + 1][index + 1] += weight;
-        matrix[index][index + 1] -= weight;
-        matrix[index + 1][index] -= weight;
+    let mut penalty = zero_symmetric_bands(n, BEADS_PENALTY_BANDWIDTH);
+    for (index, value) in inputs.diagonal.iter().enumerate() {
+        add_symmetric_band_value(&mut penalty, index, index, *value);
     }
-    for (index, value) in d2_x.iter().enumerate() {
-        let weight = lam_2 * beads_weighting(*value, cost_function, eps_1);
+    for (index, value) in inputs.d1_x.iter().enumerate() {
+        let weight = params.lam_1 * beads_weighting(*value, params.cost_function, params.eps_1);
+        add_symmetric_band_value(&mut penalty, index, index, weight);
+        add_symmetric_band_value(&mut penalty, index + 1, index + 1, weight);
+        add_symmetric_band_value(&mut penalty, index + 1, index, -weight);
+    }
+    for (index, value) in inputs.d2_x.iter().enumerate() {
+        let weight = params.lam_2 * beads_weighting(*value, params.cost_function, params.eps_1);
         let coeffs = [1.0, -2.0, 1.0];
         for row in 0..3 {
-            for col in 0..3 {
-                matrix[index + row][index + col] += weight * coeffs[row] * coeffs[col];
+            for col in 0..=row {
+                add_symmetric_band_value(
+                    &mut penalty,
+                    index + row,
+                    index + col,
+                    weight * coeffs[row] * coeffs[col],
+                );
             }
         }
     }
-    matrix
+
+    let mut system = zero_symmetric_bands(n, BEADS_SYSTEM_BANDWIDTH);
+    add_btb_tridiagonal_bands(&mut system, coefficients.b);
+    add_a_penalty_a_bands(&mut system, coefficients.a, &penalty);
+    system
+}
+
+fn zero_symmetric_bands(n: usize, bandwidth: usize) -> Vec<Vec<f64>> {
+    vec![vec![0.0; n]; bandwidth + 1]
+}
+
+fn add_symmetric_band_value(bands: &mut [Vec<f64>], row: usize, col: usize, value: f64) {
+    let (lower, upper) = if row >= col { (row, col) } else { (col, row) };
+    let offset = lower - upper;
+    debug_assert!(
+        offset < bands.len(),
+        "band offset {offset} exceeds bandwidth {}",
+        bands.len() - 1
+    );
+    if offset < bands.len() {
+        bands[offset][lower] += value;
+    }
+}
+
+fn set_symmetric_band_value(bands: &mut [Vec<f64>], row: usize, col: usize, value: f64) {
+    let (lower, upper) = if row >= col { (row, col) } else { (col, row) };
+    let offset = lower - upper;
+    debug_assert!(
+        offset < bands.len(),
+        "band offset {offset} exceeds bandwidth {}",
+        bands.len() - 1
+    );
+    if offset < bands.len() {
+        bands[offset][lower] = value;
+    }
+}
+
+fn symmetric_band_value(bands: &[Vec<f64>], row: usize, col: usize) -> f64 {
+    let (lower, upper) = if row >= col { (row, col) } else { (col, row) };
+    let offset = lower - upper;
+    if offset < bands.len() {
+        bands[offset][lower]
+    } else {
+        0.0
+    }
+}
+
+fn add_btb_tridiagonal_bands(system: &mut [Vec<f64>], coefficients: TridiagonalCoefficients) {
+    let n = system[0].len();
+    for row in 0..n {
+        for col in row.saturating_sub(2)..=row {
+            let mut value = 0.0;
+            for mid in row.saturating_sub(1)..=(row + 1).min(n - 1) {
+                value += tridiagonal_value(coefficients, row, mid)
+                    * tridiagonal_value(coefficients, mid, col);
+            }
+            add_symmetric_band_value(system, row, col, value);
+        }
+    }
+}
+
+fn add_a_penalty_a_bands(
+    system: &mut [Vec<f64>],
+    coefficients: TridiagonalCoefficients,
+    penalty: &[Vec<f64>],
+) {
+    let n = system[0].len();
+    for row in 0..n {
+        for col in row.saturating_sub(BEADS_SYSTEM_BANDWIDTH)..=row {
+            let mut value = 0.0;
+            for left in row.saturating_sub(1)..=(row + 1).min(n - 1) {
+                let a_left = tridiagonal_value(coefficients, row, left);
+                if a_left == 0.0 {
+                    continue;
+                }
+                for right in col.saturating_sub(1)..=(col + 1).min(n - 1) {
+                    let a_right = tridiagonal_value(coefficients, right, col);
+                    if a_right == 0.0 {
+                        continue;
+                    }
+                    value += a_left * symmetric_band_value(penalty, left, right) * a_right;
+                }
+            }
+            add_symmetric_band_value(system, row, col, value);
+        }
+    }
+}
+
+fn tridiagonal_value(coefficients: TridiagonalCoefficients, row: usize, col: usize) -> f64 {
+    if row == col {
+        coefficients.diag
+    } else if row.abs_diff(col) == 1 {
+        coefficients.offdiag
+    } else {
+        0.0
+    }
 }
 
 fn abs_diff(x: &[f64], smooth_half_window: usize) -> (Vec<f64>, Vec<f64>) {
@@ -389,20 +538,6 @@ fn beads_weighting(x: f64, cost_function: BeadsCostFunction, eps_1: f64) -> f64 
     }
 }
 
-fn tridiagonal_matrix(n: usize, offdiag: f64, diag: f64) -> Vec<Vec<f64>> {
-    let mut matrix = vec![vec![0.0; n]; n];
-    for index in 0..n {
-        matrix[index][index] = diag;
-        if index > 0 {
-            matrix[index][index - 1] = offdiag;
-        }
-        if index + 1 < n {
-            matrix[index][index + 1] = offdiag;
-        }
-    }
-    matrix
-}
-
 fn apply_tridiagonal(offdiag: f64, diag: f64, x: &[f64]) -> Vec<f64> {
     let mut output = vec![0.0; x.len()];
     for (index, target) in output.iter_mut().enumerate() {
@@ -415,6 +550,10 @@ fn apply_tridiagonal(offdiag: f64, diag: f64, x: &[f64]) -> Vec<f64> {
         }
     }
     output
+}
+
+fn apply_btb_tridiagonal(offdiag: f64, diag: f64, x: &[f64]) -> Vec<f64> {
+    apply_tridiagonal(offdiag, diag, &apply_tridiagonal(offdiag, diag, x))
 }
 
 fn solve_tridiagonal(offdiag: f64, diag: f64, rhs: &[f64]) -> Result<Vec<f64>> {
@@ -452,43 +591,74 @@ fn solve_tridiagonal(offdiag: f64, diag: f64, rhs: &[f64]) -> Result<Vec<f64>> {
     Ok(output)
 }
 
-fn mat_vec(matrix: &[Vec<f64>], vector: &[f64]) -> Vec<f64> {
-    matrix
-        .iter()
-        .map(|row| row.iter().zip(vector).map(|(a, b)| a * b).sum())
-        .collect()
+fn solve_spd_banded(bands: &mut [Vec<f64>], rhs: &[f64]) -> Result<Vec<f64>> {
+    let n = rhs.len();
+    let bandwidth = bands.len() - 1;
+    for row in 0..n {
+        let start = row.saturating_sub(bandwidth);
+        for col in start..row {
+            let mut value = symmetric_band_value(bands, row, col);
+            let sum_start = start.max(col.saturating_sub(bandwidth));
+            for mid in sum_start..col {
+                value -=
+                    symmetric_band_value(bands, row, mid) * symmetric_band_value(bands, col, mid);
+            }
+            let col_diag = symmetric_band_value(bands, col, col);
+            if col_diag.abs() <= f64::EPSILON {
+                return Err(BaselineError::LinearSolve {
+                    reason: "singular banded Cholesky factor",
+                });
+            }
+            set_symmetric_band_value(bands, row, col, value / col_diag);
+        }
+
+        let mut diag = symmetric_band_value(bands, row, row);
+        for col in start..row {
+            let value = symmetric_band_value(bands, row, col);
+            diag -= value * value;
+        }
+        if diag <= f64::EPSILON {
+            return Err(BaselineError::LinearSolve {
+                reason: "matrix was not positive definite",
+            });
+        }
+        set_symmetric_band_value(bands, row, row, diag.sqrt());
+    }
+
+    let mut intermediate = vec![0.0; n];
+    for row in 0..n {
+        let start = row.saturating_sub(bandwidth);
+        let tail = (start..row)
+            .map(|col| symmetric_band_value(bands, row, col) * intermediate[col])
+            .sum::<f64>();
+        intermediate[row] = (rhs[row] - tail) / symmetric_band_value(bands, row, row);
+    }
+
+    let mut output = vec![0.0; n];
+    for row in (0..n).rev() {
+        let end = (row + bandwidth).min(n - 1);
+        let tail = (row + 1..=end)
+            .map(|lower| symmetric_band_value(bands, lower, row) * output[lower])
+            .sum::<f64>();
+        output[row] = (intermediate[row] - tail) / symmetric_band_value(bands, row, row);
+    }
+    Ok(output)
 }
 
-fn mat_mul(left: &[Vec<f64>], right: &[Vec<f64>]) -> Vec<Vec<f64>> {
-    let rows = left.len();
-    let cols = right[0].len();
-    let inner = right.len();
-    let mut output = vec![vec![0.0; cols]; rows];
-    for row in 0..rows {
-        for mid in 0..inner {
-            let value = left[row][mid];
-            if value == 0.0 {
-                continue;
-            }
-            for col in 0..cols {
-                output[row][col] += value * right[mid][col];
-            }
+fn symmetric_bands_to_dense(bands: &[Vec<f64>]) -> Vec<Vec<f64>> {
+    let n = bands[0].len();
+    let mut matrix = vec![vec![0.0; n]; n];
+    let mut entries = Vec::with_capacity(n * bands.len());
+    for row in 0..n {
+        for col in row.saturating_sub(bands.len() - 1)..=row {
+            entries.push((row, col, symmetric_band_value(bands, row, col)));
         }
     }
-    output
-}
-
-fn add_matrices(left: &[Vec<f64>], right: &[Vec<f64>]) -> Vec<Vec<f64>> {
-    left.iter()
-        .zip(right)
-        .map(|(left_row, right_row)| {
-            left_row
-                .iter()
-                .zip(right_row)
-                .map(|(left_value, right_value)| left_value + right_value)
-                .collect()
-        })
-        .collect()
+    for (row, col, value) in entries {
+        matrix[row][col] = value;
+        matrix[col][row] = value;
+    }
+    matrix
 }
 
 fn solve_dense(mut matrix: Vec<Vec<f64>>, mut rhs: Vec<f64>) -> Result<Vec<f64>> {

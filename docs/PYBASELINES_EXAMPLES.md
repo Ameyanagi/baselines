@@ -10,6 +10,7 @@ cargo run --example ruviz_pybaselines_lam_effects
 cargo run --example ruviz_pybaselines_gallery_basic
 cargo run --release --example ruviz_pybaselines_gallery_whittaker_sweeps
 cargo run --release --example ruviz_pybaselines_gallery_whittaker_solver_timings
+cargo run --release --example ruviz_pybaselines_gallery_beads_preprocessing
 ```
 
 ## Coverage
@@ -31,7 +32,7 @@ cargo run --release --example ruviz_pybaselines_gallery_whittaker_solver_timings
 | `spline/plot_pspline_whittaker.py` | pending | Heavy parameter sweep; planned after the sweep harness is shared with Whittaker examples. |
 | `classification/plot_classifier_masks.py` | `ruviz_pybaselines_gallery_basic` | Uses matching data, `std_distribution`, `half_window` values `15` and `45`, and `smooth_half_window=10`; Rust does not yet return classifier masks. |
 | `classification/plot_fastchrom_threshold.py` | `ruviz_pybaselines_gallery_basic` | Uses matching data, `half_window=15`, fixed threshold `1.5`, and default percentile threshold; callable threshold is represented by the median fallback. |
-| `misc/plot_beads_preprocessing.py` | pending | BEADS is available in Rust, but the full gallery case is slow enough that it should be split into a dedicated heavy example. |
+| `misc/plot_beads_preprocessing.py` | `ruviz_pybaselines_gallery_beads_preprocessing` | Uses the same 1000-point grid, signal, three baseline formulas, noise scale, endpoint parabola preprocessing formula, and BEADS parameter sets. The Rust implementation now uses a banded BEADS solve for this workload. |
 | `optimizers/plot_custom_bc_1_whittaker.py` | `ruviz_pybaselines_gallery_basic` | Uses matching data, `lam_flexible=1e2`, `lam_stiff=5e5`, `crossover_index` near `x=160`, `sampling=15`, and smoothing `lam=1e1`. |
 | `two_d/plot_along_axes_1d_baseline.py` | `ruviz_pybaselines_gallery_basic` | Uses matching data and `lam=1e4`; Rust `individual_axes` currently uses AsLS rather than pybaselines' `pspline_arpls`. |
 | `two_d/plot_whittaker_2d_dof.py` | pending | Rust does not yet expose pybaselines' tuple `lam`, eigensolver, `num_eigens`, or DOF output. The native 2D CG counterpart should be split into a dedicated heavy example. |
