@@ -57,6 +57,9 @@ a small deterministic Rust generator rather than NumPy's bit generator, so the
 shape and parameters match the gallery example but the exact noise samples do
 not.
 
+See `docs/PYBASELINES_EXAMPLES.md` for the pybaselines gallery coverage matrix
+and additional gallery-batch example commands.
+
 ## Attribution
 
 This project does not copy implementation code from `pybaselines`. The Python
