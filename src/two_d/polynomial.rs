@@ -22,7 +22,7 @@ use crate::{BaselineError, Result};
 /// Parameters for a direct two-dimensional polynomial baseline fit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Poly2DParams {
-    /// Maximum total polynomial degree.
+    /// Maximum polynomial degree on each axis.
     pub order: usize,
 }
 
@@ -35,7 +35,7 @@ impl Default for Poly2DParams {
 /// Parameters for two-dimensional modified polynomial baseline fitting.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ModPoly2DParams {
-    /// Maximum total polynomial degree.
+    /// Maximum polynomial degree on each axis.
     pub order: usize,
     /// Maximum number of clipped least-squares iterations.
     pub max_iter: usize,
@@ -56,7 +56,7 @@ impl Default for ModPoly2DParams {
 /// Parameters for two-dimensional improved modified polynomial baseline fitting.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ImodPoly2DParams {
-    /// Maximum total polynomial degree.
+    /// Maximum polynomial degree on each axis.
     pub order: usize,
     /// Maximum number of clipped least-squares iterations.
     pub max_iter: usize,
@@ -77,7 +77,7 @@ impl Default for ImodPoly2DParams {
 /// Parameters for two-dimensional penalized polynomial fitting.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PenalizedPoly2DParams {
-    /// Maximum total polynomial degree.
+    /// Maximum polynomial degree on each axis.
     pub order: usize,
     /// Maximum number of non-quadratic refinement iterations.
     pub max_iter: usize,
@@ -104,7 +104,7 @@ impl Default for PenalizedPoly2DParams {
 /// Parameters for two-dimensional quantile-regression polynomial fitting.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct QuantReg2DParams {
-    /// Maximum total polynomial degree.
+    /// Maximum polynomial degree on each axis.
     pub order: usize,
     /// Quantile in `(0, 1)` to fit.
     pub quantile: f64,
@@ -563,10 +563,10 @@ fn evaluate_coefficients(
 }
 
 fn basis_terms(order: usize) -> Vec<(usize, usize)> {
-    let mut terms = Vec::with_capacity((order + 1) * (order + 2) / 2);
-    for total_degree in 0..=order {
-        for x_degree in (0..=total_degree).rev() {
-            terms.push((x_degree, total_degree - x_degree));
+    let mut terms = Vec::with_capacity((order + 1) * (order + 1));
+    for x_degree in 0..=order {
+        for y_degree in 0..=order {
+            terms.push((x_degree, y_degree));
         }
     }
     terms
@@ -629,9 +629,17 @@ fn relative_change(previous: &[f64], next: &[f64]) -> f64 {
     let numerator = previous
         .iter()
         .zip(next)
-        .map(|(left, right)| (left - right).abs())
-        .sum::<f64>();
-    let denominator = previous.iter().map(|value| value.abs()).sum::<f64>();
+        .map(|(left, right)| {
+            let diff = right - left;
+            diff * diff
+        })
+        .sum::<f64>()
+        .sqrt();
+    let denominator = previous
+        .iter()
+        .map(|value| value * value)
+        .sum::<f64>()
+        .sqrt();
     numerator / denominator.max(f64::EPSILON)
 }
 

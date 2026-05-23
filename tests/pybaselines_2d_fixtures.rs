@@ -195,7 +195,7 @@ fn native_2d_polynomial_tracks_reference_fixture() {
         "poly",
         &fixture.baselines,
         poly(input, Poly2DParams { order: 2 }).unwrap().baseline,
-        3e-1,
+        1e-12,
     );
     assert_baseline_close(
         "modpoly",
@@ -210,7 +210,7 @@ fn native_2d_polynomial_tracks_reference_fixture() {
         )
         .unwrap()
         .baseline,
-        3e-1,
+        6e-2,
     );
     assert_baseline_close(
         "imodpoly",
@@ -225,7 +225,7 @@ fn native_2d_polynomial_tracks_reference_fixture() {
         )
         .unwrap()
         .baseline,
-        3e-1,
+        2e-2,
     );
     assert_baseline_close(
         "penalized_poly",
@@ -240,7 +240,7 @@ fn native_2d_polynomial_tracks_reference_fixture() {
         )
         .unwrap()
         .baseline,
-        3e-1,
+        1e-12,
     );
     assert_baseline_close(
         "quant_reg",
@@ -256,7 +256,7 @@ fn native_2d_polynomial_tracks_reference_fixture() {
         )
         .unwrap()
         .baseline,
-        3e-1,
+        2e-3,
     );
 }
 

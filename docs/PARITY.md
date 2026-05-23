@@ -65,11 +65,6 @@ weighting, solver, and iteration semantics are tightened against pybaselines.
 | Method | Family | Current fixture tolerance | Hardening direction |
 | --- | --- | ---: | --- |
 | `imor` | 2D morphology | `1.4e-1` | Further align iterative morphology convergence and update policy. |
-| `poly` | 2D polynomial | `3e-1` | Align basis ordering and axis scaling with pybaselines. |
-| `modpoly` | 2D polynomial | `3e-1` | Tighten clipped least-squares update semantics. |
-| `imodpoly` | 2D polynomial | `3e-1` | Tighten improved clipping and weighting semantics. |
-| `penalized_poly` | 2D polynomial | `3e-1` | Expand cost-function support beyond the default asymmetric truncated quadratic path. |
-| `quant_reg` | 2D polynomial | `3e-1` | Align quantile IRLS weighting and convergence behavior. |
 | `asls` | 2D Whittaker | `3e-1` | Tighten matrix-free solve settings and weight-update parity. |
 | `iasls` | 2D Whittaker | `3e-1` | Add the first-derivative contribution used by pybaselines. |
 | `airpls` | 2D Whittaker | `3e-1` | Align adaptive exponential weighting and stopping behavior. |
