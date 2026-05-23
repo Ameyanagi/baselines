@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use baselines::MatrixView;
 use baselines::two_d::morphology::{
-    Morphology2DParams, imor, mor, noise_median, rolling_ball, tophat,
+    Imor2DParams, Morphology2DParams, imor, mor, noise_median, rolling_ball, tophat,
 };
 use baselines::two_d::optimizers::{
     AdaptiveMinmax2DParams, CollabPls2DParams, IndividualAxes2DParams, adaptive_minmax, collab_pls,
@@ -173,8 +173,17 @@ fn native_2d_morphology_tracks_reference_fixture() {
     assert_baseline_close(
         "imor",
         &fixture.baselines,
-        imor(input, params).unwrap().baseline,
-        1.4e-1,
+        imor(
+            input,
+            Imor2DParams {
+                morphology: params,
+                max_iter: 20,
+                tol: 1e-3,
+            },
+        )
+        .unwrap()
+        .baseline,
+        1e-12,
     );
     assert_baseline_close(
         "noise_median",

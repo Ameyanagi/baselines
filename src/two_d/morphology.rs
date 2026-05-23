@@ -14,8 +14,8 @@ use crate::data::{MatrixView, MatrixViewMut};
 use crate::fit::{Fit2D, FitReport};
 use crate::{BaselineError, Result};
 
-const IMOR_MAX_ITER: usize = 200;
-const IMOR_TOL: f64 = 1.0e-3;
+const IMOR_DEFAULT_MAX_ITER: usize = 200;
+const IMOR_DEFAULT_TOL: f64 = 1.0e-3;
 
 /// Parameters for two-dimensional window-based morphology baselines.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -56,6 +56,40 @@ impl Morphology2DParams {
 
     fn radii(self) -> (usize, usize) {
         (self.window_rows / 2, self.window_cols / 2)
+    }
+}
+
+/// Parameters for [`imor`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Imor2DParams {
+    /// Shared morphology window parameters.
+    pub morphology: Morphology2DParams,
+    /// Maximum number of IMor update iterations.
+    pub max_iter: usize,
+    /// Relative baseline-change tolerance.
+    pub tol: f64,
+}
+
+impl Default for Imor2DParams {
+    fn default() -> Self {
+        Self {
+            morphology: Morphology2DParams::default(),
+            max_iter: IMOR_DEFAULT_MAX_ITER,
+            tol: IMOR_DEFAULT_TOL,
+        }
+    }
+}
+
+impl Imor2DParams {
+    fn validate(self) -> Result<()> {
+        self.morphology.validate()?;
+        if !self.tol.is_finite() || self.tol <= 0.0 {
+            return Err(BaselineError::InvalidParameter {
+                name: "tol",
+                reason: "must be finite and positive",
+            });
+        }
+        Ok(())
     }
 }
 
@@ -173,7 +207,7 @@ pub fn mor_into(
 /// # References
 ///
 /// - `pybaselines.Baseline2D.imor` is used as a behavioral reference.
-pub fn imor(input: MatrixView<'_>, params: Morphology2DParams) -> Result<Fit2D> {
+pub fn imor(input: MatrixView<'_>, params: Imor2DParams) -> Result<Fit2D> {
     let mut baseline = vec![0.0; input.len()];
     let output = MatrixViewMut::row_major(&mut baseline, input.rows(), input.cols())?;
     let report = imor_into(input, params, output)?;
@@ -183,17 +217,17 @@ pub fn imor(input: MatrixView<'_>, params: Morphology2DParams) -> Result<Fit2D> 
 /// Estimates an improved 2D morphology baseline into an existing output buffer.
 pub fn imor_into(
     input: MatrixView<'_>,
-    params: Morphology2DParams,
+    params: Imor2DParams,
     mut output: MatrixViewMut<'_>,
 ) -> Result<FitReport> {
-    validate_input_output(input, &output, params)?;
-    let (row_radius, col_radius) = params.radii();
+    validate_imor_input_output(input, &output, params)?;
+    let (row_radius, col_radius) = params.morphology.radii();
     output.as_mut_slice().copy_from_slice(input.as_slice());
     let mut next = vec![0.0; input.len()];
     let mut averaged = vec![0.0; input.len()];
     let mut tolerance = f64::INFINITY;
 
-    for iter in 0..=IMOR_MAX_ITER {
+    for iter in 0..=params.max_iter {
         average_opening_reflect(
             output.as_slice(),
             input.rows(),
@@ -206,13 +240,17 @@ pub fn imor_into(
             *target = observed.min(*opened);
         }
         tolerance = relative_change(output.as_slice(), &next);
-        if tolerance < IMOR_TOL {
+        if tolerance < params.tol {
             return Ok(FitReport::new(iter + 1, true, tolerance));
         }
         output.as_mut_slice().copy_from_slice(&next);
     }
 
-    Ok(FitReport::new(IMOR_MAX_ITER + 1, false, tolerance))
+    Ok(FitReport::new(
+        params.max_iter.saturating_add(1),
+        false,
+        tolerance,
+    ))
 }
 
 /// Estimates a 2D moving-median noise baseline.
@@ -264,6 +302,24 @@ fn validate_input_output(
     Ok(())
 }
 
+fn validate_imor_input_output(
+    input: MatrixView<'_>,
+    output: &MatrixViewMut<'_>,
+    params: Imor2DParams,
+) -> Result<()> {
+    params.validate()?;
+    let input_shape = input.shape();
+    let output_shape = output.shape();
+    if input_shape != output_shape {
+        return Err(BaselineError::LengthMismatch {
+            name: "output",
+            expected: input_shape.len(),
+            actual: output_shape.len(),
+        });
+    }
+    Ok(())
+}
+
 fn opening_reflect(
     data: &[f64],
     rows: usize,
@@ -287,9 +343,7 @@ fn average_opening_reflect(
 ) {
     let opened = opening_reflect(data, rows, cols, row_radius, col_radius);
     let averaged = average_opening_from_opened_reflect(&opened, rows, cols, row_radius, col_radius);
-    for ((target, opened), averaged) in output.iter_mut().zip(opened).zip(averaged) {
-        *target = opened.min(averaged);
-    }
+    output.copy_from_slice(&averaged);
 }
 
 fn average_opening_from_opened_reflect(

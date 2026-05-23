@@ -59,12 +59,7 @@ methods.
 
 ## Two-Dimensional Tolerance Ledger
 
-The native 2D methods are fixture-backed while their padding, basis,
-weighting, solver, and iteration semantics are tightened against pybaselines.
-
-| Method | Family | Current fixture tolerance | Hardening direction |
-| --- | --- | ---: | --- |
-| `imor` | 2D morphology | `1.4e-1` | Further align iterative morphology convergence and update policy. |
+No pinned 2D fixture tolerances are currently above `1e-1`.
 
 ## Tolerance Ledger
 

@@ -1,5 +1,6 @@
 use baselines::two_d::morphology::{
-    Morphology2DParams, imor, mor, noise_median, rolling_ball, rolling_ball_into, tophat,
+    Imor2DParams, Morphology2DParams, imor, mor, noise_median, rolling_ball, rolling_ball_into,
+    tophat,
 };
 use baselines::{BaselineError, MatrixView, MatrixViewMut};
 
@@ -16,7 +17,14 @@ fn two_d_morphology_methods_preserve_constant_surfaces() {
         rolling_ball(input, params).unwrap(),
         tophat(input, params).unwrap(),
         mor(input, params).unwrap(),
-        imor(input, params).unwrap(),
+        imor(
+            input,
+            Imor2DParams {
+                morphology: params,
+                ..Imor2DParams::default()
+            },
+        )
+        .unwrap(),
         noise_median(input, params).unwrap(),
     ] {
         assert_eq!(fit.shape(), (5, 6));
@@ -74,4 +82,15 @@ fn two_d_morphology_rejects_invalid_windows_and_output_shapes() {
     let output = MatrixViewMut::row_major(&mut output, 3, 2).unwrap();
     let error = rolling_ball_into(input, Morphology2DParams::default(), output).unwrap_err();
     assert!(matches!(error, BaselineError::LengthMismatch { .. }));
+
+    let error = imor(
+        input,
+        Imor2DParams {
+            morphology: Morphology2DParams::default(),
+            tol: 0.0,
+            ..Imor2DParams::default()
+        },
+    )
+    .unwrap_err();
+    assert!(matches!(error, BaselineError::InvalidParameter { .. }));
 }
