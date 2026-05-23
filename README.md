@@ -20,8 +20,8 @@ The crate starts with CPU `f64` implementations and public entry points for
 the current one-dimensional `pybaselines.Baseline` algorithm families:
 polynomial, Whittaker, morphology, penalized spline, smoothing,
 classification, optimizer, and miscellaneous methods. Two-dimensional support
-is staged under `baselines::two_d`, with morphology/smoothing, polynomial, and
-Whittaker methods available first.
+is staged under `baselines::two_d`; all pinned `pybaselines.Baseline2D` 1.2.1
+families now have first-pass native Rust implementations.
 
 Algorithms are organized by family module. Core data types such as `Fit1D`,
 `Fit2D`, and row-major matrix views are available at the crate root.
@@ -32,8 +32,8 @@ feature-gated behind `gpu-wgpu`; the experimental WGPU path provides batched
 `f32` morphology kernels for moving minimum, moving maximum, opening, and the
 top-hat baseline primitive.
 
-See `docs/PARITY.md` for the current one-dimensional pybaselines parity matrix
-and known limits.
+See `docs/PARITY.md` for the current pybaselines parity matrix, 2D tolerance
+ledger, and known limits.
 
 ## Attribution
 

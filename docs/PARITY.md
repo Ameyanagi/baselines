@@ -48,15 +48,20 @@ methods.
 - Native Rust 2D Whittaker implementations currently cover `asls`, `iasls`,
   `airpls`, `arpls`, `drpls`, `iarpls`, `aspls`, `psalsa`, `brpls`, and
   `lsrpls`.
-- The remaining native Rust 2D families are penalized spline and optimizer/meta;
-  the fixture tests lock the upstream method surface and fixture integrity while
-  those methods are implemented.
+- Native Rust 2D penalized-spline implementations currently cover
+  `pspline_asls`, `pspline_iasls`, `pspline_airpls`, `pspline_arpls`,
+  `pspline_iarpls`, `pspline_psalsa`, `pspline_brpls`, `pspline_lsrpls`,
+  `irsqr`, and `mixture_model`.
+- Native Rust 2D optimizer/meta implementations currently cover
+  `adaptive_minmax`, `individual_axes`, and `collab_pls`.
+- All 33 pinned `pybaselines.Baseline2D` 1.2.1 public methods now have native
+  Rust entry points and fixture-backed first-pass behavior.
 
 ## Two-Dimensional Tolerance Ledger
 
-The first native 2D morphology/smoothing, polynomial, and Whittaker methods are
-fixture-backed with a `3e-1` tolerance while their padding, basis, weighting,
-and iteration semantics are tightened against pybaselines.
+The native 2D methods are fixture-backed with a first-pass `3e-1` tolerance
+while their padding, basis, weighting, solver, and iteration semantics are
+tightened against pybaselines.
 
 | Method | Family | Current fixture tolerance | Hardening direction |
 | --- | --- | ---: | --- |
@@ -80,6 +85,19 @@ and iteration semantics are tightened against pybaselines.
 | `psalsa` | 2D Whittaker | `3e-1` | Tighten exponential peak suppression and default `k` behavior. |
 | `brpls` | 2D Whittaker | `3e-1` | Implement the full outer beta iteration semantics. |
 | `lsrpls` | 2D Whittaker | `3e-1` | Align locally symmetric reweighting update behavior. |
+| `pspline_asls` | 2D spline | `3e-1` | Replace separable first-pass smoothing with full tensor-product P-spline semantics. |
+| `pspline_iasls` | 2D spline | `3e-1` | Tighten first-difference residual penalty behavior. |
+| `pspline_airpls` | 2D spline | `3e-1` | Align adaptive exponential weighting and spline convergence. |
+| `pspline_arpls` | 2D spline | `3e-1` | Tighten negative-residual statistics for spline weights. |
+| `pspline_iarpls` | 2D spline | `3e-1` | Align improved arPLS spline update scaling. |
+| `pspline_psalsa` | 2D spline | `3e-1` | Tighten exponential peak suppression for spline fits. |
+| `pspline_brpls` | 2D spline | `3e-1` | Implement full outer beta iteration semantics for spline fits. |
+| `pspline_lsrpls` | 2D spline | `3e-1` | Align locally symmetric spline reweighting behavior. |
+| `irsqr` | 2D spline | `3e-1` | Tighten iterative quantile-regression spline weighting and coefficient convergence. |
+| `mixture_model` | 2D spline | `3e-1` | Implement full mixture-model weighting instead of the first-pass asymmetric policy. |
+| `adaptive_minmax` | 2D optimizer/meta | `3e-1` | Implement full adaptive candidate selection beyond the modified polynomial path. |
+| `individual_axes` | 2D optimizer/meta | `3e-1` | Expand beyond row-then-column AsLS and expose method selection. |
+| `collab_pls` | 2D optimizer/meta | `3e-1` | Tighten shared-weight collaborative fitting and multi-surface convergence. |
 
 ## Tolerance Ledger
 
@@ -99,9 +117,8 @@ tightened before broader 2D work depends on the same primitive.
 
 ## Known Limits
 
-- Two-dimensional support currently covers morphology/smoothing, polynomial,
-  and Whittaker methods; penalized spline and optimizer/meta methods remain
-  pending.
+- Two-dimensional support covers all pinned `pybaselines.Baseline2D` 1.2.1
+  methods with first-pass native Rust implementations.
 - Some Rust implementations intentionally use first-pass native solvers or
   approximations while retaining fixture-backed behavior for the tested
   parameter sets.

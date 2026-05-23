@@ -586,6 +586,40 @@ fn fit_with_policy<P: ReweightPolicy>(
     Ok(FitReport::new(params.max_iter, false, tolerance))
 }
 
+pub(crate) fn solve_fixed_weighted_system(
+    input: MatrixView<'_>,
+    params: Whittaker2DParams,
+    weights: &[f64],
+    mut output: MatrixViewMut<'_>,
+    workspace: &mut Whittaker2DWorkspace,
+) -> Result<FitReport> {
+    validate_input_output(input, &output, params)?;
+    if weights.len() != input.len() {
+        return Err(BaselineError::LengthMismatch {
+            name: "weights",
+            expected: input.len(),
+            actual: weights.len(),
+        });
+    }
+    workspace.resize(input.len());
+    output.as_mut_slice().copy_from_slice(input.as_slice());
+    for ((rhs, observed), weight) in workspace.rhs.iter_mut().zip(input.as_slice()).zip(weights) {
+        *rhs = observed * weight.max(MIN_WEIGHT);
+    }
+    solve_weighted_system(
+        input.rows(),
+        input.cols(),
+        params,
+        weights,
+        &workspace.rhs,
+        output.as_mut_slice(),
+        &mut workspace.cg_residual,
+        &mut workspace.cg_direction,
+        &mut workspace.cg_operator,
+    )?;
+    Ok(FitReport::new(1, true, 0.0))
+}
+
 fn validate_input_output(
     input: MatrixView<'_>,
     output: &MatrixViewMut<'_>,

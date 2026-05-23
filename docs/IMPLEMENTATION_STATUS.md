@@ -13,7 +13,7 @@ is tightened with generated pybaselines fixtures.
 - `Fit1D` is the primary one-dimensional output type. `Fit` remains as a
   compatibility alias while call sites migrate.
 - `Fit2D`, `MatrixView`, and `MatrixViewMut` provide the row-major,
-  slice-based foundation for the upcoming two-dimensional algorithms.
+  slice-based foundation for two-dimensional algorithms.
 - Correction helpers validate input and output lengths instead of silently
   truncating mismatched slices.
 
@@ -29,8 +29,14 @@ is tightened with generated pybaselines fixtures.
   `psalsa`, `brpls`, and `lsrpls` are implemented under
   `baselines::two_d::whittaker` with owned and `_into` row-major APIs backed by
   a matrix-free conjugate-gradient smoother.
-- Remaining 2D families are fixture-scaffolded but not yet implemented:
-  penalized spline and optimizer/meta methods.
+- Penalized spline: `pspline_asls`, `pspline_iasls`, `pspline_airpls`,
+  `pspline_arpls`, `pspline_iarpls`, `pspline_psalsa`, `pspline_brpls`,
+  `pspline_lsrpls`, `irsqr`, and `mixture_model` are implemented under
+  `baselines::two_d::spline` with separable row/column P-spline passes.
+- Optimizer/meta: `adaptive_minmax`, `individual_axes`, and `collab_pls` are
+  implemented under `baselines::two_d::optimizers`.
+- All 33 pinned `pybaselines.Baseline2D` 1.2.1 public methods now have native
+  Rust entry points and fixture-backed first-pass behavior.
 
 ## Dedicated First-Pass Implementations
 
@@ -63,7 +69,8 @@ is tightened with generated pybaselines fixtures.
 ## Future Hardening Work
 
 - Broaden the fixture matrix with more signal shapes and parameter sets.
-- Add native implementations for the remaining pinned `Baseline2D` methods.
+- Tighten native 2D tolerances against pybaselines beyond the first-pass
+  `3e-1` fixture ledger.
 - Optimize dense first-pass paths such as BEADS with banded or sparse solvers.
 - Keep CubeCL WGPU behind `gpu-wgpu`; current real-device-tested kernels cover
   batched `f32` moving minimum, moving maximum, opening, and the top-hat
