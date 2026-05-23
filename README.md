@@ -35,6 +35,20 @@ top-hat baseline primitive.
 See `docs/PARITY.md` for the current pybaselines parity matrix, 2D tolerance
 ledger, and known limits.
 
+## Visual examples
+
+The crate includes `ruviz` examples for inspecting generated baselines as PNGs:
+
+```console
+cargo run --example ruviz_1d
+cargo run --example ruviz_2d
+```
+
+Both examples write images to `target/baselines-ruviz/`. The 1D example plots
+observed spectra, AsLS/arPLS baselines, and corrected signals. The 2D example
+writes heatmaps for the observed surface, fitted AsLS baseline, true synthetic
+baseline, and corrected surface.
+
 ## Attribution
 
 This project does not copy implementation code from `pybaselines`. The Python
