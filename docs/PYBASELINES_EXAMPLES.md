@@ -11,6 +11,8 @@ cargo run --example ruviz_pybaselines_gallery_basic
 cargo run --release --example ruviz_pybaselines_gallery_whittaker_sweeps
 cargo run --release --example ruviz_pybaselines_gallery_whittaker_solver_timings
 cargo run --release --example ruviz_pybaselines_gallery_beads_preprocessing
+cargo run --release --example ruviz_pybaselines_gallery_pspline_whittaker
+cargo run --release --example ruviz_pybaselines_gallery_spline_lam_vs_num_knots
 ```
 
 ## Coverage
@@ -28,8 +30,8 @@ cargo run --release --example ruviz_pybaselines_gallery_beads_preprocessing
 | `whittaker/plot_lam_vs_data_size.py` | `ruviz_pybaselines_gallery_whittaker_sweeps` | Uses the same `_make_data` baseline formulas, data sizes `[499, 1045, 2186, 4573, 9563, 20000]`, algorithms, coarse/fine lambda search, `tol=1e-2`, and `max_iter=50`. Candidate lambda values that fail a solve are skipped, matching the upstream example behavior. |
 | `whittaker/plot_whittaker_solvers.py` | `ruviz_pybaselines_gallery_whittaker_solver_timings` | Uses the same `_make_data` default signal, lambda equation, data sizes `[499, 935, 1748, 3270, 6115, 11437, 21388, 40000]`, `repeats=25`, AsLS, and `max_iter=8`. The Rust example compares allocating `asls` against reusable-workspace `asls_into` because this crate has one native pentadiagonal solver rather than SciPy/pentapy solver backends; `tol=f64::MIN_POSITIVE` is used because the Rust API requires positive tolerance while pybaselines uses `tol=-1` to force fixed iterations. |
 | `morphological/plot_half_window_effects.py` | `ruviz_pybaselines_gallery_basic` | Uses matching data and `half_window` values `30`, `60`, and `120` through Rust full-window sizes `61`, `121`, and `241`. |
-| `spline/plot_lam_vs_num_knots.py` | pending | Heavy parameter sweep; Rust `mixture_model` now exposes `num_knots` and `diff_order`, but the dense P-spline solver still needs optimization before the full `num_knots=[20, 53, 141, 376, 1000]` sweep is practical. |
-| `spline/plot_pspline_whittaker.py` | pending | Heavy parameter sweep; planned after the sweep harness is shared with Whittaker examples. |
+| `spline/plot_lam_vs_num_knots.py` | `ruviz_pybaselines_gallery_spline_lam_vs_num_knots` | Uses the same exponential `_make_data` baseline, `mixture_model`, `diff_order=2`, knot counts `[20, 53, 141, 376, 1000]`, data sizes `[500, 1045, 2186, 4573, 9563, 20000]`, coarse/fine lambda search, `tol=1e-2`, and `max_iter=50`. |
+| `spline/plot_pspline_whittaker.py` | `ruviz_pybaselines_gallery_pspline_whittaker` | Uses the same exponential `_make_data` baseline, `arpls`, `pspline_arpls`, data sizes `[499, 1045, 2186, 4573, 9563, 20000]`, coarse/fine lambda search, `tol=1e-2`, and `max_iter=50`. |
 | `classification/plot_classifier_masks.py` | `ruviz_pybaselines_gallery_basic` | Uses matching data, `std_distribution`, `half_window` values `15` and `45`, and `smooth_half_window=10`; Rust does not yet return classifier masks. |
 | `classification/plot_fastchrom_threshold.py` | `ruviz_pybaselines_gallery_basic` | Uses matching data, `half_window=15`, fixed threshold `1.5`, and default percentile threshold; callable threshold is represented by the median fallback. |
 | `misc/plot_beads_preprocessing.py` | `ruviz_pybaselines_gallery_beads_preprocessing` | Uses the same 1000-point grid, signal, three baseline formulas, noise scale, endpoint parabola preprocessing formula, and BEADS parameter sets. The Rust implementation now uses a banded BEADS solve for this workload. |

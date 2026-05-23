@@ -3,13 +3,23 @@
 use crate::linalg::dense::solve_dense;
 use crate::{BaselineError, Result};
 
+const DENSE_COMPAT_THRESHOLD: usize = 256;
+
 /// Dense penalized B-spline basis and solver.
 #[derive(Debug, Clone)]
 pub(crate) struct PenalizedSpline {
-    basis: Vec<Vec<f64>>,
+    basis: Vec<SparseBasisRow>,
     basis_midpoints: Vec<f64>,
     first_order_penalty: Vec<Vec<f64>>,
     penalty: Vec<Vec<f64>>,
+    degree: usize,
+    diff_order: usize,
+}
+
+#[derive(Debug, Clone)]
+struct SparseBasisRow {
+    start: usize,
+    values: Vec<f64>,
 }
 
 impl PenalizedSpline {
@@ -21,15 +31,17 @@ impl PenalizedSpline {
         let basis_midpoints = basis_midpoints(&knots, degree);
         let basis = x
             .iter()
-            .map(|value| basis_row(*value, &knots, degree, n_bases))
+            .map(|value| sparse_basis_row(*value, &knots, degree, n_bases))
             .collect();
-        let first_order_penalty = difference_penalty(n_bases, 1);
-        let penalty = difference_penalty(n_bases, diff_order);
+        let first_order_penalty = difference_penalty_bands(n_bases, 1);
+        let penalty = difference_penalty_bands(n_bases, diff_order);
         Self {
             basis,
             basis_midpoints,
             first_order_penalty,
             penalty,
+            degree,
+            diff_order,
         }
     }
 
@@ -53,7 +65,7 @@ impl PenalizedSpline {
 
     /// Returns the number of spline basis functions.
     pub(crate) fn basis_count(&self) -> usize {
-        self.penalty.len()
+        self.penalty[0].len()
     }
 
     /// Fits a weighted penalized spline with row-scaled smoothness penalties.
@@ -76,7 +88,7 @@ impl PenalizedSpline {
         eta: f64,
         basis_weights: &[f64],
     ) -> Result<Vec<f64>> {
-        let n_bases = self.penalty.len();
+        let n_bases = self.basis_count();
         if basis_weights.len() != n_bases {
             return Err(BaselineError::LengthMismatch {
                 name: "basis_weights",
@@ -145,7 +157,14 @@ impl PenalizedSpline {
         basis_first_difference_lambda: f64,
         data_first_difference_lambda: f64,
     ) -> Result<Vec<f64>> {
-        let n_bases = self.penalty.len();
+        if row_scales.is_none()
+            && basis_first_difference_lambda == 0.0
+            && data_first_difference_lambda == 0.0
+        {
+            return self.solve_coefficients_banded(y, weights, lambda);
+        }
+
+        let n_bases = self.basis_count();
         if let Some(scales) = row_scales
             && scales.len() != n_bases
         {
@@ -160,15 +179,16 @@ impl PenalizedSpline {
         let mut rhs = vec![0.0; n_bases];
 
         for ((basis_row, observed), weight) in self.basis.iter().zip(y).zip(weights) {
-            for row in 0..n_bases {
-                rhs[row] += basis_row[row] * weight * observed;
-                for col in 0..n_bases {
-                    normal[row][col] += basis_row[row] * weight * basis_row[col];
+            for (row, row_value) in basis_row.entries() {
+                rhs[row] += row_value * weight * observed;
+                for (col, col_value) in basis_row.entries() {
+                    normal[row][col] += row_value * weight * col_value;
                 }
             }
         }
 
-        for (row, (normal_row, penalty_row)) in normal.iter_mut().zip(&self.penalty).enumerate() {
+        let penalty = symmetric_bands_to_dense(&self.penalty);
+        for (row, (normal_row, penalty_row)) in normal.iter_mut().zip(&penalty).enumerate() {
             let scale = row_scales.map_or(1.0, |scales| scales[row]);
             for (normal_value, penalty_value) in normal_row.iter_mut().zip(penalty_row) {
                 *normal_value += lambda * scale * penalty_value;
@@ -176,7 +196,8 @@ impl PenalizedSpline {
         }
 
         if basis_first_difference_lambda > 0.0 {
-            for (normal_row, penalty_row) in normal.iter_mut().zip(&self.first_order_penalty) {
+            let first_order_penalty = symmetric_bands_to_dense(&self.first_order_penalty);
+            for (normal_row, penalty_row) in normal.iter_mut().zip(&first_order_penalty) {
                 for (normal_value, penalty_value) in normal_row.iter_mut().zip(penalty_row) {
                     *normal_value += basis_first_difference_lambda * penalty_value;
                 }
@@ -187,13 +208,14 @@ impl PenalizedSpline {
             for (basis_pair, observed_pair) in self.basis.windows(2).zip(y.windows(2)) {
                 let observed_difference = observed_pair[1] - observed_pair[0];
                 for row in 0..n_bases {
-                    let basis_row_difference = basis_pair[1][row] - basis_pair[0][row];
+                    let basis_row_difference =
+                        basis_pair[1].value_at(row) - basis_pair[0].value_at(row);
                     rhs[row] +=
                         data_first_difference_lambda * basis_row_difference * observed_difference;
-                    for col in 0..n_bases {
-                        normal[row][col] += data_first_difference_lambda
+                    for (col, normal_value) in normal[row].iter_mut().enumerate() {
+                        *normal_value += data_first_difference_lambda
                             * basis_row_difference
-                            * (basis_pair[1][col] - basis_pair[0][col]);
+                            * (basis_pair[1].value_at(col) - basis_pair[0].value_at(col));
                     }
                 }
             }
@@ -202,11 +224,79 @@ impl PenalizedSpline {
         solve_dense(normal, rhs)
     }
 
+    fn solve_coefficients_banded(
+        &self,
+        y: &[f64],
+        weights: &[f64],
+        lambda: f64,
+    ) -> Result<Vec<f64>> {
+        let n_bases = self.basis_count();
+        let bandwidth = self.degree.max(self.diff_order);
+        let mut normal = zero_symmetric_bands(n_bases, bandwidth);
+        let mut rhs = vec![0.0; n_bases];
+
+        for ((basis_row, observed), weight) in self.basis.iter().zip(y).zip(weights) {
+            for (row, row_value) in basis_row.entries() {
+                rhs[row] += row_value * weight * observed;
+                for (col, col_value) in basis_row.entries() {
+                    if row >= col {
+                        add_symmetric_band_value(
+                            &mut normal,
+                            row,
+                            col,
+                            row_value * weight * col_value,
+                        );
+                    }
+                }
+            }
+        }
+        for (offset, penalty_band) in self.penalty.iter().enumerate() {
+            for (index, value) in penalty_band.iter().enumerate() {
+                normal[offset][index] += lambda * value;
+            }
+        }
+
+        let dense_fallback = (n_bases <= DENSE_COMPAT_THRESHOLD).then(|| normal.clone());
+        match solve_spd_banded(&mut normal, &rhs) {
+            Ok(solution) => Ok(solution),
+            Err(error) => {
+                if let Some(bands) = dense_fallback {
+                    solve_dense(symmetric_bands_to_dense(&bands), rhs)
+                } else {
+                    Err(error)
+                }
+            }
+        }
+    }
+
     fn evaluate_coefficients(&self, coefficients: &[f64]) -> Vec<f64> {
         self.basis
             .iter()
-            .map(|basis_row| basis_row.iter().zip(coefficients).map(|(b, c)| b * c).sum())
+            .map(|basis_row| {
+                basis_row
+                    .entries()
+                    .map(|(index, value)| value * coefficients[index])
+                    .sum()
+            })
             .collect()
+    }
+}
+
+impl SparseBasisRow {
+    fn entries(&self) -> impl Iterator<Item = (usize, f64)> + '_ {
+        self.values
+            .iter()
+            .copied()
+            .enumerate()
+            .map(|(offset, value)| (self.start + offset, value))
+    }
+
+    fn value_at(&self, index: usize) -> f64 {
+        if index < self.start || index >= self.start + self.values.len() {
+            0.0
+        } else {
+            self.values[index - self.start]
+        }
     }
 }
 
@@ -269,60 +359,188 @@ fn interpolate_sample(values: &[f64], point: f64, len: usize) -> f64 {
     values[left] * (1.0 - fraction) + values[right] * fraction
 }
 
-fn basis_row(x: f64, knots: &[f64], degree: usize, n_bases: usize) -> Vec<f64> {
-    let mut values = vec![0.0; n_bases];
-    for (index, value) in values.iter_mut().enumerate() {
-        *value = basis_value(index, degree, x, knots);
+fn sparse_basis_row(x: f64, knots: &[f64], degree: usize, n_bases: usize) -> SparseBasisRow {
+    let span = knot_span(x, knots, degree, n_bases);
+    SparseBasisRow {
+        start: span - degree,
+        values: basis_values_for_span(x, knots, span, degree),
+    }
+}
+
+fn knot_span(x: f64, knots: &[f64], degree: usize, n_bases: usize) -> usize {
+    let last_basis = n_bases - 1;
+    if x >= knots[last_basis + 1] {
+        return last_basis;
+    }
+    if x <= knots[degree] {
+        return degree;
+    }
+
+    let mut low = degree;
+    let mut high = last_basis + 1;
+    let mut mid = (low + high) / 2;
+    while x < knots[mid] || x >= knots[mid + 1] {
+        if x < knots[mid] {
+            high = mid;
+        } else {
+            low = mid;
+        }
+        mid = (low + high) / 2;
+    }
+    mid
+}
+
+fn basis_values_for_span(x: f64, knots: &[f64], span: usize, degree: usize) -> Vec<f64> {
+    let mut values = vec![0.0; degree + 1];
+    let mut left = vec![0.0; degree + 1];
+    let mut right = vec![0.0; degree + 1];
+    values[0] = 1.0;
+    for level in 1..=degree {
+        left[level] = x - knots[span + 1 - level];
+        right[level] = knots[span + level] - x;
+        let mut saved = 0.0;
+        for index in 0..level {
+            let denominator = right[index + 1] + left[level - index];
+            let temp = if denominator.abs() <= f64::EPSILON {
+                0.0
+            } else {
+                values[index] / denominator
+            };
+            values[index] = saved + right[index + 1] * temp;
+            saved = left[level - index] * temp;
+        }
+        values[level] = saved;
     }
     values
 }
 
-fn basis_value(index: usize, degree: usize, x: f64, knots: &[f64]) -> f64 {
-    if degree == 0 {
-        let left = knots[index];
-        let right = knots[index + 1];
-        if (left <= x && x < right) || (x == *knots.last().unwrap_or(&right) && x == right) {
-            1.0
-        } else {
-            0.0
-        }
-    } else {
-        let left_denominator = knots[index + degree] - knots[index];
-        let left = if left_denominator.abs() <= f64::EPSILON {
-            0.0
-        } else {
-            (x - knots[index]) / left_denominator * basis_value(index, degree - 1, x, knots)
-        };
-        let right_denominator = knots[index + degree + 1] - knots[index + 1];
-        let right = if right_denominator.abs() <= f64::EPSILON {
-            0.0
-        } else {
-            (knots[index + degree + 1] - x) / right_denominator
-                * basis_value(index + 1, degree - 1, x, knots)
-        };
-        left + right
-    }
-}
-
-fn difference_penalty(n_bases: usize, diff_order: usize) -> Vec<Vec<f64>> {
+fn difference_penalty_bands(n_bases: usize, diff_order: usize) -> Vec<Vec<f64>> {
     let rows = n_bases.saturating_sub(diff_order);
-    let mut difference = vec![vec![0.0; n_bases]; rows];
+    let mut penalty = zero_symmetric_bands(n_bases, diff_order);
     let coefficients = difference_coefficients(diff_order);
     for row in 0..rows {
-        for (offset, coefficient) in coefficients.iter().enumerate() {
-            difference[row][row + offset] = *coefficient;
-        }
-    }
-
-    let mut penalty = vec![vec![0.0; n_bases]; n_bases];
-    for row in &difference {
-        for i in 0..n_bases {
-            for j in 0..n_bases {
-                penalty[i][j] += row[i] * row[j];
+        for (left_offset, left) in coefficients.iter().enumerate() {
+            for (right_offset, right) in coefficients[..=left_offset].iter().enumerate() {
+                add_symmetric_band_value(
+                    &mut penalty,
+                    row + left_offset,
+                    row + right_offset,
+                    left * right,
+                );
             }
         }
     }
     penalty
+}
+
+fn zero_symmetric_bands(n: usize, bandwidth: usize) -> Vec<Vec<f64>> {
+    vec![vec![0.0; n]; bandwidth + 1]
+}
+
+fn add_symmetric_band_value(bands: &mut [Vec<f64>], row: usize, col: usize, value: f64) {
+    let (lower, upper) = if row >= col { (row, col) } else { (col, row) };
+    let offset = lower - upper;
+    debug_assert!(
+        offset < bands.len(),
+        "band offset {offset} exceeds bandwidth {}",
+        bands.len() - 1
+    );
+    if offset < bands.len() {
+        bands[offset][lower] += value;
+    }
+}
+
+fn set_symmetric_band_value(bands: &mut [Vec<f64>], row: usize, col: usize, value: f64) {
+    let (lower, upper) = if row >= col { (row, col) } else { (col, row) };
+    let offset = lower - upper;
+    debug_assert!(
+        offset < bands.len(),
+        "band offset {offset} exceeds bandwidth {}",
+        bands.len() - 1
+    );
+    if offset < bands.len() {
+        bands[offset][lower] = value;
+    }
+}
+
+fn symmetric_band_value(bands: &[Vec<f64>], row: usize, col: usize) -> f64 {
+    let (lower, upper) = if row >= col { (row, col) } else { (col, row) };
+    let offset = lower - upper;
+    if offset < bands.len() {
+        bands[offset][lower]
+    } else {
+        0.0
+    }
+}
+
+fn symmetric_bands_to_dense(bands: &[Vec<f64>]) -> Vec<Vec<f64>> {
+    let n = bands[0].len();
+    let mut matrix = vec![vec![0.0; n]; n];
+    let mut entries = Vec::with_capacity(n * bands.len());
+    for row in 0..n {
+        for col in row.saturating_sub(bands.len() - 1)..=row {
+            entries.push((row, col, symmetric_band_value(bands, row, col)));
+        }
+    }
+    for (row, col, value) in entries {
+        matrix[row][col] = value;
+        matrix[col][row] = value;
+    }
+    matrix
+}
+
+fn solve_spd_banded(bands: &mut [Vec<f64>], rhs: &[f64]) -> Result<Vec<f64>> {
+    let n = rhs.len();
+    let bandwidth = bands.len() - 1;
+    for row in 0..n {
+        let start = row.saturating_sub(bandwidth);
+        for col in start..row {
+            let mut value = symmetric_band_value(bands, row, col);
+            let sum_start = start.max(col.saturating_sub(bandwidth));
+            for mid in sum_start..col {
+                value -=
+                    symmetric_band_value(bands, row, mid) * symmetric_band_value(bands, col, mid);
+            }
+            let col_diag = symmetric_band_value(bands, col, col);
+            if col_diag.abs() <= f64::EPSILON {
+                return Err(BaselineError::LinearSolve {
+                    reason: "singular banded Cholesky factor",
+                });
+            }
+            set_symmetric_band_value(bands, row, col, value / col_diag);
+        }
+
+        let mut diag = symmetric_band_value(bands, row, row);
+        for col in start..row {
+            let value = symmetric_band_value(bands, row, col);
+            diag -= value * value;
+        }
+        if diag <= f64::EPSILON {
+            return Err(BaselineError::LinearSolve {
+                reason: "matrix was not positive definite",
+            });
+        }
+        set_symmetric_band_value(bands, row, row, diag.sqrt());
+    }
+
+    let mut intermediate = vec![0.0; n];
+    for row in 0..n {
+        let start = row.saturating_sub(bandwidth);
+        let tail = (start..row)
+            .map(|col| symmetric_band_value(bands, row, col) * intermediate[col])
+            .sum::<f64>();
+        intermediate[row] = (rhs[row] - tail) / symmetric_band_value(bands, row, row);
+    }
+
+    let mut output = vec![0.0; n];
+    for row in (0..n).rev() {
+        let end = (row + bandwidth).min(n - 1);
+        let tail = (row + 1..=end)
+            .map(|lower| symmetric_band_value(bands, lower, row) * output[lower])
+            .sum::<f64>();
+        output[row] = (intermediate[row] - tail) / symmetric_band_value(bands, row, row);
+    }
+    Ok(output)
 }
 
 fn difference_coefficients(order: usize) -> Vec<f64> {
