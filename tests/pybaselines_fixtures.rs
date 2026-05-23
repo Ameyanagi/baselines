@@ -593,7 +593,7 @@ fn core_algorithms_track_pybaselines_fixtures() {
         "ria",
         &fixture,
         ria(&fixture.signal, smooth).unwrap().baseline,
-        4e-1,
+        1e-12,
     );
     assert_close(
         "peak_filling",

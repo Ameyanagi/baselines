@@ -101,13 +101,7 @@ tightened against pybaselines.
 
 ## Tolerance Ledger
 
-The table below lists fixture tolerances above `1e-1`. These are the current
-1D hardening priorities; each entry remains fixture-backed but should be
-tightened before broader 2D work depends on the same primitive.
-
-| Method | Family | Current fixture tolerance | Hardening direction |
-| --- | --- | ---: | --- |
-| `ria` | Smoothing | `4e-1` | Align the range-independent averaging update and stopping behavior. |
+No pinned 1D fixture tolerances are currently above `1e-1`.
 
 ## Known Limits
 

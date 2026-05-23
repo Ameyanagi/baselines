@@ -190,9 +190,117 @@ pub fn ipsa(y: &[f64], params: SmoothingParams) -> Result<Fit> {
 ///
 /// # References
 ///
+/// - H. Krishna et al., "Range-independent background subtraction algorithm
+///   for recovery of Raman spectra of biological tissue", *Journal of Raman
+///   Spectroscopy*, 2012.
 /// - `pybaselines.Baseline.ria` is used as a behavioral reference.
 pub fn ria(y: &[f64], params: SmoothingParams) -> Result<Fit> {
-    iterative_smoother(y, params)
+    let mut baseline = vec![0.0; y.len()];
+    let report = ria_into(y, params, &mut baseline)?;
+    Ok(Fit { baseline, report })
+}
+
+/// Estimates an RIA baseline into an existing output buffer.
+pub fn ria_into(y: &[f64], params: SmoothingParams, baseline: &mut [f64]) -> Result<FitReport> {
+    validate_smoothing_input(y, params, baseline)?;
+
+    const WIDTH_SCALE: f64 = 0.1;
+    const HEIGHT_SCALE: f64 = 1.0;
+    const SIGMA_SCALE: f64 = 1.0 / 12.0;
+    const TOL: f64 = 1.0e-2;
+
+    let half_window = params.window_size / 2;
+    let added_window = ((y.len() as f64) * WIDTH_SCALE) as usize;
+    if half_window == 0 || added_window == 0 {
+        baseline.copy_from_slice(y);
+        return Ok(FitReport::new(0, true, 0.0));
+    }
+
+    let padded_edges = pad_extrapolated(y, added_window);
+    let added_left = &padded_edges[..added_window];
+    let added_right = &padded_edges[padded_edges.len() - added_window..];
+    let added_x = linspace(
+        -(added_window as f64) / 2.0,
+        added_window as f64 / 2.0,
+        added_window,
+    );
+    let added_gaussian = gaussian_values(
+        &added_x,
+        HEIGHT_SCALE * y.iter().copied().fold(f64::NEG_INFINITY, f64::max).abs(),
+        0.0,
+        added_window as f64 * SIGMA_SCALE,
+    );
+
+    let left_x = {
+        let mut values = linspace(-1.0 - WIDTH_SCALE, -1.0, added_window + 1);
+        values.pop();
+        values
+    };
+    let right_x = linspace(1.0, 1.0 + WIDTH_SCALE, added_window + 1)
+        .into_iter()
+        .skip(1)
+        .collect::<Vec<_>>();
+    let mut fit_x = Vec::with_capacity(y.len() + 2 * added_window);
+    fit_x.extend_from_slice(&left_x);
+    fit_x.extend((0..y.len()).map(|index| scaled_x(index, y.len())));
+    fit_x.extend_from_slice(&right_x);
+
+    let mut fit_data = Vec::with_capacity(y.len() + 2 * added_window);
+    fit_data.extend(
+        added_left
+            .iter()
+            .zip(&added_gaussian)
+            .map(|(edge, gaussian)| edge + gaussian),
+    );
+    fit_data.extend_from_slice(y);
+    fit_data.extend(
+        added_right
+            .iter()
+            .zip(&added_gaussian)
+            .map(|(edge, gaussian)| edge + gaussian),
+    );
+
+    let known_area =
+        trapezoid_xy(&added_gaussian, &left_x) + trapezoid_xy(&added_gaussian, &right_x);
+    let window_size = 2 * half_window + 1;
+    let mut smoother = pad_extrapolated_with_fit_len(&fit_data, window_size, 2);
+    let data_start = window_size;
+    let data_end = smoother.len() - window_size;
+    let upper_max = fit_data.len() - added_window;
+    let mut tolerance = f64::INFINITY;
+
+    for iter in 0..params.max_iter {
+        let smoothed = uniform_filter_reflect(&smoother, half_window);
+        smoother[data_start..data_end].copy_from_slice(&smoothed[data_start..data_end]);
+
+        let current = smoother[data_start..data_end].to_vec();
+        let residual: Vec<f64> = fit_data
+            .iter()
+            .zip(&current)
+            .map(|(observed, fitted)| observed - fitted)
+            .collect();
+        let mut area = trapezoid_xy(&residual[..added_window], &fit_x[..added_window]);
+        area += trapezoid_xy(
+            &residual[residual.len() - added_window..],
+            &fit_x[fit_x.len() - added_window..],
+        );
+        tolerance = relative_scalar_difference(known_area, area);
+        if tolerance < TOL || area > known_area {
+            baseline.copy_from_slice(&current[added_window..upper_max]);
+            return Ok(FitReport::new(iter + 1, tolerance < TOL, tolerance));
+        }
+
+        for ((target, observed), fitted) in smoother[data_start..data_end]
+            .iter_mut()
+            .zip(&fit_data)
+            .zip(&current)
+        {
+            *target = observed.min(*fitted);
+        }
+    }
+
+    baseline.copy_from_slice(&smoother[data_start + added_window..data_start + upper_max]);
+    Ok(FitReport::new(params.max_iter, false, tolerance))
 }
 
 /// Estimates a baseline by iteratively filling peaks from neighboring values.
@@ -295,35 +403,10 @@ fn swima_loop(
     })
 }
 
-fn iterative_smoother(y: &[f64], params: SmoothingParams) -> Result<Fit> {
-    validate_signal(y)?;
-    params.validate()?;
-    let mut baseline = y.to_vec();
-    let mut smoothed = vec![0.0; y.len()];
-    for _ in 0..params.max_iter {
-        moving_average(&baseline, params.window_size / 2, &mut smoothed);
-        for (target, smooth) in baseline.iter_mut().zip(&smoothed) {
-            *target = *smooth;
-        }
-    }
-    Ok(Fit {
-        baseline,
-        report: FitReport::new(params.max_iter, true, 0.0),
-    })
-}
-
 fn validate_smoothing_input(y: &[f64], params: SmoothingParams, baseline: &[f64]) -> Result<()> {
     validate_signal(y)?;
     validate_output("baseline", y.len(), baseline.len())?;
     params.validate()
-}
-
-fn moving_average(y: &[f64], radius: usize, output: &mut [f64]) {
-    for (i, target) in output.iter_mut().enumerate() {
-        let start = i.saturating_sub(radius);
-        let end = (i + radius + 1).min(y.len());
-        *target = y[start..end].iter().sum::<f64>() / (end - start) as f64;
-    }
 }
 
 fn uniform_filter_reflect(y: &[f64], radius: usize) -> Vec<f64> {
@@ -445,6 +528,29 @@ fn gaussian_background(len: usize, height: f64) -> Vec<f64> {
         .collect()
 }
 
+fn gaussian_values(x: &[f64], height: f64, center: f64, sigma: f64) -> Vec<f64> {
+    let sigma = sigma.max(f64::EPSILON);
+    x.iter()
+        .map(|value| {
+            let centered = value - center;
+            height * (-0.5 * centered * centered / (sigma * sigma)).exp()
+        })
+        .collect()
+}
+
+fn linspace(start: f64, stop: f64, count: usize) -> Vec<f64> {
+    match count {
+        0 => Vec::new(),
+        1 => vec![stop],
+        _ => {
+            let step = (stop - start) / (count - 1) as f64;
+            (0..count)
+                .map(|index| start + step * index as f64)
+                .collect()
+        }
+    }
+}
+
 fn gradient(values: &[f64]) -> Vec<f64> {
     match values.len() {
         0 => Vec::new(),
@@ -506,6 +612,18 @@ fn trapezoid_abs(values: &[f64]) -> f64 {
         .sum()
 }
 
+fn trapezoid_xy(values: &[f64], x: &[f64]) -> f64 {
+    values
+        .windows(2)
+        .zip(x.windows(2))
+        .map(|(value_pair, x_pair)| 0.5 * (value_pair[0] + value_pair[1]) * (x_pair[1] - x_pair[0]))
+        .sum()
+}
+
+fn relative_scalar_difference(old: f64, new: f64) -> f64 {
+    (new - old).abs() / old.abs().max(f64::MIN_POSITIVE)
+}
+
 fn savitzky_golay_kernel(window_size: usize, poly_order: usize) -> Result<Vec<f64>> {
     let window_size = window_size.max(1);
     let poly_order = poly_order.min(window_size - 1);
@@ -547,10 +665,14 @@ fn powers(x: f64, order: usize) -> Vec<f64> {
 }
 
 fn pad_extrapolated(y: &[f64], radius: usize) -> Vec<f64> {
+    pad_extrapolated_with_fit_len(y, radius, radius)
+}
+
+fn pad_extrapolated_with_fit_len(y: &[f64], radius: usize, fit_len: usize) -> Vec<f64> {
     if radius == 0 {
         return y.to_vec();
     }
-    let fit_len = radius.min(y.len()).max(1);
+    let fit_len = fit_len.min(y.len()).max(1);
     let mut padded = Vec::with_capacity(y.len() + 2 * radius);
     let (left_slope, left_intercept) =
         edge_line((0..fit_len).map(|index| (index as f64, y[index])));
@@ -733,7 +855,6 @@ mod tests {
             noise_median(&y, params).unwrap(),
             swima(&y, params).unwrap(),
             ipsa(&y, params).unwrap(),
-            ria(&y, params).unwrap(),
             peak_filling(&y, params).unwrap(),
         ] {
             assert!(
@@ -742,6 +863,14 @@ mod tests {
                     .all(|value| (*value - 2.5).abs() < 1e-10)
             );
         }
+
+        let ria_fit = ria(&y, params).unwrap();
+        assert!(
+            ria_fit
+                .baseline
+                .iter()
+                .all(|value| (*value - 2.5).abs() < 3e-3)
+        );
     }
 
     #[test]
