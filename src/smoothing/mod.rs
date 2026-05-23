@@ -93,9 +93,58 @@ pub fn snip_into(y: &[f64], params: SnipParams, baseline: &mut [f64]) -> Result<
 ///
 /// # References
 ///
+/// - H. Schulze et al., "A Small-Window Moving Average-Based Fully Automated
+///   Baseline Estimation Method for Raman Spectra", *Applied Spectroscopy*,
+///   2012.
 /// - `pybaselines.Baseline.swima` is used as a behavioral reference.
 pub fn swima(y: &[f64], params: SmoothingParams) -> Result<Fit> {
-    iterative_smoother(y, params, BaselineLimiter::Minimum)
+    let mut baseline = vec![0.0; y.len()];
+    let report = swima_into(y, params, &mut baseline)?;
+    Ok(Fit { baseline, report })
+}
+
+/// Estimates a SWiMA baseline into an existing output buffer.
+pub fn swima_into(y: &[f64], params: SmoothingParams, baseline: &mut [f64]) -> Result<FitReport> {
+    validate_smoothing_input(y, params, baseline)?;
+    let max_half_window = params.window_size / 2;
+    if max_half_window == 0 {
+        baseline.copy_from_slice(y);
+        return Ok(FitReport::new(0, true, 0.0));
+    }
+
+    let mut padded = pad_extrapolated(y, max_half_window);
+    let smooth_half_window = (y.len() / 50).max(1);
+    padded = uniform_filter_reflect(&padded, smooth_half_window);
+
+    let first = swima_loop(&padded, max_half_window, max_half_window)?;
+    let mut fitted = first.baseline;
+    let mut iterations = first.half_window;
+    let mut converged = first.converged == Some(true);
+    if !converged {
+        let residual: Vec<f64> = padded
+            .iter()
+            .zip(&fitted)
+            .map(|(observed, current)| observed - current)
+            .collect();
+        let height = residual.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+        let gaussian = gaussian_background(padded.len(), height);
+        let second_input: Vec<f64> = residual
+            .iter()
+            .zip(&gaussian)
+            .map(|(value, background)| value + background)
+            .collect();
+        let second = swima_loop(&second_input, max_half_window, 3.min(max_half_window))?;
+        for ((target, second_value), background) in
+            fitted.iter_mut().zip(second.baseline).zip(gaussian)
+        {
+            *target += second_value - background;
+        }
+        iterations += second.half_window;
+        converged = second.converged == Some(true);
+    }
+
+    baseline.copy_from_slice(&fitted[max_half_window..max_half_window + y.len()]);
+    Ok(FitReport::new(iterations, converged, 0.0))
 }
 
 /// Estimates a baseline with iterative polynomial-style averaging.
@@ -143,7 +192,7 @@ pub fn ipsa(y: &[f64], params: SmoothingParams) -> Result<Fit> {
 ///
 /// - `pybaselines.Baseline.ria` is used as a behavioral reference.
 pub fn ria(y: &[f64], params: SmoothingParams) -> Result<Fit> {
-    iterative_smoother(y, params, BaselineLimiter::Smoothed)
+    iterative_smoother(y, params)
 }
 
 /// Estimates a baseline by iteratively filling peaks from neighboring values.
@@ -173,12 +222,80 @@ pub fn peak_filling(y: &[f64], params: SmoothingParams) -> Result<Fit> {
     })
 }
 
-enum BaselineLimiter {
-    Minimum,
-    Smoothed,
+struct SwimaLoopResult {
+    baseline: Vec<f64>,
+    converged: Option<bool>,
+    half_window: usize,
 }
 
-fn iterative_smoother(y: &[f64], params: SmoothingParams, limiter: BaselineLimiter) -> Result<Fit> {
+fn swima_loop(
+    y: &[f64],
+    max_half_window: usize,
+    min_half_window: usize,
+) -> Result<SwimaLoopResult> {
+    let data_start = max_half_window;
+    let data_end = y.len() - max_half_window;
+    let actual_y = &y[data_start..data_end];
+    let mut baseline = y.to_vec();
+    let mut area_current = -1.0;
+    let mut area_old = -1.0;
+    let mut converged = None;
+    let mut reached_half_window = 0;
+    let min_half_window_check = min_half_window as isize - 2;
+
+    for half_window in 1..=max_half_window {
+        let smoothed = uniform_filter_reflect(&baseline, half_window);
+        let baseline_new: Vec<f64> = baseline
+            .iter()
+            .zip(smoothed)
+            .map(|(current, smooth)| current.min(smooth))
+            .collect();
+
+        if (half_window as isize) > min_half_window_check {
+            let area_new = trapezoid(
+                &baseline[data_start..data_end]
+                    .iter()
+                    .zip(&baseline_new[data_start..data_end])
+                    .map(|(current, next)| current - next)
+                    .collect::<Vec<_>>(),
+            );
+            if area_new > area_current && area_current < area_old {
+                converged = Some(true);
+                reached_half_window = half_window - 1;
+                break;
+            }
+
+            if half_window > min_half_window {
+                let residual: Vec<f64> = actual_y
+                    .iter()
+                    .zip(&baseline_new[data_start..data_end])
+                    .map(|(observed, next)| observed - next)
+                    .collect();
+                let diff = gradient(&residual);
+                let polynomial_diff = fit_polynomial_values(&diff, 3)?;
+                if trapezoid_abs(&polynomial_diff) > 0.15 * trapezoid_abs(&diff) {
+                    converged = Some(false);
+                    reached_half_window = half_window;
+                    break;
+                }
+            }
+
+            area_old = area_current;
+            area_current = area_new;
+        }
+
+        baseline = baseline_new;
+        reached_half_window = half_window;
+    }
+
+    Ok(SwimaLoopResult {
+        baseline,
+        converged,
+        half_window: reached_half_window,
+    })
+}
+
+fn iterative_smoother(y: &[f64], params: SmoothingParams) -> Result<Fit> {
     validate_signal(y)?;
     params.validate()?;
     let mut baseline = y.to_vec();
@@ -186,10 +303,7 @@ fn iterative_smoother(y: &[f64], params: SmoothingParams, limiter: BaselineLimit
     for _ in 0..params.max_iter {
         moving_average(&baseline, params.window_size / 2, &mut smoothed);
         for (target, smooth) in baseline.iter_mut().zip(&smoothed) {
-            *target = match limiter {
-                BaselineLimiter::Minimum => target.min(*smooth),
-                BaselineLimiter::Smoothed => *smooth,
-            };
+            *target = *smooth;
         }
     }
     Ok(Fit {
@@ -210,6 +324,26 @@ fn moving_average(y: &[f64], radius: usize, output: &mut [f64]) {
         let end = (i + radius + 1).min(y.len());
         *target = y[start..end].iter().sum::<f64>() / (end - start) as f64;
     }
+}
+
+fn uniform_filter_reflect(y: &[f64], radius: usize) -> Vec<f64> {
+    if radius == 0 {
+        return y.to_vec();
+    }
+
+    let window_size = 2 * radius + 1;
+    let mut output = vec![0.0; y.len()];
+    for (index, target) in output.iter_mut().enumerate() {
+        let sum = (0..window_size)
+            .map(|offset| {
+                let source =
+                    reflect_edge_index(index as isize + offset as isize - radius as isize, y.len());
+                y[source]
+            })
+            .sum::<f64>();
+        *target = sum / window_size as f64;
+    }
+    output
 }
 
 fn moving_median_nearest(y: &[f64], radius: usize, output: &mut [f64]) {
@@ -283,6 +417,93 @@ fn reflect_index(index: isize, len: usize) -> usize {
         reflected = period - reflected;
     }
     reflected as usize
+}
+
+fn reflect_edge_index(mut index: isize, len: usize) -> usize {
+    if len <= 1 {
+        return 0;
+    }
+    let len = len as isize;
+    while index < 0 || index >= len {
+        if index < 0 {
+            index = -index - 1;
+        } else {
+            index = 2 * len - index - 1;
+        }
+    }
+    index as usize
+}
+
+fn gaussian_background(len: usize, height: f64) -> Vec<f64> {
+    let center = len as f64 / 2.0;
+    let sigma = (len as f64 / 6.0).max(f64::EPSILON);
+    (0..len)
+        .map(|index| {
+            let centered = index as f64 - center;
+            height * (-0.5 * centered * centered / (sigma * sigma)).exp()
+        })
+        .collect()
+}
+
+fn gradient(values: &[f64]) -> Vec<f64> {
+    match values.len() {
+        0 => Vec::new(),
+        1 => vec![0.0],
+        len => {
+            let mut output = vec![0.0; len];
+            output[0] = values[1] - values[0];
+            output[len - 1] = values[len - 1] - values[len - 2];
+            for index in 1..len - 1 {
+                output[index] = 0.5 * (values[index + 1] - values[index - 1]);
+            }
+            output
+        }
+    }
+}
+
+fn fit_polynomial_values(values: &[f64], order: usize) -> Result<Vec<f64>> {
+    if values.len() <= order {
+        return Ok(values.to_vec());
+    }
+
+    let basis_len = order + 1;
+    let mut normal = vec![vec![0.0; basis_len]; basis_len];
+    let mut rhs = vec![0.0; basis_len];
+    for (index, value) in values.iter().enumerate() {
+        let x = scaled_x(index, values.len());
+        let powers = powers(x, order);
+        for row in 0..basis_len {
+            rhs[row] += value * powers[row];
+            for col in 0..basis_len {
+                normal[row][col] += powers[row] * powers[col];
+            }
+        }
+    }
+    let coefficients = solve_dense(normal, rhs)?;
+    Ok((0..values.len())
+        .map(|index| {
+            let x = scaled_x(index, values.len());
+            powers(x, order)
+                .iter()
+                .zip(&coefficients)
+                .map(|(basis, coeff)| basis * coeff)
+                .sum()
+        })
+        .collect())
+}
+
+fn trapezoid(values: &[f64]) -> f64 {
+    values
+        .windows(2)
+        .map(|pair| 0.5 * (pair[0] + pair[1]))
+        .sum()
+}
+
+fn trapezoid_abs(values: &[f64]) -> f64 {
+    values
+        .windows(2)
+        .map(|pair| 0.5 * (pair[0].abs() + pair[1].abs()))
+        .sum()
 }
 
 fn savitzky_golay_kernel(window_size: usize, poly_order: usize) -> Result<Vec<f64>> {

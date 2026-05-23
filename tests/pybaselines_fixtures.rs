@@ -581,7 +581,7 @@ fn core_algorithms_track_pybaselines_fixtures() {
         "swima",
         &fixture,
         swima(&fixture.signal, smooth).unwrap().baseline,
-        3.5e-1,
+        1e-12,
     );
     assert_close(
         "ipsa",
