@@ -4,14 +4,15 @@ use baselines::classification::{
     FastChromParams, StdDistributionParams, fastchrom_with_mask, std_distribution,
     std_distribution_with_mask,
 };
+use baselines::linalg::pentadiagonal::{PentadiagonalWorkspace, solve_second_order};
 use baselines::morphology::{MorphologyParams, mor};
 use baselines::optimizers::{CustomBcParams, custom_bc_with};
 use baselines::polynomial::{ImodPolyParams, ModPolyParams, imodpoly, modpoly};
 use baselines::smoothing::{SmoothingParams, ria};
 use baselines::spline::pspline_arpls;
 use baselines::whittaker::{
-    ArPlsParams, AsPlsParams, AslsParams, WhittakerParams, arpls, asls_with_history,
-    aspls_with_history, iarpls,
+    ArPlsParams, AsPlsParams, AslsParams, WhittakerParams, WhittakerWorkspace, arpls, arpls_into,
+    asls_with_history, aspls_with_history, iarpls,
 };
 use common::{
     LineSeries, NormalNoise, PadMode, add3, ensure_output_dir, gaussian, linear_interpolate_masked,
@@ -270,7 +271,9 @@ fn general_masked_data() -> std::result::Result<(), Box<dyn Error>> {
             },
         },
     )?;
-    let interpolated_arpls = arpls(
+    let mut interpolated_arpls = vec![0.0; y_linear.len()];
+    let mut whittaker_workspace = WhittakerWorkspace::new(y_linear.len());
+    arpls_into(
         &y_linear,
         ArPlsParams {
             whittaker: WhittakerParams {
@@ -278,7 +281,24 @@ fn general_masked_data() -> std::result::Result<(), Box<dyn Error>> {
                 ..WhittakerParams::default()
             },
         },
+        &mut interpolated_arpls,
+        &mut whittaker_workspace,
     )?;
+    let mut weighted_arpls_weights = whittaker_workspace.iter.weights.clone();
+    for (weight, keep) in weighted_arpls_weights.iter_mut().zip(&fit_mask) {
+        if !keep {
+            *weight = 0.0;
+        }
+    }
+    let mut weighted_arpls = vec![0.0; y_linear.len()];
+    solve_second_order(
+        &y_linear,
+        &weighted_arpls_weights,
+        1.0e5,
+        &mut weighted_arpls,
+        &mut whittaker_workspace.solver,
+    )?;
+    let mask_aware_arpls = masked_arpls(&y_bad, &fit_mask, 1.0e5)?;
     let mor_linear = mor(&y_linear, MorphologyParams { window_size: 71 })?;
 
     let path = output_path("pybaselines_gallery_masked_data.png");
@@ -305,8 +325,18 @@ fn general_masked_data() -> std::result::Result<(), Box<dyn Error>> {
             },
             LineSeries {
                 label: "arpls interpolated lam=1e5",
-                y: &interpolated_arpls.baseline,
+                y: &interpolated_arpls,
                 color: Color::new(118, 85, 148),
+            },
+            LineSeries {
+                label: "arpls mask-aware lam=1e5",
+                y: &mask_aware_arpls,
+                color: Color::new(232, 168, 72),
+            },
+            LineSeries {
+                label: "arpls weighted interpolation",
+                y: &weighted_arpls,
+                color: Color::new(160, 96, 80),
             },
             LineSeries {
                 label: "mor interpolated half_window=35",
@@ -1121,4 +1151,106 @@ fn log10_history(values: &[f64]) -> Vec<f64> {
         .iter()
         .map(|value| value.max(f64::MIN_POSITIVE).log10())
         .collect()
+}
+
+fn masked_arpls(
+    y: &[f64],
+    mask: &[bool],
+    lambda: f64,
+) -> std::result::Result<Vec<f64>, Box<dyn Error>> {
+    let mut y_fit = y.to_vec();
+    let mut weights = mask_as_weights(mask);
+    for (value, keep) in y_fit.iter_mut().zip(mask) {
+        if !keep {
+            *value = 0.0;
+        }
+    }
+
+    let mut baseline = vec![0.0; y.len()];
+    let mut new_weights = vec![0.0; y.len()];
+    let mut workspace = PentadiagonalWorkspace::new(y.len());
+    for _ in 0..50 {
+        solve_second_order(&y_fit, &weights, lambda, &mut baseline, &mut workspace)?;
+        update_masked_arpls_weights(y, &baseline, mask, &mut new_weights);
+        if relative_difference(&weights, &new_weights) < 1.0e-3 {
+            break;
+        }
+        weights.copy_from_slice(&new_weights);
+    }
+
+    Ok(baseline)
+}
+
+fn update_masked_arpls_weights(y: &[f64], baseline: &[f64], mask: &[bool], weights: &mut [f64]) {
+    weights.fill(0.0);
+    let negative: Vec<f64> = y
+        .iter()
+        .zip(baseline)
+        .zip(mask)
+        .filter_map(|((observed, fitted), keep)| {
+            let residual = observed - fitted;
+            (*keep && residual < 0.0).then_some(residual)
+        })
+        .collect();
+    if negative.is_empty() {
+        for (weight, keep) in weights.iter_mut().zip(mask) {
+            if *keep {
+                *weight = 1.0;
+            }
+        }
+        return;
+    }
+
+    let mean = negative.iter().sum::<f64>() / negative.len() as f64;
+    let variance = negative
+        .iter()
+        .map(|value| {
+            let centered = value - mean;
+            centered * centered
+        })
+        .sum::<f64>()
+        / negative.len() as f64;
+    let std = variance.sqrt().max(f64::EPSILON);
+
+    for (((weight, observed), fitted), keep) in weights.iter_mut().zip(y).zip(baseline).zip(mask) {
+        if *keep {
+            let residual = observed - fitted;
+            let exponent = 2.0 * (residual - (2.0 * std - mean)) / std;
+            *weight = 1.0 - logistic(exponent);
+        }
+    }
+}
+
+fn mask_as_weights(mask: &[bool]) -> Vec<f64> {
+    mask.iter()
+        .map(|keep| if *keep { 1.0 } else { 0.0 })
+        .collect()
+}
+
+fn logistic(value: f64) -> f64 {
+    if value >= 0.0 {
+        let z = (-value).exp();
+        1.0 / (1.0 + z)
+    } else {
+        let z = value.exp();
+        z / (1.0 + z)
+    }
+}
+
+fn relative_difference(previous: &[f64], current: &[f64]) -> f64 {
+    let numerator = previous
+        .iter()
+        .zip(current)
+        .map(|(old, new)| {
+            let diff = new - old;
+            diff * diff
+        })
+        .sum::<f64>()
+        .sqrt();
+    let denominator = previous
+        .iter()
+        .map(|value| value * value)
+        .sum::<f64>()
+        .sqrt();
+    numerator / denominator.max(f64::EPSILON)
 }
