@@ -280,7 +280,7 @@ fn native_2d_whittaker_tracks_reference_fixture() {
         asls(input, Asls2DParams { whittaker, p: 0.01 })
             .unwrap()
             .baseline,
-        3e-1,
+        2e-3,
     );
     assert_baseline_close(
         "iasls",
@@ -295,7 +295,7 @@ fn native_2d_whittaker_tracks_reference_fixture() {
         )
         .unwrap()
         .baseline,
-        3e-1,
+        2e-2,
     );
     assert_baseline_close(
         "airpls",
@@ -303,13 +303,13 @@ fn native_2d_whittaker_tracks_reference_fixture() {
         airpls(input, AirPls2DParams { whittaker })
             .unwrap()
             .baseline,
-        3e-1,
+        2e-2,
     );
     assert_baseline_close(
         "arpls",
         &fixture.baselines,
         arpls(input, ArPls2DParams { whittaker }).unwrap().baseline,
-        3e-1,
+        1e-4,
     );
     assert_baseline_close(
         "drpls",
@@ -323,7 +323,7 @@ fn native_2d_whittaker_tracks_reference_fixture() {
         )
         .unwrap()
         .baseline,
-        3e-1,
+        3e-2,
     );
     assert_baseline_close(
         "iarpls",
@@ -331,7 +331,7 @@ fn native_2d_whittaker_tracks_reference_fixture() {
         iarpls(input, IarPls2DParams { whittaker })
             .unwrap()
             .baseline,
-        3e-1,
+        5e-3,
     );
     assert_baseline_close(
         "aspls",
@@ -348,7 +348,7 @@ fn native_2d_whittaker_tracks_reference_fixture() {
         )
         .unwrap()
         .baseline,
-        3e-1,
+        3e-2,
     );
     assert_baseline_close(
         "psalsa",
@@ -363,7 +363,7 @@ fn native_2d_whittaker_tracks_reference_fixture() {
         )
         .unwrap()
         .baseline,
-        3e-1,
+        1e-3,
     );
     let low_lambda = Whittaker2DParams {
         lambda: 1e3,
@@ -382,7 +382,7 @@ fn native_2d_whittaker_tracks_reference_fixture() {
         )
         .unwrap()
         .baseline,
-        3e-1,
+        3e-3,
     );
     assert_baseline_close(
         "lsrpls",
@@ -395,7 +395,7 @@ fn native_2d_whittaker_tracks_reference_fixture() {
         )
         .unwrap()
         .baseline,
-        3e-1,
+        1e-5,
     );
 }
 

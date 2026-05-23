@@ -65,16 +65,6 @@ weighting, solver, and iteration semantics are tightened against pybaselines.
 | Method | Family | Current fixture tolerance | Hardening direction |
 | --- | --- | ---: | --- |
 | `imor` | 2D morphology | `1.4e-1` | Further align iterative morphology convergence and update policy. |
-| `asls` | 2D Whittaker | `3e-1` | Tighten matrix-free solve settings and weight-update parity. |
-| `iasls` | 2D Whittaker | `3e-1` | Add the first-derivative contribution used by pybaselines. |
-| `airpls` | 2D Whittaker | `3e-1` | Align adaptive exponential weighting and stopping behavior. |
-| `arpls` | 2D Whittaker | `3e-1` | Tighten negative-residual statistics and logistic weighting. |
-| `drpls` | 2D Whittaker | `3e-1` | Add full doubly reweighted penalty behavior. |
-| `iarpls` | 2D Whittaker | `3e-1` | Align improved arPLS update scaling. |
-| `aspls` | 2D Whittaker | `3e-1` | Add adaptive smoothness behavior beyond the first-pass weight policy. |
-| `psalsa` | 2D Whittaker | `3e-1` | Tighten exponential peak suppression and default `k` behavior. |
-| `brpls` | 2D Whittaker | `3e-1` | Implement the full outer beta iteration semantics. |
-| `lsrpls` | 2D Whittaker | `3e-1` | Align locally symmetric reweighting update behavior. |
 | `pspline_asls` | 2D spline | `3e-1` | Replace separable first-pass smoothing with full tensor-product P-spline semantics. |
 | `pspline_iasls` | 2D spline | `3e-1` | Tighten first-difference residual penalty behavior. |
 | `pspline_airpls` | 2D spline | `3e-1` | Align adaptive exponential weighting and spline convergence. |
