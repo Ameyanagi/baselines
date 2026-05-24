@@ -448,6 +448,7 @@ Rejected or no-op experiments:
 | `spline_1d/pspline_aspls_256` | Reuse asPLS residual/weight/interpolation buffers | 0.944 ms | 0.960 ms | +1.75% |
 | `whittaker_1d/arpls_256` | No-allocation arPLS weight update | 0.312 ms | 0.335 ms | +7.45% |
 | `whittaker_2d/brpls_16x16` | Interior/boundary split for second-order operator | 6.462 ms | 7.949 ms | +23.02% |
+| `spline_1d/pspline_arpls_256` | In-place arPLS spline weight update | 0.367 ms | 0.377 ms | +2.77% |
 
 2D morphology profiling before optimization:
 

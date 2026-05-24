@@ -7,3 +7,4 @@ polynomial_1d/goldindec_256,direct adjusted-RHS computation with cached-power ev
 spline_1d/pspline_aspls_256,reuse asPLS residual/weight/interpolation buffers,943588,960087,+1.75,rejected
 whittaker_1d/arpls_256,no-allocation arPLS weight update,311677,334911,+7.45,rejected
 whittaker_2d/brpls_16x16,interior/boundary split for second-order operator,6461777,7949078,+23.02,rejected
+spline_1d/pspline_arpls_256,in-place arPLS spline weight update,366710,376860,+2.77,rejected
