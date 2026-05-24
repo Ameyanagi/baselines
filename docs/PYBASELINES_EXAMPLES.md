@@ -3,7 +3,11 @@
 This page tracks Rust `ruviz` examples that mirror the upstream pybaselines
 gallery at <https://pybaselines.readthedocs.io/en/latest/generated/examples/index.html>.
 
-The examples write PNGs to `target/baselines-ruviz/`.
+The examples write PNGs to `docs/assets/ruviz/`. That generated directory is
+ignored by git and excluded from Cargo packages.
+
+See [`GALLERY.md`](GALLERY.md) for the generated-output index and the working
+Rust source file that creates each output set.
 
 ```console
 cargo run --example ruviz_pybaselines_lam_effects

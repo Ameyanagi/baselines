@@ -4,7 +4,7 @@ use ruviz::prelude::*;
 use std::error::Error;
 use std::path::{Path, PathBuf};
 
-pub const OUTPUT_DIR: &str = "target/baselines-ruviz";
+pub const OUTPUT_DIR: &str = "docs/assets/ruviz";
 
 pub fn ensure_output_dir() -> std::io::Result<()> {
     std::fs::create_dir_all(OUTPUT_DIR)

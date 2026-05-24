@@ -53,7 +53,8 @@ cargo run --example ruviz_2d
 cargo run --example ruviz_pybaselines_lam_effects
 ```
 
-The examples write images to `target/baselines-ruviz/`. The 1D example plots
+The examples write images to `docs/assets/ruviz/`. That generated directory is
+ignored by git and excluded from Cargo packages. The 1D example plots
 observed spectra, AsLS/arPLS baselines, and corrected signals. The 2D example
 writes heatmaps for the observed surface, fitted AsLS baseline, true synthetic
 baseline, and corrected surface.
@@ -65,8 +66,8 @@ a small deterministic Rust generator rather than NumPy's bit generator, so the
 shape and parameters match the gallery example but the exact noise samples do
 not.
 
-See `docs/PYBASELINES_EXAMPLES.md` for the pybaselines gallery coverage matrix
-and additional gallery-batch example commands.
+See `docs/GALLERY.md` for the generated-output index and runnable source files.
+See `docs/PYBASELINES_EXAMPLES.md` for the pybaselines gallery coverage matrix.
 
 ## API style
 

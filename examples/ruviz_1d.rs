@@ -5,7 +5,7 @@ use std::f64::consts::PI;
 use std::path::{Path, PathBuf};
 
 const N: usize = 420;
-const OUTPUT_DIR: &str = "target/baselines-ruviz";
+const OUTPUT_DIR: &str = "docs/assets/ruviz";
 
 fn main() -> std::result::Result<(), Box<dyn Error>> {
     std::fs::create_dir_all(OUTPUT_DIR)?;

@@ -9,6 +9,7 @@ repository = "https://github.com/Ameyanagi/baselines"
 readme = "README.md"
 keywords = ["baseline", "spectroscopy", "signal-processing", "whittaker"]
 categories = ["algorithms", "science"]
+exclude = ["/docs/assets/ruviz/**"]
 
 [dependencies]
 thiserror = "2.0"

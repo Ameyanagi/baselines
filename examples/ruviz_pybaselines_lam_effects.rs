@@ -4,7 +4,7 @@ use std::error::Error;
 use std::path::{Path, PathBuf};
 
 const N: usize = 1000;
-const OUTPUT_DIR: &str = "target/baselines-ruviz";
+const OUTPUT_DIR: &str = "docs/assets/ruviz";
 const LAMBDAS: [f64; 4] = [1.0, 1.0e3, 1.0e6, 1.0e10];
 
 fn main() -> std::result::Result<(), Box<dyn Error>> {

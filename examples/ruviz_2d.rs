@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 const ROWS: usize = 48;
 const COLS: usize = 72;
-const OUTPUT_DIR: &str = "target/baselines-ruviz";
+const OUTPUT_DIR: &str = "docs/assets/ruviz";
 
 fn main() -> std::result::Result<(), Box<dyn Error>> {
     std::fs::create_dir_all(OUTPUT_DIR)?;
