@@ -91,16 +91,52 @@ impl Reweighter for AirPlsWeights {
             }
         }
 
-        if active_at(active_mask, 0)
-            && let Some(first) = weights.first_mut()
-        {
-            *first = 1.0;
-        }
-        if active_at(active_mask, weights.len() - 1)
-            && let Some(last) = weights.last_mut()
-        {
-            *last = 1.0;
-        }
+        anchor_active_endpoints(weights, active_mask);
         relative_change(&previous, weights)
+    }
+}
+
+fn anchor_active_endpoints(weights: &mut [f64], active_mask: Option<&[bool]>) {
+    match active_mask {
+        Some(mask) => {
+            if let Some(first_active) = mask.iter().position(|active| *active) {
+                weights[first_active] = 1.0;
+            }
+            if let Some(last_active) = mask.iter().rposition(|active| *active) {
+                weights[last_active] = 1.0;
+            }
+        }
+        None => {
+            if let Some(first) = weights.first_mut() {
+                *first = 1.0;
+            }
+            if let Some(last) = weights.last_mut() {
+                *last = 1.0;
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::whittaker::engine::Reweighter;
+
+    use super::AirPlsWeights;
+
+    #[test]
+    fn masked_airpls_anchors_first_and_last_active_points() {
+        let y = [0.0, 2.0, 0.0, 0.0, 0.0, 2.0, 0.0];
+        let baseline = [0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0];
+        let active = [false, true, true, true, true, true, false];
+        let mut weights = vec![0.5; y.len()];
+
+        AirPlsWeights.update_masked(&y, &baseline, &mut weights, 0, Some(&active));
+
+        assert_eq!(weights[0], 0.0);
+        assert_eq!(weights[1], 1.0);
+        assert!(weights[2] > 0.0);
+        assert!(weights[4] > 0.0);
+        assert_eq!(weights[5], 1.0);
+        assert_eq!(weights[6], 0.0);
     }
 }
