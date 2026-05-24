@@ -671,13 +671,21 @@ fn mollifier_kernel(half_window: usize) -> Vec<f64> {
 
 fn convolve_reflect_same(y: &[f64], kernel: &[f64]) -> Vec<f64> {
     let radius = kernel.len() / 2;
+    let len = y.len();
     let mut output = vec![0.0; y.len()];
     for (i, target) in output.iter_mut().enumerate() {
         let mut sum = 0.0;
-        for (j, weight) in kernel.iter().enumerate() {
-            let offset = j as isize - radius as isize;
-            let index = reflect_index(i as isize + offset, y.len());
-            sum += weight * y[index];
+        if radius < len && i >= radius && i < len - radius {
+            let start = i - radius;
+            for (j, weight) in kernel.iter().enumerate() {
+                sum += weight * y[start + j];
+            }
+        } else {
+            for (j, weight) in kernel.iter().enumerate() {
+                let offset = j as isize - radius as isize;
+                let index = reflect_index(i as isize + offset, len);
+                sum += weight * y[index];
+            }
         }
         *target = sum;
     }
@@ -735,24 +743,69 @@ fn closing_reflect(y: &[f64], radius: usize) -> Vec<f64> {
 }
 
 fn moving_min_reflect(y: &[f64], radius: usize) -> Vec<f64> {
+    if radius == 0 {
+        return y.to_vec();
+    }
+
+    let len = y.len();
     let mut output = vec![0.0; y.len()];
     for (i, value) in output.iter_mut().enumerate() {
-        let start = i as isize - radius as isize;
-        let end = i as isize + radius as isize;
-        *value = (start..=end)
-            .map(|index| y[reflect_index(index, y.len())])
-            .fold(f64::INFINITY, f64::min);
+        if radius < len && i >= radius && i < len - radius {
+            let start = i - radius;
+            let end = i + radius + 1;
+            let mut minimum = y[start];
+            for &candidate in &y[start + 1..end] {
+                if candidate < minimum {
+                    minimum = candidate;
+                }
+            }
+            *value = minimum;
+        } else {
+            let start = i as isize - radius as isize;
+            let end = i as isize + radius as isize;
+            let mut minimum = f64::INFINITY;
+            for index in start..=end {
+                let candidate = y[reflect_index(index, len)];
+                if candidate < minimum {
+                    minimum = candidate;
+                }
+            }
+            *value = minimum;
+        }
     }
     output
 }
 
 fn moving_max_reflect(y: &[f64], radius: usize, output: &mut [f64]) {
+    if radius == 0 {
+        output.copy_from_slice(y);
+        return;
+    }
+
+    let len = y.len();
     for (i, value) in output.iter_mut().enumerate() {
-        let start = i as isize - radius as isize;
-        let end = i as isize + radius as isize;
-        *value = (start..=end)
-            .map(|index| y[reflect_index(index, y.len())])
-            .fold(f64::NEG_INFINITY, f64::max);
+        if radius < len && i >= radius && i < len - radius {
+            let start = i - radius;
+            let end = i + radius + 1;
+            let mut maximum = y[start];
+            for &candidate in &y[start + 1..end] {
+                if candidate > maximum {
+                    maximum = candidate;
+                }
+            }
+            *value = maximum;
+        } else {
+            let start = i as isize - radius as isize;
+            let end = i as isize + radius as isize;
+            let mut maximum = f64::NEG_INFINITY;
+            for index in start..=end {
+                let candidate = y[reflect_index(index, len)];
+                if candidate > maximum {
+                    maximum = candidate;
+                }
+            }
+            *value = maximum;
+        }
     }
 }
 

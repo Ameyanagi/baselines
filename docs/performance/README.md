@@ -42,6 +42,11 @@ sample <baseline_workloads-pid> 5 -file /tmp/baselines-goldindec-current-2.sampl
 cargo bench --bench baseline_workloads -- polynomial_1d/goldindec_256 --baseline goldindec_before_direct_rhs
 cargo bench --bench baseline_workloads -- polynomial_1d --baseline polynomial1d_after_unweighted_cache
 cargo bench --bench baseline_workloads -- polynomial_1d --save-baseline polynomial1d_after_cost_dispatch
+cargo bench --bench baseline_workloads -- morphology_1d/amormol_256 --profile-time 30
+sample <baseline_workloads-pid> 5 -file /tmp/baselines-amormol1d.sample.txt
+cargo bench --bench baseline_workloads -- morphology_1d --save-baseline morphology1d_before_reflect_split
+cargo bench --bench baseline_workloads -- morphology_1d --baseline morphology1d_before_reflect_split
+cargo bench --bench baseline_workloads -- morphology_1d --save-baseline morphology1d_after_reflect_split
 cargo bench --bench baseline_workloads -- morphology_2d/imor_16x16 --profile-time 20
 sample <baseline_workloads-pid> 5 -file /tmp/baselines-imor2d.sample.txt
 cargo bench --bench baseline_workloads -- morphology_2d --baseline perf_before_opt
@@ -258,6 +263,34 @@ The retained change caches 2D polynomial basis values per shape and order,
 reuses contiguous dense-solve buffers, and evaluates fitted surfaces from the
 cached basis. The full `polynomial_2d` Criterion group was saved as
 `polynomial2d_after_basis_workspace`.
+
+1D morphology profiling before reflect-window splitting:
+
+- Target: `morphology_1d/amormol_256`
+- `sample` captured 3831 samples from the Criterion profile run.
+- The profile was dominated by reflected moving-window primitives: 1431
+  samples in `moving_max_reflect`, 1417 in `moving_min_reflect`, and 858 in
+  `convolve_reflect_same`.
+
+1D morphology reflect-window split optimization results:
+
+| Benchmark | Before mean | After mean | Change |
+| --- | ---: | ---: | ---: |
+| `morphology_1d/rolling_ball_256` | 5.397 us | 3.373 us | -37.49% |
+| `morphology_1d/tophat_256` | 4.770 us | 2.839 us | -40.48% |
+| `morphology_1d/mwmv_256` | 2.983 us | 2.008 us | -32.67% |
+| `morphology_1d/mor_256` | 9.507 us | 5.601 us | -41.08% |
+| `morphology_1d/mpls_256` | 10.573 us | 8.670 us | -18.00% |
+| `morphology_1d/imor_256` | 195.076 us | 114.797 us | -41.15% |
+| `morphology_1d/mormol_256` | 118.987 us | 76.772 us | -35.48% |
+| `morphology_1d/amormol_256` | 385.625 us | 226.768 us | -41.19% |
+| `morphology_1d/mpspline_256` | 38.849 us | 34.641 us | -10.83% |
+
+The retained change splits the reflected moving-window and convolution loops
+into fast interior paths and boundary-only reflected paths. This keeps exact
+boundary behavior while avoiding `reflect_index` calls for the common
+fully-in-bounds windows. The full `morphology_1d` Criterion group was saved as
+`morphology1d_after_reflect_split`.
 
 2D Whittaker profiling:
 
