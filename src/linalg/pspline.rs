@@ -1,6 +1,6 @@
 //! Dense P-spline helper for one-dimensional baseline methods.
 
-use crate::linalg::dense::solve_dense;
+use crate::linalg::dense::{solve_dense, solve_dense_in_place};
 use crate::{BaselineError, Result};
 
 const DENSE_COMPAT_THRESHOLD: usize = 256;
@@ -24,6 +24,10 @@ pub(crate) struct PenalizedSplineWorkspace {
     rhs: Vec<f64>,
     intermediate: Vec<f64>,
     coefficients: Vec<f64>,
+    dense_normal: Vec<f64>,
+    dense_rhs: Vec<f64>,
+    dense_pivot_row: Vec<f64>,
+    basis_difference: Vec<(usize, f64)>,
 }
 
 #[derive(Debug, Clone)]
@@ -166,6 +170,37 @@ impl PenalizedSpline {
         first_difference_lambda: f64,
     ) -> Result<Vec<f64>> {
         self.solve_with_options(y, weights, lambda, None, 0.0, first_difference_lambda)
+    }
+
+    /// Fits a weighted penalized spline with a data-domain first-difference
+    /// penalty into an existing output buffer.
+    pub(crate) fn solve_with_first_difference_penalty_into(
+        &self,
+        y: &[f64],
+        weights: &[f64],
+        lambda: f64,
+        first_difference_lambda: f64,
+        output: &mut [f64],
+        workspace: &mut PenalizedSplineWorkspace,
+    ) -> Result<()> {
+        if output.len() != self.basis.len() {
+            return Err(BaselineError::LengthMismatch {
+                name: "output",
+                expected: self.basis.len(),
+                actual: output.len(),
+            });
+        }
+        self.solve_coefficients_with_options_into(
+            y,
+            weights,
+            lambda,
+            None,
+            0.0,
+            first_difference_lambda,
+            workspace,
+        )?;
+        self.evaluate_coefficients_into(&workspace.coefficients, output);
+        Ok(())
     }
 
     /// Interpolates sample-domain values onto the spline basis midpoints.
@@ -394,6 +429,133 @@ impl PenalizedSpline {
         }
 
         solve_dense(normal, rhs)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn solve_coefficients_with_options_into(
+        &self,
+        y: &[f64],
+        weights: &[f64],
+        lambda: f64,
+        row_scales: Option<&[f64]>,
+        basis_first_difference_lambda: f64,
+        data_first_difference_lambda: f64,
+        workspace: &mut PenalizedSplineWorkspace,
+    ) -> Result<()> {
+        if row_scales.is_none()
+            && basis_first_difference_lambda == 0.0
+            && data_first_difference_lambda == 0.0
+        {
+            return self.solve_coefficients_banded_into(y, weights, lambda, workspace);
+        }
+
+        let n_bases = self.basis_count();
+        if let Some(scales) = row_scales
+            && scales.len() != n_bases
+        {
+            return Err(BaselineError::LengthMismatch {
+                name: "row_scales",
+                expected: n_bases,
+                actual: scales.len(),
+            });
+        }
+        if n_bases >= GENERAL_BANDED_MIN_BASES {
+            workspace.coefficients = self.solve_coefficients_with_options(
+                y,
+                weights,
+                lambda,
+                row_scales,
+                basis_first_difference_lambda,
+                data_first_difference_lambda,
+            )?;
+            return Ok(());
+        }
+
+        self.solve_coefficients_dense_with_options_into(
+            y,
+            weights,
+            lambda,
+            row_scales,
+            basis_first_difference_lambda,
+            data_first_difference_lambda,
+            workspace,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn solve_coefficients_dense_with_options_into(
+        &self,
+        y: &[f64],
+        weights: &[f64],
+        lambda: f64,
+        row_scales: Option<&[f64]>,
+        basis_first_difference_lambda: f64,
+        data_first_difference_lambda: f64,
+        workspace: &mut PenalizedSplineWorkspace,
+    ) -> Result<()> {
+        let n_bases = self.basis_count();
+        workspace.dense_normal.resize(n_bases * n_bases, 0.0);
+        workspace.dense_normal.fill(0.0);
+        workspace.dense_rhs.resize(n_bases, 0.0);
+        workspace.dense_rhs.fill(0.0);
+        workspace.coefficients.resize(n_bases, 0.0);
+        workspace.dense_pivot_row.resize(n_bases, 0.0);
+
+        for ((basis_row, observed), weight) in self.basis.iter().zip(y).zip(weights) {
+            for (row, row_value) in basis_row.entries() {
+                workspace.dense_rhs[row] += row_value * weight * observed;
+                let weighted_row = row_value * weight;
+                for (col, col_value) in basis_row.entries() {
+                    workspace.dense_normal[row * n_bases + col] += weighted_row * col_value;
+                }
+            }
+        }
+
+        for row in 0..n_bases {
+            let scale = row_scales.map_or(1.0, |scales| scales[row]);
+            for col in
+                row.saturating_sub(self.diff_order)..=(row + self.diff_order).min(n_bases - 1)
+            {
+                workspace.dense_normal[row * n_bases + col] +=
+                    lambda * scale * symmetric_band_value(&self.penalty, row, col);
+            }
+        }
+
+        if basis_first_difference_lambda > 0.0 {
+            for row in 0..n_bases {
+                for col in row.saturating_sub(1)..=(row + 1).min(n_bases - 1) {
+                    workspace.dense_normal[row * n_bases + col] += basis_first_difference_lambda
+                        * symmetric_band_value(&self.first_order_penalty, row, col);
+                }
+            }
+        }
+
+        if data_first_difference_lambda > 0.0 {
+            for (basis_pair, observed_pair) in self.basis.windows(2).zip(y.windows(2)) {
+                let observed_difference = observed_pair[1] - observed_pair[0];
+                SparseBasisRow::difference_entries_into(
+                    &basis_pair[0],
+                    &basis_pair[1],
+                    &mut workspace.basis_difference,
+                );
+                for &(row, basis_row_difference) in &workspace.basis_difference {
+                    workspace.dense_rhs[row] +=
+                        data_first_difference_lambda * basis_row_difference * observed_difference;
+                    for &(col, basis_col_difference) in &workspace.basis_difference {
+                        workspace.dense_normal[row * n_bases + col] += data_first_difference_lambda
+                            * basis_row_difference
+                            * basis_col_difference;
+                    }
+                }
+            }
+        }
+
+        solve_dense_in_place(
+            &mut workspace.dense_normal,
+            &mut workspace.dense_rhs,
+            &mut workspace.coefficients,
+            &mut workspace.dense_pivot_row,
+        )
     }
 
     fn solve_coefficients_banded(
@@ -902,4 +1064,43 @@ fn difference_coefficients(order: usize) -> Vec<f64> {
         coefficients = next;
     }
     coefficients
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{PenalizedSpline, PenalizedSplineWorkspace};
+
+    #[test]
+    fn first_difference_into_matches_allocating_solve() {
+        let spline = PenalizedSpline::new(16, 8, 3, 2);
+        let y = (0..16)
+            .map(|index| {
+                let x = index as f64 / 15.0;
+                1.0 + 0.25 * x + (4.0 * x).sin()
+            })
+            .collect::<Vec<_>>();
+        let weights = (0..16)
+            .map(|index| 0.4 + 0.03 * index as f64)
+            .collect::<Vec<_>>();
+        let expected = spline
+            .solve_with_first_difference_penalty(&y, &weights, 1.0e3, 1.0e-4)
+            .unwrap();
+        let mut output = vec![0.0; y.len()];
+        let mut workspace = PenalizedSplineWorkspace::new();
+
+        spline
+            .solve_with_first_difference_penalty_into(
+                &y,
+                &weights,
+                1.0e3,
+                1.0e-4,
+                &mut output,
+                &mut workspace,
+            )
+            .unwrap();
+
+        for (actual, expected) in output.iter().zip(&expected) {
+            assert!((actual - expected).abs() < 1.0e-9);
+        }
+    }
 }

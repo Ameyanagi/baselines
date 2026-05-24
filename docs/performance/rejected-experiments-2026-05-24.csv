@@ -8,3 +8,4 @@ spline_1d/pspline_aspls_256,reuse asPLS residual/weight/interpolation buffers,94
 whittaker_1d/arpls_256,no-allocation arPLS weight update,311677,334911,+7.45,rejected
 whittaker_2d/brpls_16x16,interior/boundary split for second-order operator,6461777,7949078,+23.02,rejected
 spline_1d/pspline_arpls_256,in-place arPLS spline weight update,366710,376860,+2.77,rejected
+spline_2d/pspline_airpls_16x16,direct symmetric-band indexing in P-spline SPD solver,714400,715590,+0.17,no significant change

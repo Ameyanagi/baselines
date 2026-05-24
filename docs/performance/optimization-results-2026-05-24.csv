@@ -50,8 +50,8 @@ polynomial_2d/penalized_poly_16x16,203859,82462,-59.55,13f5388
 polynomial_2d/quant_reg_16x16,609275,259076,-57.48,13f5388
 polynomial_1d/penalized_poly_256,14798,14218,-3.92,e3bd4bc
 polynomial_1d/goldindec_256,1353887,1207371,-10.82,e3bd4bc
-polynomial_1d/goldindec_256,1211000,920130,-24.09,worktree
-polynomial_1d_into/goldindec_into_256,1235231,924390,-25.16,worktree
+polynomial_1d/goldindec_256,1211000,920130,-24.09,421550c
+polynomial_1d_into/goldindec_into_256,1235231,924390,-25.16,421550c
 morphology_1d/rolling_ball_256,5397,3373,-37.49,2f42204
 morphology_1d/tophat_256,4770,2839,-40.48,2f42204
 morphology_1d/mwmv_256,2983,2008,-32.67,2f42204
@@ -64,4 +64,6 @@ morphology_1d/mpspline_256,38849,34641,-10.83,2f42204
 classification_1d/dietrich_256,88800,37107,-58.21,de4b108
 classification_1d/dietrich_256,37107,33597,-9.46,de4b108
 classification_1d/fabc_256,25393,23177,-8.73,de4b108
-whittaker_2d/arpls_eigen_16x16,787690,571920,-27.07,worktree
+whittaker_2d/arpls_eigen_16x16,787690,571920,-27.07,98c4287
+spline_2d/pspline_iasls_16x16,356970,131100,-63.27,worktree
+spline_2d_into/pspline_iasls_into_16x16,358548,122230,-65.91,worktree

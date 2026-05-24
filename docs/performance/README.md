@@ -63,6 +63,18 @@ cargo bench --bench baseline_workloads -- spline_2d/pspline_iarpls_16x16 --profi
 sample <baseline_workloads-pid> 5 -file /tmp/baselines-pspline-iarpls2d.sample.txt
 cargo bench --bench baseline_workloads -- spline_2d --baseline perf_before_opt
 cargo bench --bench baseline_workloads -- spline_2d --save-baseline pspline2d_after_workspace
+cargo bench --bench baseline_workloads -- spline_2d/pspline_airpls_16x16 --save-baseline pspline_airpls2d_before_profile
+cargo bench --bench baseline_workloads -- spline_2d/pspline_airpls_16x16 --profile-time 20
+sample <baseline_workloads-pid> 5 -file /tmp/baselines-pspline-airpls2d.sample.txt
+cargo bench --bench baseline_workloads -- spline_2d/pspline_airpls_16x16 --baseline pspline_airpls2d_before_profile
+cargo bench --bench baseline_workloads -- spline_2d/pspline_iasls_16x16 --save-baseline pspline_iasls2d_before_profile
+cargo bench --bench baseline_workloads -- spline_2d/pspline_iasls_16x16 --profile-time 20
+sample <baseline_workloads-pid> 5 -file /tmp/baselines-pspline-iasls2d.sample.txt
+cargo bench --bench baseline_workloads -- spline_2d/pspline_iasls_16x16 --baseline pspline_iasls2d_before_profile
+cargo bench --bench baseline_workloads -- spline_2d/pspline_iasls_16x16 --save-baseline pspline_iasls2d_after_workspace
+cargo bench --bench baseline_workloads -- spline_2d/pspline_iasls_16x16 --profile-time 20
+sample <baseline_workloads-pid> 5 -file /tmp/baselines-pspline-iasls2d-after.sample.txt
+cargo bench --bench baseline_workloads -- spline_2d_into/pspline_iasls_into_16x16 --save-baseline pspline_iasls2d_into_after_workspace
 cargo bench --bench baseline_workloads -- whittaker_2d/arpls_16x16 --profile-time 20
 sample <baseline_workloads-pid> 5 -file /tmp/baselines-arpls2d.sample.txt
 cargo bench --bench baseline_workloads -- whittaker_2d --baseline perf_before_opt
@@ -224,6 +236,33 @@ of rebuilding the basis, normal bands, right-hand side, and output vectors for
 every row and column pass. The first-difference variant still uses the
 compatibility allocation path, so its improvement is intentionally smaller.
 Fixture compatibility remained passing for the pinned pybaselines references.
+
+The 2D P-spline airPLS path was profiled again because it remained one of the
+slower non-Whittaker workloads. `sample` captured 3829 samples dominated by
+`PenalizedSpline::solve_into` and `solve_spd_banded_into`. A direct-indexing
+rewrite of the private symmetric-band Cholesky loop measured 714.400 us before
+and 715.590 us after for `spline_2d/pspline_airpls_16x16`, so it was rejected
+as no significant change.
+
+The 2D P-spline IAsLS path was then profiled because it still used the
+first-difference compatibility solve. `sample` captured 3824 samples before
+the change; 2341 samples were in
+`PenalizedSpline::solve_coefficients_dense_with_options`, with allocator frames
+visible from rebuilding dense normal equations and right-hand sides for every
+row/column pass. The retained change adds an internal workspace-backed dense
+first-difference solve using the existing row-major dense solver and wires the
+2D separable IAsLS path through it. The public API remains unchanged.
+
+2D P-spline first-difference workspace results:
+
+| Benchmark | Before mean | After mean | Change |
+| --- | ---: | ---: | ---: |
+| `spline_2d/pspline_iasls_16x16` | 356.970 us | 131.100 us | -63.27% |
+| `spline_2d_into/pspline_iasls_into_16x16` | 358.548 us | 122.230 us | -65.91% |
+
+The follow-up profile captured 3834 samples; the old
+`solve_coefficients_dense_with_options` path disappeared, and the remaining
+top cost is the expected `solve_dense_in_place` work.
 
 Goldindec profiling before optimization:
 

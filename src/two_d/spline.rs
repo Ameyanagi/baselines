@@ -762,13 +762,14 @@ fn solve_separable_pspline(
             *target = weight.max(MIN_WEIGHT);
         }
         if first_difference_lambda > 0.0 {
-            let smoothed = row_spline.solve_with_first_difference_penalty(
+            row_spline.solve_with_first_difference_penalty_into(
                 &data[start..start + cols],
                 &workspace.row_weights,
                 params.lambda,
                 first_difference_lambda,
+                &mut workspace.temp[start..start + cols],
+                &mut workspace.row_solver,
             )?;
-            workspace.temp[start..start + cols].copy_from_slice(&smoothed);
         } else {
             row_spline.solve_into(
                 &data[start..start + cols],
@@ -793,13 +794,15 @@ fn solve_separable_pspline(
             workspace.column_weights[row] = workspace.weights[index].max(MIN_WEIGHT);
         }
         if first_difference_lambda > 0.0 {
-            let smoothed = column_spline.solve_with_first_difference_penalty(
+            column_spline.solve_with_first_difference_penalty_into(
                 &workspace.column_values,
                 &workspace.column_weights,
                 params.lambda,
                 first_difference_lambda,
+                &mut workspace.column_output,
+                &mut workspace.column_solver,
             )?;
-            for (row, value) in smoothed.iter().enumerate() {
+            for (row, value) in workspace.column_output.iter().enumerate() {
                 output[row * cols + col] = *value;
             }
         } else {
