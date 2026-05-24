@@ -1,0 +1,3 @@
+benchmark,mean_ns,criterion_baseline,commit_or_worktree
+classification_1d/std_distribution_with_mask_256,11615,classification1d_after_mask_variant_coverage,587b192
+classification_1d/fastchrom_with_mask_256,8727,classification1d_after_mask_variant_coverage,587b192

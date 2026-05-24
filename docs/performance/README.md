@@ -77,6 +77,7 @@ cargo bench --bench baseline_workloads -- classification_1d/dietrich_256 --profi
 sample <baseline_workloads-pid> 5 -file /tmp/baselines-dietrich-after-workspace.sample.txt
 cargo bench --bench baseline_workloads -- classification_1d --baseline classification1d_after_dietrich_workspace
 cargo bench --bench baseline_workloads -- classification_1d --save-baseline classification1d_after_threshold_workspace
+cargo bench --bench baseline_workloads -- classification_1d --save-baseline classification1d_after_mask_variant_coverage
 ```
 
 Full saved baseline means are in
@@ -85,6 +86,8 @@ Optimization comparison results are in
 [`optimization-results-2026-05-24.csv`](optimization-results-2026-05-24.csv).
 Rejected optimization experiments are in
 [`rejected-experiments-2026-05-24.csv`](rejected-experiments-2026-05-24.csv).
+Benchmark coverage additions made after the initial full baseline run are in
+[`coverage-additions-2026-05-24.csv`](coverage-additions-2026-05-24.csv).
 
 Top slow paths before optimization:
 
@@ -379,6 +382,13 @@ vectors with a two-pass masked mean/std calculation plus a reusable candidate
 mask. The full `classification_1d` Criterion group was saved as
 `classification1d_after_threshold_workspace`.
 
+Classification benchmark coverage additions:
+
+| Benchmark | Mean | Criterion baseline |
+| --- | ---: | --- |
+| `classification_1d/std_distribution_with_mask_256` | 11.615 us | `classification1d_after_mask_variant_coverage` |
+| `classification_1d/fastchrom_with_mask_256` | 8.727 us | `classification1d_after_mask_variant_coverage` |
+
 Rejected or no-op experiments:
 
 | Benchmark | Experiment | Before mean | After mean | Change |
@@ -388,6 +398,8 @@ Rejected or no-op experiments:
 | `optimizers_2d/collab_pls_2x16x16` | Reuse shared Whittaker workspace and fill weights in place | 1.300 ms | 1.293 ms | no significant change |
 | `spline_1d/pspline_aspls_256` | Direct dense row-scaled P-spline workspace | 0.990 ms | 7.489 ms | +656.45% |
 | `polynomial_1d/goldindec_256` | Direct adjusted-RHS computation with cached-power evaluation | 1.347 ms | 1.540 ms | +14.30% |
+| `spline_1d/pspline_aspls_256` | Reuse asPLS residual/weight/interpolation buffers | 0.944 ms | 0.960 ms | +1.75% |
+| `whittaker_1d/arpls_256` | No-allocation arPLS weight update | 0.312 ms | 0.335 ms | +7.45% |
 
 2D morphology profiling before optimization:
 
