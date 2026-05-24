@@ -111,6 +111,12 @@ cargo bench --bench baseline_workloads -- 'whittaker_2d/' --baseline whittaker2d
 cargo bench --bench baseline_workloads -- 'whittaker_2d_into/' --baseline whittaker_into_coverage_2026_05_24
 cargo bench --bench baseline_workloads -- 'whittaker_2d/' --save-baseline whittaker2d_after_direct_banded
 cargo bench --bench baseline_workloads -- 'whittaker_2d_into/' --save-baseline whittaker2d_into_after_direct_banded
+cargo bench --bench baseline_workloads -- whittaker_2d/brpls_16x16 --profile-time 20
+sample <baseline_workloads-pid> 5 -file /tmp/baselines-brpls2d-direct.sample.txt
+cargo bench --bench baseline_workloads -- 'whittaker_2d/' --baseline whittaker2d_after_direct_banded
+cargo bench --bench baseline_workloads -- 'whittaker_2d_into/' --baseline whittaker2d_into_after_direct_banded
+cargo bench --bench baseline_workloads -- 'whittaker_2d/' --save-baseline whittaker2d_after_flat_banded_storage
+cargo bench --bench baseline_workloads -- 'whittaker_2d_into/' --save-baseline whittaker2d_into_after_flat_banded_storage
 cargo bench --bench baseline_workloads -- spline_1d/pspline_aspls_256 --profile-time 20
 sample <baseline_workloads-pid> 5 -file /tmp/baselines-pspline-aspls1d.sample.txt
 cargo bench --bench baseline_workloads -- spline_1d --baseline perf_before_opt
@@ -170,12 +176,12 @@ Top slow paths in the current full-run snapshot:
 
 | Benchmark | Mean |
 | --- | ---: |
-| `whittaker_2d/brpls_16x16` | 5.651 ms |
-| `whittaker_2d/arpls_16x16` | 4.018 ms |
-| `whittaker_2d/aspls_16x16` | 1.769 ms |
-| `whittaker_2d/iarpls_16x16` | 1.234 ms |
-| `whittaker_2d/psalsa_16x16` | 1.122 ms |
+| `whittaker_2d/brpls_16x16` | 3.563 ms |
+| `whittaker_2d/arpls_16x16` | 2.535 ms |
+| `whittaker_2d/aspls_16x16` | 1.734 ms |
 | `optimizers_2d/collab_pls_2x16x16` | 1.064 ms |
+| `spline_1d/pspline_aspls_256` | 991.249 us |
+| `whittaker_2d/airpls_16x16` | 940.155 us |
 
 BEADS profiling before optimization:
 
@@ -557,6 +563,41 @@ Reusable-output 2D Whittaker direct-banded results:
 | `whittaker_2d_into/psalsa_into_16x16` | 1.673 ms | 1.113 ms | -33.44% |
 | `whittaker_2d_into/brpls_into_16x16` | 6.612 ms | 5.645 ms | -14.63% |
 | `whittaker_2d_into/lsrpls_into_16x16` | 661.428 us | 565.610 us | -14.49% |
+
+A follow-up profile of `whittaker_2d/brpls_16x16` after the direct-banded
+change showed the remaining cost was almost entirely inside the shared banded
+Cholesky solve. `sample` captured 3838 samples; 3736 were at the top of stack in
+`SymmetricBandedWorkspace::solve_spd`, while reset/fill and `BrPlsWeights`
+updates were small. The retained change stores symmetric bands in one
+contiguous `Vec<f64>` and rewrites the factorization/triangular-solve loops to
+use direct offset indexing, avoiding per-band `Vec` indirection and repeated
+`abs_diff`/`min` accessors.
+
+2D Whittaker flat-banded storage optimization results:
+
+| Benchmark | Before mean | After mean | Change |
+| --- | ---: | ---: | ---: |
+| `whittaker_2d/asls_16x16` | 462.984 us | 279.473 us | -39.64% |
+| `whittaker_2d/iasls_16x16` | 454.635 us | 281.775 us | -38.02% |
+| `whittaker_2d/arpls_16x16` | 4.018 ms | 2.535 ms | -36.90% |
+| `whittaker_2d/drpls_16x16` | 890.614 us | 561.607 us | -36.94% |
+| `whittaker_2d/iarpls_16x16` | 1.234 ms | 767.475 us | -37.83% |
+| `whittaker_2d/psalsa_16x16` | 1.122 ms | 706.018 us | -37.08% |
+| `whittaker_2d/brpls_16x16` | 5.651 ms | 3.563 ms | -36.96% |
+| `whittaker_2d/lsrpls_16x16` | 559.511 us | 351.027 us | -37.26% |
+
+Reusable-output 2D Whittaker flat-banded results:
+
+| Benchmark | Before mean | After mean | Change |
+| --- | ---: | ---: | ---: |
+| `whittaker_2d_into/asls_into_16x16` | 452.962 us | 279.743 us | -38.24% |
+| `whittaker_2d_into/iasls_into_16x16` | 447.508 us | 275.639 us | -38.41% |
+| `whittaker_2d_into/arpls_into_16x16` | 4.070 ms | 2.535 ms | -37.71% |
+| `whittaker_2d_into/drpls_into_16x16` | 893.953 us | 559.846 us | -37.37% |
+| `whittaker_2d_into/iarpls_into_16x16` | 1.233 ms | 767.857 us | -37.71% |
+| `whittaker_2d_into/psalsa_into_16x16` | 1.113 ms | 695.398 us | -37.54% |
+| `whittaker_2d_into/brpls_into_16x16` | 5.645 ms | 3.567 ms | -36.80% |
+| `whittaker_2d_into/lsrpls_into_16x16` | 565.610 us | 349.140 us | -38.27% |
 
 The reduced eigenspace `whittaker_2d/arpls_eigen_16x16` path was then profiled
 separately because it uses its own solver. `sample` captured 3821 samples

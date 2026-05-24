@@ -883,7 +883,7 @@ fn solve_weighted_system_banded(
         lambda_rows,
         lambda_cols,
         operator_weights,
-        workspace.bands_mut(),
+        workspace,
     );
     workspace.solve_spd(rhs, solution)
 }
@@ -894,26 +894,30 @@ fn fill_weighted_system_bands(
     lambda_rows: f64,
     lambda_cols: f64,
     operator_weights: &[f64],
-    bands: &mut [Vec<f64>],
+    bands: &mut SymmetricBandedWorkspace,
 ) {
     for row in 0..rows {
         for col in 0..cols {
             let index = row * cols + col;
-            bands[0][index] = operator_weights[index]
-                + lambda_rows * second_order_diag(row, rows)
-                + lambda_cols * second_order_diag(col, cols);
+            bands.set_band_value(
+                0,
+                index,
+                operator_weights[index]
+                    + lambda_rows * second_order_diag(row, rows)
+                    + lambda_cols * second_order_diag(col, cols),
+            );
 
             if col + 1 < cols {
-                bands[1][index] = lambda_cols * second_order_off1(col, cols);
+                bands.set_band_value(1, index, lambda_cols * second_order_off1(col, cols));
             }
             if col + 2 < cols {
-                bands[2][index] = lambda_cols;
+                bands.set_band_value(2, index, lambda_cols);
             }
             if row + 1 < rows {
-                bands[cols][index] = lambda_rows * second_order_off1(row, rows);
+                bands.set_band_value(cols, index, lambda_rows * second_order_off1(row, rows));
             }
             if row + 2 < rows {
-                bands[2 * cols][index] = lambda_rows;
+                bands.set_band_value(2 * cols, index, lambda_rows);
             }
         }
     }
@@ -1478,14 +1482,15 @@ mod tests {
         );
 
         let bandwidth = 2 * cols;
-        let mut bands = vec![vec![0.0; n]; bandwidth + 1];
+        let mut bands = super::SymmetricBandedWorkspace::new();
+        bands.reset(n, bandwidth);
         fill_weighted_system_bands(rows, cols, lambda_rows, lambda_cols, &weights, &mut bands);
         let mut banded = vec![0.0; n];
         for (row, value) in banded.iter_mut().enumerate().take(n) {
             let start = row.saturating_sub(bandwidth);
             let end = (row + bandwidth).min(n - 1);
             *value = (start..=end)
-                .map(|col| symmetric_band_value(&bands, row, col) * input[col])
+                .map(|col| bands.value(row, col) * input[col])
                 .sum();
         }
 
@@ -1499,15 +1504,5 @@ mod tests {
         assert!(use_direct_banded_solver(16, 16));
         assert!(!use_direct_banded_solver(16, 64));
         assert!(!use_direct_banded_solver(64, 16));
-    }
-
-    fn symmetric_band_value(bands: &[Vec<f64>], row: usize, col: usize) -> f64 {
-        let offset = row.abs_diff(col);
-        let lower = row.min(col);
-        if offset < bands.len() {
-            bands[offset][lower]
-        } else {
-            0.0
-        }
     }
 }
