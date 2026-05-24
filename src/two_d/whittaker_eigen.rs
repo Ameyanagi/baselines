@@ -287,6 +287,8 @@ struct ReducedWhittakerSystem {
     cols_eigens: usize,
     row_basis: Vec<f64>,
     col_basis: Vec<f64>,
+    row_basis_sq: Vec<f64>,
+    col_basis_sq: Vec<f64>,
     penalty: Vec<f64>,
 }
 
@@ -302,6 +304,16 @@ impl ReducedWhittakerSystem {
                     + params.lambda_cols() * col_basis.values[col_eigen];
             }
         }
+        let row_basis_sq = row_basis
+            .vectors
+            .iter()
+            .map(|value| value * value)
+            .collect();
+        let col_basis_sq = col_basis
+            .vectors
+            .iter()
+            .map(|value| value * value)
+            .collect();
         Ok(Self {
             rows,
             cols,
@@ -309,6 +321,8 @@ impl ReducedWhittakerSystem {
             cols_eigens: params.num_eigens.1,
             row_basis: row_basis.vectors,
             col_basis: col_basis.vectors,
+            row_basis_sq,
+            col_basis_sq,
             penalty,
         })
     }
@@ -440,6 +454,7 @@ fn solve_reduced_system(
         weights,
         system,
         &mut buffers.preconditioner,
+        &mut buffers.row_by_col_eigen,
         IncludePenalty::Yes,
     );
     apply_reduced_operator(
@@ -657,11 +672,18 @@ fn diagonal_dof_estimate(
     buffers: &mut ReducedSolveBuffers,
 ) -> Vec<f64> {
     let mut hat_diagonal = vec![0.0; system.coeff_len()];
-    reduced_diagonal(weights, system, &mut hat_diagonal, IncludePenalty::No);
+    reduced_diagonal(
+        weights,
+        system,
+        &mut hat_diagonal,
+        &mut buffers.row_by_col_eigen,
+        IncludePenalty::No,
+    );
     reduced_diagonal(
         weights,
         system,
         &mut buffers.preconditioner,
+        &mut buffers.row_by_col_eigen,
         IncludePenalty::Yes,
     );
     let mut dof = vec![0.0; system.coeff_len()];
@@ -686,20 +708,29 @@ fn reduced_diagonal(
     weights: &[f64],
     system: &ReducedWhittakerSystem,
     output: &mut [f64],
+    row_by_col_eigen: &mut [f64],
     include_penalty: IncludePenalty,
 ) {
     output.fill(0.0);
+    row_by_col_eigen.fill(0.0);
+    for row in 0..system.rows {
+        let weight_offset = row * system.cols;
+        let scratch_offset = row * system.cols_eigens;
+        for col in 0..system.cols {
+            let weight = weights[weight_offset + col].max(MIN_WEIGHT);
+            let col_basis_offset = col * system.cols_eigens;
+            for col_eigen in 0..system.cols_eigens {
+                row_by_col_eigen[scratch_offset + col_eigen] +=
+                    weight * system.col_basis_sq[col_basis_offset + col_eigen];
+            }
+        }
+    }
     for row_eigen in 0..system.rows_eigens {
         for col_eigen in 0..system.cols_eigens {
             let mut hat_diagonal = 0.0;
             for row in 0..system.rows {
-                let row_value = system.row_basis[row * system.rows_eigens + row_eigen];
-                let row_sq = row_value * row_value;
-                for col in 0..system.cols {
-                    let col_value = system.col_basis[col * system.cols_eigens + col_eigen];
-                    let index = row * system.cols + col;
-                    hat_diagonal += weights[index].max(MIN_WEIGHT) * row_sq * col_value * col_value;
-                }
+                hat_diagonal += system.row_basis_sq[row * system.rows_eigens + row_eigen]
+                    * row_by_col_eigen[row * system.cols_eigens + col_eigen];
             }
             let coeff_index = row_eigen * system.cols_eigens + col_eigen;
             output[coeff_index] = if include_penalty == IncludePenalty::Yes {

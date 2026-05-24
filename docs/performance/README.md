@@ -75,6 +75,13 @@ cargo bench --bench baseline_workloads -- whittaker_2d/brpls_16x16 --profile-tim
 sample <baseline_workloads-pid> 5 -file /tmp/baselines-brpls2d-operator-current.sample.txt
 cargo bench --bench baseline_workloads -- whittaker_2d --save-baseline whittaker2d_before_operator_split
 cargo bench --bench baseline_workloads -- whittaker_2d --baseline whittaker2d_before_operator_split
+cargo bench --bench baseline_workloads -- whittaker_2d/arpls_eigen_16x16 --save-baseline arpls_eigen_before_profile
+cargo bench --bench baseline_workloads -- whittaker_2d/arpls_eigen_16x16 --profile-time 20
+sample <baseline_workloads-pid> 5 -file /tmp/baselines-arpls-eigen.sample.txt
+cargo bench --bench baseline_workloads -- whittaker_2d/arpls_eigen_16x16 --baseline arpls_eigen_before_profile
+cargo bench --bench baseline_workloads -- whittaker_2d/arpls_eigen_16x16 --save-baseline arpls_eigen_after_squared_diag
+cargo bench --bench baseline_workloads -- whittaker_2d/arpls_eigen_16x16 --profile-time 20
+sample <baseline_workloads-pid> 5 -file /tmp/baselines-arpls-eigen-after.sample.txt
 cargo bench --bench baseline_workloads -- spline_1d/pspline_aspls_256 --profile-time 20
 sample <baseline_workloads-pid> 5 -file /tmp/baselines-pspline-aspls1d.sample.txt
 cargo bench --bench baseline_workloads -- spline_1d --baseline perf_before_opt
@@ -429,6 +436,26 @@ saved Criterion baseline `whittaker2d_before_operator_split`. It regressed
 `brpls_16x16` from 6.462 ms to 7.949 ms (+23.02%) and regressed the rest of the
 matrix-free Whittaker group, so the code was reverted and the experiment is
 recorded in `rejected-experiments-2026-05-24.csv`.
+
+The reduced eigenspace `whittaker_2d/arpls_eigen_16x16` path was then profiled
+separately because it uses its own solver. `sample` captured 3821 samples
+before the change; 940 samples were in `reduced_diagonal`, which computes the
+weighted reduced-system diagonal used as the CG preconditioner. The retained
+change precomputes squared row/column basis values and rewrites
+`reduced_diagonal` as a two-stage squared-basis projection using the existing
+scratch buffer. This avoids the previous
+`row_eigen * col_eigen * rows * cols` loop shape without changing the public
+API or eigenspace solve.
+
+2D Whittaker eigenspace diagonal optimization results:
+
+| Benchmark | Before mean | After mean | Change |
+| --- | ---: | ---: | ---: |
+| `whittaker_2d/arpls_eigen_16x16` | 787.690 us | 571.920 us | -27.07% |
+
+The follow-up profile captured 3831 samples; `reduced_diagonal` dropped to 263
+samples, and the remaining top costs were the expected reduced-basis
+reconstruct/project loops.
 
 1D classification profiling before optimization:
 

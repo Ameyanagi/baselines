@@ -93,7 +93,7 @@ whittaker_1d/lsrpls_256,286854.57729600696
 whittaker_1d/psalsa_256,47849.3045174685
 whittaker_2d/airpls_16x16,994406.959813492
 whittaker_2d/arpls_16x16,5584870.69092262
-whittaker_2d/arpls_eigen_16x16,745188.8078869048
+whittaker_2d/arpls_eigen_16x16,567020
 whittaker_2d/asls_16x16,659333.5384567901
 whittaker_2d/aspls_16x16,1783768.4723968252
 whittaker_2d/brpls_16x16,7733705.937738095
