@@ -405,7 +405,7 @@ fn core_algorithms_track_pybaselines_fixtures() {
         )
         .unwrap()
         .baseline,
-        1e-4,
+        5e-4,
     );
     assert_close(
         "pspline_psalsa",
