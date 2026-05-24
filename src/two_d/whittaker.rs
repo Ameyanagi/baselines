@@ -128,6 +128,7 @@ impl Whittaker2DParams {
 pub struct Whittaker2DWorkspace {
     weights: Vec<f64>,
     previous_weights: Vec<f64>,
+    operator_weights: Vec<f64>,
     residuals: Vec<f64>,
     rhs: Vec<f64>,
     cg_residual: Vec<f64>,
@@ -142,6 +143,7 @@ impl Whittaker2DWorkspace {
         Self {
             weights: vec![1.0; len],
             previous_weights: vec![1.0; len],
+            operator_weights: vec![1.0; len],
             residuals: vec![0.0; len],
             rhs: vec![0.0; len],
             cg_residual: vec![0.0; len],
@@ -154,6 +156,7 @@ impl Whittaker2DWorkspace {
     pub fn resize(&mut self, len: usize) {
         self.weights.resize(len, 1.0);
         self.previous_weights.resize(len, 1.0);
+        self.operator_weights.resize(len, 1.0);
         self.residuals.resize(len, 0.0);
         self.rhs.resize(len, 0.0);
         self.cg_residual.resize(len, 0.0);
@@ -586,19 +589,22 @@ fn fit_with_policy<P: ReweightPolicy>(
         workspace
             .previous_weights
             .copy_from_slice(&workspace.weights);
-        for ((rhs, observed), weight) in workspace
+        for (((rhs, operator_weight), observed), weight) in workspace
             .rhs
             .iter_mut()
+            .zip(&mut workspace.operator_weights)
             .zip(input.as_slice())
             .zip(&workspace.weights)
         {
-            *rhs = observed * weight.max(MIN_WEIGHT);
+            let clamped_weight = weight.max(MIN_WEIGHT);
+            *operator_weight = clamped_weight;
+            *rhs = observed * clamped_weight;
         }
         solve_weighted_system(
             input.rows(),
             input.cols(),
             params,
-            &workspace.weights,
+            &workspace.operator_weights,
             &workspace.rhs,
             output.as_mut_slice(),
             &mut workspace.cg_residual,
@@ -640,14 +646,22 @@ pub(crate) fn solve_fixed_weighted_system(
     }
     workspace.resize(input.len());
     output.as_mut_slice().copy_from_slice(input.as_slice());
-    for ((rhs, observed), weight) in workspace.rhs.iter_mut().zip(input.as_slice()).zip(weights) {
-        *rhs = observed * weight.max(MIN_WEIGHT);
+    for (((rhs, operator_weight), observed), weight) in workspace
+        .rhs
+        .iter_mut()
+        .zip(&mut workspace.operator_weights)
+        .zip(input.as_slice())
+        .zip(weights)
+    {
+        let clamped_weight = weight.max(MIN_WEIGHT);
+        *operator_weight = clamped_weight;
+        *rhs = observed * clamped_weight;
     }
     solve_weighted_system(
         input.rows(),
         input.cols(),
         params,
-        weights,
+        &workspace.operator_weights,
         &workspace.rhs,
         output.as_mut_slice(),
         &mut workspace.cg_residual,
@@ -685,7 +699,7 @@ fn solve_weighted_system(
     rows: usize,
     cols: usize,
     params: Whittaker2DParams,
-    weights: &[f64],
+    operator_weights: &[f64],
     rhs: &[f64],
     solution: &mut [f64],
     cg_residual: &mut [f64],
@@ -697,7 +711,7 @@ fn solve_weighted_system(
         cols,
         params.lambda_rows(),
         params.lambda_cols(),
-        weights,
+        operator_weights,
         solution,
         cg_operator,
     );
@@ -721,7 +735,7 @@ fn solve_weighted_system(
             cols,
             params.lambda_rows(),
             params.lambda_cols(),
-            weights,
+            operator_weights,
             cg_direction,
             cg_operator,
         );
@@ -759,14 +773,14 @@ fn apply_operator(
     cols: usize,
     lambda_rows: f64,
     lambda_cols: f64,
-    weights: &[f64],
+    operator_weights: &[f64],
     input: &[f64],
     output: &mut [f64],
 ) {
     for row in 0..rows {
         for col in 0..cols {
             let index = row * cols + col;
-            let mut value = weights[index].max(MIN_WEIGHT) * input[index];
+            let mut value = operator_weights[index] * input[index];
             value += lambda_rows * second_order_penalty_col(input, rows, cols, row, col);
             value += lambda_cols * second_order_penalty_row(input, rows, cols, row, col);
             output[index] = value;
@@ -779,7 +793,7 @@ fn apply_operator_with_input_dot(
     cols: usize,
     lambda_rows: f64,
     lambda_cols: f64,
-    weights: &[f64],
+    operator_weights: &[f64],
     input: &[f64],
     output: &mut [f64],
 ) -> f64 {
@@ -787,7 +801,7 @@ fn apply_operator_with_input_dot(
     for row in 0..rows {
         for col in 0..cols {
             let index = row * cols + col;
-            let mut value = weights[index].max(MIN_WEIGHT) * input[index];
+            let mut value = operator_weights[index] * input[index];
             value += lambda_rows * second_order_penalty_col(input, rows, cols, row, col);
             value += lambda_cols * second_order_penalty_row(input, rows, cols, row, col);
             output[index] = value;
