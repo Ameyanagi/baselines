@@ -6,7 +6,10 @@
 
 use crate::fit::{Fit, FitReport};
 use crate::linalg::pentadiagonal::{PentadiagonalWorkspace, solve_second_order};
-use crate::polynomial::{evaluate_polynomial_coefficients, fit_weighted_polynomial_coefficients};
+use crate::polynomial::{
+    PolynomialFitWorkspace, evaluate_polynomial_coefficients,
+    fit_unweighted_polynomial_coefficients_with_workspace, fit_weighted_polynomial_coefficients,
+};
 use crate::workspace::validate_signal;
 use crate::{BaselineError, Result};
 
@@ -412,9 +415,13 @@ pub fn dietrich(y: &[f64], params: DietrichParams) -> Result<Fit> {
         });
     }
 
-    let weights = vec![1.0; y.len()];
-    let mut coeffs =
-        fit_weighted_polynomial_coefficients(&rough_baseline, &weights, params.poly_order)?;
+    let mut poly_workspace = PolynomialFitWorkspace::new(params.poly_order);
+    let mut coeffs = fit_unweighted_polynomial_coefficients_with_workspace(
+        &rough_baseline,
+        params.poly_order,
+        &mut poly_workspace,
+    )?
+    .to_vec();
     let mut baseline = vec![0.0; y.len()];
     evaluate_polynomial_coefficients(&coeffs, &mut baseline);
     let mut tolerance = f64::INFINITY;
@@ -425,17 +432,20 @@ pub fn dietrich(y: &[f64], params: DietrichParams) -> Result<Fit> {
                 *rough = *fitted;
             }
         }
-        let new_coeffs =
-            fit_weighted_polynomial_coefficients(&rough_baseline, &weights, params.poly_order)?;
-        evaluate_polynomial_coefficients(&new_coeffs, &mut baseline);
-        tolerance = relative_difference(&coeffs, &new_coeffs);
+        let new_coeffs = fit_unweighted_polynomial_coefficients_with_workspace(
+            &rough_baseline,
+            params.poly_order,
+            &mut poly_workspace,
+        )?;
+        evaluate_polynomial_coefficients(new_coeffs, &mut baseline);
+        tolerance = relative_difference(&coeffs, new_coeffs);
         if tolerance < params.tol {
             return Ok(Fit {
                 baseline,
                 report: FitReport::new(iter + 1, true, tolerance),
             });
         }
-        coeffs = new_coeffs;
+        coeffs.copy_from_slice(new_coeffs);
     }
 
     Ok(Fit {
@@ -900,22 +910,47 @@ fn gradient(y: &[f64]) -> Vec<f64> {
 fn iter_threshold(power: &[f64], num_std: f64) -> Vec<bool> {
     let threshold = mean(power) + num_std * sample_standard_deviation(power);
     let mut mask: Vec<bool> = power.iter().map(|value| *value < threshold).collect();
+    let mut new_mask = vec![false; power.len()];
     loop {
-        let masked_power: Vec<f64> = power
-            .iter()
-            .zip(&mask)
-            .filter_map(|(value, keep)| keep.then_some(*value))
-            .collect();
-        if masked_power.len() < 2 {
+        let Some((masked_mean, masked_std)) = masked_mean_sample_standard_deviation(power, &mask)
+        else {
+            return mask;
+        };
+        let threshold = masked_mean + num_std * masked_std;
+        let mut changed = false;
+        for ((target, current), value) in new_mask.iter_mut().zip(&mask).zip(power) {
+            let keep = *value < threshold;
+            changed |= keep != *current;
+            *target = keep;
+        }
+        if !changed {
             return mask;
         }
-        let threshold = mean(&masked_power) + num_std * sample_standard_deviation(&masked_power);
-        let new_mask: Vec<bool> = power.iter().map(|value| *value < threshold).collect();
-        if new_mask == mask {
-            return mask;
-        }
-        mask = new_mask;
+        std::mem::swap(&mut mask, &mut new_mask);
     }
+}
+
+fn masked_mean_sample_standard_deviation(values: &[f64], mask: &[bool]) -> Option<(f64, f64)> {
+    let mut count = 0usize;
+    let mut sum = 0.0;
+    for (value, keep) in values.iter().zip(mask) {
+        if *keep {
+            count += 1;
+            sum += value;
+        }
+    }
+    if count < 2 {
+        return None;
+    }
+    let mean = sum / count as f64;
+    let variance = values
+        .iter()
+        .zip(mask)
+        .filter_map(|(value, keep)| keep.then_some(value - mean))
+        .map(|centered| centered * centered)
+        .sum::<f64>()
+        / (count - 1) as f64;
+    Some((mean, variance.sqrt()))
 }
 
 fn haar_cwt_power(y: &[f64], scale: usize) -> Vec<f64> {

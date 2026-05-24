@@ -1061,7 +1061,7 @@ pub(crate) fn fit_weighted_polynomial_coefficients(
     Ok(workspace.coeffs[..order + 1].to_vec())
 }
 
-fn fit_unweighted_polynomial_coefficients_with_workspace<'a>(
+pub(crate) fn fit_unweighted_polynomial_coefficients_with_workspace<'a>(
     y: &[f64],
     order: usize,
     workspace: &'a mut PolynomialFitWorkspace,
