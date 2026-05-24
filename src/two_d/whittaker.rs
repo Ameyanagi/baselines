@@ -701,18 +701,22 @@ fn solve_weighted_system(
         solution,
         cg_operator,
     );
+    let mut rhs_norm_sq = 0.0;
+    let mut residual_norm_sq = 0.0;
     for ((residual, rhs), applied) in cg_residual.iter_mut().zip(rhs).zip(&*cg_operator) {
-        *residual = rhs - applied;
+        let value = rhs - applied;
+        *residual = value;
+        rhs_norm_sq += rhs * rhs;
+        residual_norm_sq += value * value;
     }
     cg_direction.copy_from_slice(cg_residual);
-    let rhs_norm = dot(rhs, rhs).sqrt().max(1.0);
-    let mut residual_norm_sq = dot(cg_residual, cg_residual);
+    let rhs_norm = rhs_norm_sq.sqrt().max(1.0);
     if residual_norm_sq.sqrt() / rhs_norm <= params.cg_tol {
         return Ok(());
     }
 
     for _ in 0..params.cg_max_iter {
-        apply_operator(
+        let denominator = apply_operator_with_input_dot(
             rows,
             cols,
             params.lambda_rows(),
@@ -721,13 +725,13 @@ fn solve_weighted_system(
             cg_direction,
             cg_operator,
         );
-        let denominator = dot(cg_direction, cg_operator);
         if !denominator.is_finite() || denominator.abs() <= f64::EPSILON {
             return Err(BaselineError::LinearSolve {
                 reason: "2D Whittaker conjugate-gradient denominator vanished",
             });
         }
         let alpha = residual_norm_sq / denominator;
+        let mut next_norm_sq = 0.0;
         for ((value, residual), (direction, applied)) in solution
             .iter_mut()
             .zip(cg_residual.iter_mut())
@@ -735,8 +739,8 @@ fn solve_weighted_system(
         {
             *value += alpha * direction;
             *residual -= alpha * applied;
+            next_norm_sq += *residual * *residual;
         }
-        let next_norm_sq = dot(cg_residual, cg_residual);
         if next_norm_sq.sqrt() / rhs_norm <= params.cg_tol {
             return Ok(());
         }
@@ -768,6 +772,29 @@ fn apply_operator(
             output[index] = value;
         }
     }
+}
+
+fn apply_operator_with_input_dot(
+    rows: usize,
+    cols: usize,
+    lambda_rows: f64,
+    lambda_cols: f64,
+    weights: &[f64],
+    input: &[f64],
+    output: &mut [f64],
+) -> f64 {
+    let mut input_dot_output = 0.0;
+    for row in 0..rows {
+        for col in 0..cols {
+            let index = row * cols + col;
+            let mut value = weights[index].max(MIN_WEIGHT) * input[index];
+            value += lambda_rows * second_order_penalty_col(input, rows, cols, row, col);
+            value += lambda_cols * second_order_penalty_row(input, rows, cols, row, col);
+            output[index] = value;
+            input_dot_output += input[index] * value;
+        }
+    }
+    input_dot_output
 }
 
 fn second_order_penalty_row(
@@ -1248,13 +1275,6 @@ fn relative_change(previous: &[f64], current: &[f64]) -> f64 {
         .sum::<f64>()
         .sqrt();
     numerator / denominator.max(f64::EPSILON)
-}
-
-fn dot(left: &[f64], right: &[f64]) -> f64 {
-    left.iter()
-        .zip(right)
-        .map(|(left, right)| left * right)
-        .sum()
 }
 
 #[cfg(test)]
