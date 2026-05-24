@@ -82,6 +82,8 @@ sample <baseline_workloads-pid> 5 -file /tmp/baselines-dietrich-after-workspace.
 cargo bench --bench baseline_workloads -- classification_1d --baseline classification1d_after_dietrich_workspace
 cargo bench --bench baseline_workloads -- classification_1d --save-baseline classification1d_after_threshold_workspace
 cargo bench --bench baseline_workloads -- classification_1d --save-baseline classification1d_after_mask_variant_coverage
+cargo bench --bench baseline_workloads -- whittaker_1d --save-baseline coverage_after_history_custom
+cargo bench --bench baseline_workloads -- optimizers_misc_1d --save-baseline coverage_after_history_custom
 ```
 
 Full saved baseline means are in
@@ -401,6 +403,9 @@ Classification benchmark coverage additions:
 | --- | ---: | --- |
 | `classification_1d/std_distribution_with_mask_256` | 11.615 us | `classification1d_after_mask_variant_coverage` |
 | `classification_1d/fastchrom_with_mask_256` | 8.727 us | `classification1d_after_mask_variant_coverage` |
+| `whittaker_1d/asls_with_history_256` | 38.059 us | `coverage_after_history_custom` |
+| `whittaker_1d/aspls_with_history_256` | 252.321 us | `coverage_after_history_custom` |
+| `optimizers_misc_1d/custom_bc_with_256` | 41.420 us | `coverage_after_history_custom` |
 
 Rejected or no-op experiments:
 
