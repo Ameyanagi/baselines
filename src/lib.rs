@@ -28,6 +28,8 @@ pub mod classification;
 pub mod data;
 pub mod error;
 pub mod fit;
+#[doc = include_str!("../docs/GALLERY.md")]
+pub mod gallery {}
 pub mod linalg;
 pub mod misc;
 pub mod morphology;
@@ -38,6 +40,8 @@ pub mod spline;
 pub mod two_d;
 pub mod whittaker;
 pub mod workspace;
+#[doc = include_str!("../docs/PYBASELINES_EXAMPLES.md")]
+pub mod pybaselines_examples {}
 
 pub use api::{Baseline, Baseline2D};
 pub use classification::ClassificationFit;

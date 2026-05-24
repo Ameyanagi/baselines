@@ -66,8 +66,10 @@ a small deterministic Rust generator rather than NumPy's bit generator, so the
 shape and parameters match the gallery example but the exact noise samples do
 not.
 
-See `docs/GALLERY.md` for the generated-output index and runnable source files.
-See `docs/PYBASELINES_EXAMPLES.md` for the pybaselines gallery coverage matrix.
+See `docs/GALLERY.md` for the generated-output index and runnable source files,
+or open the `gallery` page in generated Rust docs. See
+`docs/PYBASELINES_EXAMPLES.md` or the `pybaselines_examples` rustdoc page for
+the pybaselines gallery coverage matrix.
 
 ## API style
 
