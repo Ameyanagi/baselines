@@ -35,7 +35,7 @@ optimizers_misc_1d/custom_bc_256,41967.99120100422
 optimizers_misc_1d/custom_bc_with_256,42172.74958979643
 optimizers_misc_1d/interp_pts_256,190.39643446320517
 optimizers_misc_1d/optimize_extended_range_256,189937.10574824087
-polynomial_1d/goldindec_256,1292555.1629338623
+polynomial_1d/goldindec_256,925780
 polynomial_1d/imodpoly_256,34849.34624156176
 polynomial_1d/loess_256,78994.52708719853
 polynomial_1d/modpoly_256,17546.557707082513

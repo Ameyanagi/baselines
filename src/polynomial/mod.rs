@@ -1075,10 +1075,19 @@ pub(crate) fn fit_unweighted_polynomial_coefficients_with_workspace<'a>(
 
     let sample_powers = &workspace.sample_powers;
     let rhs = &mut workspace.rhs;
-    for (i, observed) in y.iter().enumerate() {
-        let offset = i * n_coeffs;
-        for row in 0..n_coeffs {
-            rhs[row] += observed * sample_powers[offset + row];
+    if n_coeffs == 3 {
+        for (observed, powers) in y.iter().zip(sample_powers.chunks_exact(3)) {
+            let observed = *observed;
+            rhs[0] += observed * powers[0];
+            rhs[1] += observed * powers[1];
+            rhs[2] += observed * powers[2];
+        }
+    } else {
+        for (i, observed) in y.iter().enumerate() {
+            let offset = i * n_coeffs;
+            for row in 0..n_coeffs {
+                rhs[row] += observed * sample_powers[offset + row];
+            }
         }
     }
 
@@ -1221,9 +1230,27 @@ impl PolynomialFitWorkspace {
 /// Evaluates polynomial coefficients on the crate's standard scaled grid.
 pub(crate) fn evaluate_polynomial_coefficients(coeffs: &[f64], baseline: &mut [f64]) {
     let len = baseline.len();
-    for (i, fitted) in baseline.iter_mut().enumerate() {
-        let x = scaled_x(i, len);
-        *fitted = evaluate_polynomial(coeffs, x);
+    match coeffs {
+        [] => baseline.fill(0.0),
+        [constant] => baseline.fill(*constant),
+        [constant, linear] => {
+            for (i, fitted) in baseline.iter_mut().enumerate() {
+                let x = scaled_x(i, len);
+                *fitted = linear * x + constant;
+            }
+        }
+        [constant, linear, quadratic] => {
+            for (i, fitted) in baseline.iter_mut().enumerate() {
+                let x = scaled_x(i, len);
+                *fitted = (quadratic * x + linear) * x + constant;
+            }
+        }
+        _ => {
+            for (i, fitted) in baseline.iter_mut().enumerate() {
+                let x = scaled_x(i, len);
+                *fitted = evaluate_polynomial(coeffs, x);
+            }
+        }
     }
 }
 

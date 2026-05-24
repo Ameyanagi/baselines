@@ -50,6 +50,8 @@ polynomial_2d/penalized_poly_16x16,203859,82462,-59.55,13f5388
 polynomial_2d/quant_reg_16x16,609275,259076,-57.48,13f5388
 polynomial_1d/penalized_poly_256,14798,14218,-3.92,e3bd4bc
 polynomial_1d/goldindec_256,1353887,1207371,-10.82,e3bd4bc
+polynomial_1d/goldindec_256,1211000,920130,-24.09,worktree
+polynomial_1d_into/goldindec_into_256,1235231,924390,-25.16,worktree
 morphology_1d/rolling_ball_256,5397,3373,-37.49,2f42204
 morphology_1d/tophat_256,4770,2839,-40.48,2f42204
 morphology_1d/mwmv_256,2983,2008,-32.67,2f42204

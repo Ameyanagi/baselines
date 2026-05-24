@@ -42,6 +42,12 @@ sample <baseline_workloads-pid> 5 -file /tmp/baselines-goldindec-current-2.sampl
 cargo bench --bench baseline_workloads -- polynomial_1d/goldindec_256 --baseline goldindec_before_direct_rhs
 cargo bench --bench baseline_workloads -- polynomial_1d --baseline polynomial1d_after_unweighted_cache
 cargo bench --bench baseline_workloads -- polynomial_1d --save-baseline polynomial1d_after_cost_dispatch
+cargo bench --bench baseline_workloads -- polynomial_1d/goldindec_256 --save-baseline goldindec_before_threshold_search
+cargo bench --bench baseline_workloads -- polynomial_1d/goldindec_256 --profile-time 20
+sample <baseline_workloads-pid> 5 -file /tmp/baselines-goldindec.sample.txt
+cargo bench --bench baseline_workloads -- polynomial_1d/goldindec_256 --baseline goldindec_before_threshold_search
+cargo bench --bench baseline_workloads -- polynomial_1d_into/goldindec_into_256 --save-baseline goldindec_after_quadratic_specialization
+cargo bench --bench baseline_workloads -- polynomial_1d/goldindec_256 --save-baseline goldindec_after_quadratic_specialization
 cargo bench --bench baseline_workloads -- morphology_1d/amormol_256 --profile-time 30
 sample <baseline_workloads-pid> 5 -file /tmp/baselines-amormol1d.sample.txt
 cargo bench --bench baseline_workloads -- morphology_1d --save-baseline morphology1d_before_reflect_split
@@ -286,6 +292,29 @@ inner fit. This keeps the adjusted-vector and unweighted-fit structure that
 benchmarked well, while reducing the branch and `powi` work in Goldindec's
 hot correction path. The full `polynomial_1d` Criterion group was saved as
 `polynomial1d_after_cost_dispatch`.
+
+Goldindec profiling after cost-dispatch optimization:
+
+- Target: `polynomial_1d/goldindec_256`
+- `sample` captured 3819 samples from the Criterion profile run.
+- The profile remained dominated by the repeated quadratic unweighted
+  polynomial fits inside `fit_penalized_polynomial_with_threshold`: 2048
+  samples in the threshold-fit loop, 1574 samples in
+  `fit_unweighted_polynomial_coefficients_with_workspace`, 87 samples in
+  `memmove`, and 77 samples in the tiny dense solve.
+
+Goldindec quadratic-path specialization results:
+
+| Benchmark | Before mean | After mean | Change |
+| --- | ---: | ---: | ---: |
+| `polynomial_1d/goldindec_256` | 1.211 ms | 0.920 ms | -24.09% |
+| `polynomial_1d_into/goldindec_into_256` | 1.235 ms | 0.924 ms | -25.16% |
+
+The retained change specializes the order-2 unweighted polynomial RHS
+accumulation and polynomial evaluation paths used by Goldindec's default
+quadratic fits. The dense solve, threshold search, and public API are
+unchanged. Fixture compatibility remained passing for the pinned pybaselines
+references.
 
 2D polynomial profiling before basis caching:
 
