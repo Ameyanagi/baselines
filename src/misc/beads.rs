@@ -237,26 +237,28 @@ fn beads_filter_type_one(
 
     let gamma_factor = params.lam_0 * (1.0 + params.asymmetry) / 2.0;
     let mut x = y.to_vec();
+    let mut next_x = vec![0.0; n];
+    let mut diff = vec![0.0; n];
+    let mut h = vec![0.0; n];
     let (mut d1_x, mut d2_x) = abs_diff(&x, smooth_half_window);
-    let mut abs_x: Vec<f64> = x.iter().map(|value| value.abs()).collect();
-    let mut big_x: Vec<bool> = abs_x.iter().map(|value| *value > eps_0).collect();
+    let mut abs_x = vec![0.0; n];
+    fill_abs(&x, &mut abs_x);
+    let mut diagonal_penalty = vec![0.0; n];
+    let mut system = zero_symmetric_bands(n, BEADS_SYSTEM_BANDWIDTH);
     let mut cost_old = 0.0;
     let mut tolerance = f64::INFINITY;
     let mut iterations = 0usize;
 
     for iter in 0..=params.max_iter {
-        let diagonal_penalty: Vec<f64> = abs_x
-            .iter()
-            .zip(&big_x)
-            .map(|(abs_value, is_big)| {
-                if *is_big {
-                    gamma_factor / abs_value
-                } else {
-                    gamma_factor / eps_0
-                }
-            })
-            .collect();
-        let mut system = beads_system_bands(
+        for (target, abs_value) in diagonal_penalty.iter_mut().zip(&abs_x) {
+            *target = if *abs_value > eps_0 {
+                gamma_factor / abs_value
+            } else {
+                gamma_factor / eps_0
+            };
+        }
+        beads_system_bands_into(
+            &mut system,
             n,
             coefficients,
             BeadsPenaltyInputs {
@@ -277,24 +279,17 @@ fn beads_filter_type_one(
         } else {
             solve_spd_banded(&mut system, &d)?
         };
-        x = apply_tridiagonal(a_offdiag, a_diag, &solved);
+        apply_tridiagonal_into(a_offdiag, a_diag, &solved, &mut next_x);
+        std::mem::swap(&mut x, &mut next_x);
 
-        let diff: Vec<f64> = y
-            .iter()
-            .zip(&x)
-            .map(|(observed, signal)| observed - signal)
-            .collect();
-        let h = apply_tridiagonal(
-            b_offdiag,
-            b_diag,
-            &solve_tridiagonal(a_offdiag, a_diag, &diff)?,
-        );
+        fill_difference(y, &x, &mut diff);
+        let a_inv_diff = solve_tridiagonal(a_offdiag, a_diag, &diff)?;
+        apply_tridiagonal_into(b_offdiag, b_diag, &a_inv_diff, &mut h);
         let diffs = abs_diff(&x, smooth_half_window);
         d1_x = diffs.0;
         d2_x = diffs.1;
         let theta = beads_theta(&x, params.asymmetry, eps_0);
-        abs_x = x.iter().map(|value| value.abs()).collect();
-        big_x = abs_x.iter().map(|value| *value > eps_0).collect();
+        fill_abs(&x, &mut abs_x);
         let cost = 0.5 * dot(&h, &h)
             + params.lam_0 * theta
             + params.lam_1 * beads_loss_sum(&d1_x, params.cost_function, eps_1)
@@ -307,19 +302,12 @@ fn beads_filter_type_one(
         cost_old = cost;
     }
 
-    let diff: Vec<f64> = y
-        .iter()
-        .zip(&x)
-        .map(|(observed, signal)| observed - signal)
-        .collect();
-    let high_pass = apply_tridiagonal(
-        b_offdiag,
-        b_diag,
-        &solve_tridiagonal(a_offdiag, a_diag, &diff)?,
-    );
+    fill_difference(y, &x, &mut diff);
+    let a_inv_diff = solve_tridiagonal(a_offdiag, a_diag, &diff)?;
+    apply_tridiagonal_into(b_offdiag, b_diag, &a_inv_diff, &mut h);
     let baseline: Vec<f64> = diff
         .iter()
-        .zip(high_pass)
+        .zip(&h)
         .map(|(value, high)| value - high)
         .collect();
     Ok((
@@ -352,12 +340,26 @@ fn filter_coefficients(freq_cutoff: f64) -> (f64, f64, f64, f64) {
     (-1.0 + t, 2.0 + 2.0 * t, -1.0, 2.0)
 }
 
+#[cfg(test)]
 fn beads_system_bands(
     n: usize,
     coefficients: BeadsSystemCoefficients,
     inputs: BeadsPenaltyInputs<'_>,
     params: BeadsPenaltyParams,
 ) -> Vec<Vec<f64>> {
+    let mut system = zero_symmetric_bands(n, BEADS_SYSTEM_BANDWIDTH);
+    beads_system_bands_into(&mut system, n, coefficients, inputs, params);
+    system
+}
+
+fn beads_system_bands_into(
+    system: &mut [Vec<f64>],
+    n: usize,
+    coefficients: BeadsSystemCoefficients,
+    inputs: BeadsPenaltyInputs<'_>,
+    params: BeadsPenaltyParams,
+) {
+    reset_symmetric_bands(system);
     let mut penalty = zero_symmetric_bands(n, BEADS_PENALTY_BANDWIDTH);
     for (index, value) in inputs.diagonal.iter().enumerate() {
         penalty[0][index] += *value;
@@ -378,14 +380,18 @@ fn beads_system_bands(
         penalty[2][index + 2] += weight;
     }
 
-    let mut system = zero_symmetric_bands(n, BEADS_SYSTEM_BANDWIDTH);
-    add_btb_tridiagonal_bands(&mut system, coefficients.b);
-    add_a_penalty_a_bands(&mut system, coefficients.a, &penalty);
-    system
+    add_btb_tridiagonal_bands(system, coefficients.b);
+    add_a_penalty_a_bands(system, coefficients.a, &penalty);
 }
 
 fn zero_symmetric_bands(n: usize, bandwidth: usize) -> Vec<Vec<f64>> {
     vec![vec![0.0; n]; bandwidth + 1]
+}
+
+fn reset_symmetric_bands(bands: &mut [Vec<f64>]) {
+    for band in bands {
+        band.fill(0.0);
+    }
 }
 
 fn set_symmetric_band_value(bands: &mut [Vec<f64>], row: usize, col: usize, value: f64) {
@@ -529,6 +535,12 @@ fn beads_weighting(x: f64, cost_function: BeadsCostFunction, eps_1: f64) -> f64 
 
 fn apply_tridiagonal(offdiag: f64, diag: f64, x: &[f64]) -> Vec<f64> {
     let mut output = vec![0.0; x.len()];
+    apply_tridiagonal_into(offdiag, diag, x, &mut output);
+    output
+}
+
+fn apply_tridiagonal_into(offdiag: f64, diag: f64, x: &[f64], output: &mut [f64]) {
+    debug_assert_eq!(x.len(), output.len());
     for (index, target) in output.iter_mut().enumerate() {
         *target = diag * x[index];
         if index > 0 {
@@ -538,11 +550,25 @@ fn apply_tridiagonal(offdiag: f64, diag: f64, x: &[f64]) -> Vec<f64> {
             *target += offdiag * x[index + 1];
         }
     }
-    output
 }
 
 fn apply_btb_tridiagonal(offdiag: f64, diag: f64, x: &[f64]) -> Vec<f64> {
     apply_tridiagonal(offdiag, diag, &apply_tridiagonal(offdiag, diag, x))
+}
+
+fn fill_abs(input: &[f64], output: &mut [f64]) {
+    debug_assert_eq!(input.len(), output.len());
+    for (target, value) in output.iter_mut().zip(input) {
+        *target = value.abs();
+    }
+}
+
+fn fill_difference(observed: &[f64], signal: &[f64], output: &mut [f64]) {
+    debug_assert_eq!(observed.len(), signal.len());
+    debug_assert_eq!(observed.len(), output.len());
+    for ((target, observed), signal) in output.iter_mut().zip(observed).zip(signal) {
+        *target = observed - signal;
+    }
 }
 
 fn solve_tridiagonal(offdiag: f64, diag: f64, rhs: &[f64]) -> Result<Vec<f64>> {
