@@ -84,10 +84,15 @@ cargo bench --bench baseline_workloads -- classification_1d --save-baseline clas
 cargo bench --bench baseline_workloads -- classification_1d --save-baseline classification1d_after_mask_variant_coverage
 cargo bench --bench baseline_workloads -- whittaker_1d --save-baseline coverage_after_history_custom
 cargo bench --bench baseline_workloads -- optimizers_misc_1d --save-baseline coverage_after_history_custom
+cargo doc --workspace --all-features --no-deps
+cargo package --allow-dirty
+cargo bench --bench baseline_workloads -- --save-baseline perf_current_2026_05_24
 ```
 
 Full saved baseline means are in
 [`baseline-workloads-2026-05-24.csv`](baseline-workloads-2026-05-24.csv).
+Current post-optimization full-run means are in
+[`current-workloads-2026-05-24.csv`](current-workloads-2026-05-24.csv).
 Optimization comparison results are in
 [`optimization-results-2026-05-24.csv`](optimization-results-2026-05-24.csv).
 Rejected optimization experiments are in
@@ -105,6 +110,17 @@ Top slow paths before optimization:
 | `whittaker_2d/brpls_16x16` | 8.232 ms |
 | `polynomial_1d/goldindec_256` | 6.662 ms |
 | `whittaker_2d/arpls_16x16` | 6.648 ms |
+
+Top slow paths in the current full-run snapshot:
+
+| Benchmark | Mean |
+| --- | ---: |
+| `whittaker_2d/brpls_16x16` | 7.734 ms |
+| `whittaker_2d/arpls_16x16` | 5.585 ms |
+| `whittaker_2d/psalsa_16x16` | 1.902 ms |
+| `whittaker_2d/aspls_16x16` | 1.784 ms |
+| `whittaker_2d/iarpls_16x16` | 1.294 ms |
+| `polynomial_1d/goldindec_256` | 1.293 ms |
 
 BEADS profiling before optimization:
 
