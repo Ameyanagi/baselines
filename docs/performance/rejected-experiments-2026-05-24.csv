@@ -1,0 +1,3 @@
+benchmark,experiment,before_mean_ns,after_mean_ns,change_percent,outcome
+whittaker_2d/brpls_16x16,precomputed second-order operator coefficients,8232144,9174000,+10.7,rejected
+whittaker_2d/brpls_16x16,jacobi-preconditioned conjugate gradient,8232144,12802000,+55.63,rejected

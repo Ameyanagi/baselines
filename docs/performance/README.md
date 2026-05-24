@@ -33,6 +33,8 @@ Full saved baseline means are in
 [`baseline-workloads-2026-05-24.csv`](baseline-workloads-2026-05-24.csv).
 Optimization comparison results are in
 [`optimization-results-2026-05-24.csv`](optimization-results-2026-05-24.csv).
+Rejected optimization experiments are in
+[`rejected-experiments-2026-05-24.csv`](rejected-experiments-2026-05-24.csv).
 
 Top slow paths before optimization:
 
@@ -98,3 +100,17 @@ The retained change reuses the penalized polynomial work buffers and replaces
 the repeated `Vec<Vec<_>>` normal-equation solve with a contiguous internal
 workspace. Fixture compatibility remained passing for the pinned pybaselines
 references.
+
+2D Whittaker profiling:
+
+- Target: `whittaker_2d/brpls_16x16`
+- `sample` captured 3831 samples from the Criterion profile run.
+- The profile was dominated by `solve_weighted_system`, with 2373 samples in
+  `apply_operator` and 1429 samples in the surrounding conjugate-gradient loop.
+
+Rejected 2D Whittaker experiments:
+
+| Benchmark | Experiment | Before mean | After mean | Change |
+| --- | --- | ---: | ---: | ---: |
+| `whittaker_2d/brpls_16x16` | Precomputed operator coefficients | 8.232 ms | 9.174 ms | +10.7% |
+| `whittaker_2d/brpls_16x16` | Jacobi-preconditioned CG | 8.232 ms | 12.802 ms | +55.63% |
