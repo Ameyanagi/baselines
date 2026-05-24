@@ -15,7 +15,7 @@
 
 use crate::data::{MatrixView, MatrixViewMut};
 use crate::fit::{Fit2D, FitReport};
-use crate::linalg::dense::solve_dense;
+use crate::linalg::dense::solve_dense_in_place;
 use crate::workspace::rms;
 use crate::{BaselineError, Result};
 
@@ -149,7 +149,14 @@ pub fn poly_into(
 ) -> Result<FitReport> {
     validate_poly_input(input, &output, params.order)?;
     let weights = vec![1.0; input.len()];
-    fit_weighted_polynomial(input, &weights, params.order, output.as_mut_slice())?;
+    let mut workspace = SurfacePolynomialWorkspace::new(input.rows(), input.cols(), params.order);
+    fit_weighted_polynomial_with_workspace(
+        input,
+        &weights,
+        params.order,
+        output.as_mut_slice(),
+        &mut workspace,
+    )?;
     Ok(FitReport::new(1, true, 0.0))
 }
 
@@ -176,17 +183,19 @@ pub fn modpoly_into(
     let mut clipped = input.as_slice().to_vec();
     let weights = vec![1.0; input.len()];
     let mut previous = vec![0.0; input.len()];
+    let mut workspace = SurfacePolynomialWorkspace::new(input.rows(), input.cols(), params.order);
     let mut tolerance = f64::INFINITY;
 
     for iter in 0..params.max_iter {
         previous.copy_from_slice(output.as_slice());
-        fit_weighted_surface(
+        fit_weighted_surface_with_workspace(
             &clipped,
             input.rows(),
             input.cols(),
             &weights,
             params.order,
             output.as_mut_slice(),
+            &mut workspace,
         )?;
         tolerance = relative_change(&previous, output.as_slice());
         let residual: Vec<f64> = clipped
@@ -233,17 +242,19 @@ pub fn imodpoly_into(
     let mut clipped = input.as_slice().to_vec();
     let mut weights = vec![1.0; input.len()];
     let mut previous = vec![0.0; input.len()];
+    let mut workspace = SurfacePolynomialWorkspace::new(input.rows(), input.cols(), params.order);
     let mut tolerance = f64::INFINITY;
 
     for iter in 0..params.max_iter {
         previous.copy_from_slice(output.as_slice());
-        fit_weighted_surface(
+        fit_weighted_surface_with_workspace(
             &clipped,
             input.rows(),
             input.cols(),
             &weights,
             params.order,
             output.as_mut_slice(),
+            &mut workspace,
         )?;
         tolerance = relative_change(&previous, output.as_slice());
         let residual: Vec<f64> = input
@@ -307,8 +318,15 @@ pub fn penalized_poly_into(
     let weights = vec![1.0; input.len()];
     let mut adjusted = input.as_slice().to_vec();
     let mut previous = vec![0.0; input.len()];
+    let mut workspace = SurfacePolynomialWorkspace::new(input.rows(), input.cols(), params.order);
     let mut tolerance = f64::INFINITY;
-    fit_weighted_polynomial(input, &weights, params.order, output.as_mut_slice())?;
+    fit_weighted_polynomial_with_workspace(
+        input,
+        &weights,
+        params.order,
+        output.as_mut_slice(),
+        &mut workspace,
+    )?;
 
     for iter in 0..params.max_iter {
         previous.copy_from_slice(output.as_slice());
@@ -325,13 +343,14 @@ pub fn penalized_poly_into(
                     params.alpha_factor,
                 );
         }
-        fit_weighted_surface(
+        fit_weighted_surface_with_workspace(
             &adjusted,
             input.rows(),
             input.cols(),
             &weights,
             params.order,
             output.as_mut_slice(),
+            &mut workspace,
         )?;
         tolerance = relative_change(&previous, output.as_slice());
         if iter > 0 && tolerance <= params.tol {
@@ -367,8 +386,15 @@ pub fn quant_reg_into(
     let epsilon = params
         .epsilon
         .unwrap_or_else(|| f64::EPSILON.sqrt() * signal_scale(input.as_slice()).max(1.0));
+    let mut workspace = SurfacePolynomialWorkspace::new(input.rows(), input.cols(), params.order);
 
-    fit_weighted_polynomial(input, &weights, params.order, output.as_mut_slice())?;
+    fit_weighted_polynomial_with_workspace(
+        input,
+        &weights,
+        params.order,
+        output.as_mut_slice(),
+        &mut workspace,
+    )?;
     let mut tolerance = f64::INFINITY;
     for iter in 0..params.max_iter {
         previous.copy_from_slice(output.as_slice());
@@ -386,7 +412,13 @@ pub fn quant_reg_into(
             *weight = quantile_weight / residual.abs().max(epsilon);
         }
 
-        fit_weighted_polynomial(input, &weights, params.order, output.as_mut_slice())?;
+        fit_weighted_polynomial_with_workspace(
+            input,
+            &weights,
+            params.order,
+            output.as_mut_slice(),
+            &mut workspace,
+        )?;
         tolerance = relative_change(&previous, output.as_slice());
         if iter > 0 && tolerance <= params.tol {
             return Ok(FitReport::new(iter + 1, true, tolerance));
@@ -473,43 +505,46 @@ fn validate_quant_reg_params(params: QuantReg2DParams) -> Result<()> {
     Ok(())
 }
 
-fn fit_weighted_polynomial(
+fn fit_weighted_polynomial_with_workspace(
     input: MatrixView<'_>,
     weights: &[f64],
     order: usize,
     baseline: &mut [f64],
+    workspace: &mut SurfacePolynomialWorkspace,
 ) -> Result<()> {
-    fit_weighted_surface(
+    fit_weighted_surface_with_workspace(
         input.as_slice(),
         input.rows(),
         input.cols(),
         weights,
         order,
         baseline,
+        workspace,
     )
 }
 
-fn fit_weighted_surface(
+fn fit_weighted_surface_with_workspace(
     data: &[f64],
     rows: usize,
     cols: usize,
     weights: &[f64],
     order: usize,
     baseline: &mut [f64],
+    workspace: &mut SurfacePolynomialWorkspace,
 ) -> Result<()> {
-    let terms = basis_terms(order);
-    let coeffs = fit_weighted_coefficients(data, rows, cols, weights, &terms)?;
-    evaluate_coefficients(rows, cols, &terms, &coeffs, baseline);
+    fit_weighted_coefficients_with_workspace(data, rows, cols, weights, order, workspace)?;
+    evaluate_coefficients_with_workspace(baseline, workspace);
     Ok(())
 }
 
-fn fit_weighted_coefficients(
+fn fit_weighted_coefficients_with_workspace(
     data: &[f64],
     rows: usize,
     cols: usize,
     weights: &[f64],
-    terms: &[(usize, usize)],
-) -> Result<Vec<f64>> {
+    order: usize,
+    workspace: &mut SurfacePolynomialWorkspace,
+) -> Result<()> {
     if weights.len() != data.len() {
         return Err(BaselineError::LengthMismatch {
             name: "weights",
@@ -517,48 +552,54 @@ fn fit_weighted_coefficients(
             actual: weights.len(),
         });
     }
-    let n_coeffs = terms.len();
-    let mut normal = vec![vec![0.0; n_coeffs]; n_coeffs];
-    let mut rhs = vec![0.0; n_coeffs];
-    let mut basis = vec![0.0; n_coeffs];
+    workspace.ensure_basis(rows, cols, order);
+    let n_coeffs = workspace.terms.len();
+    workspace.normal.fill(0.0);
+    workspace.rhs.fill(0.0);
 
-    for row in 0..rows {
-        let y = scaled_axis(row, rows);
-        for col in 0..cols {
-            let index = row * cols + col;
-            let weight = weights[index].max(0.0);
-            if weight <= f64::EPSILON {
-                continue;
-            }
-            let x = scaled_axis(col, cols);
-            fill_basis(x, y, terms, &mut basis);
-            for basis_row in 0..n_coeffs {
-                rhs[basis_row] += weight * data[index] * basis[basis_row];
-                for basis_col in 0..n_coeffs {
-                    normal[basis_row][basis_col] += weight * basis[basis_row] * basis[basis_col];
+    {
+        let basis_values = &workspace.basis_values;
+        let normal = &mut workspace.normal;
+        let rhs = &mut workspace.rhs;
+
+        for (index, (observed, weight)) in data.iter().zip(weights).enumerate() {
+            let weight = (*weight).max(0.0);
+            if weight > f64::EPSILON {
+                let basis_offset = index * n_coeffs;
+                let basis = &basis_values[basis_offset..basis_offset + n_coeffs];
+                let weighted_observed = weight * *observed;
+                for basis_row in 0..n_coeffs {
+                    let row_value = basis[basis_row];
+                    rhs[basis_row] += weighted_observed * row_value;
+                    let weighted_row = weight * row_value;
+                    for basis_col in 0..n_coeffs {
+                        normal[basis_row * n_coeffs + basis_col] += weighted_row * basis[basis_col];
+                    }
                 }
             }
         }
     }
 
-    solve_dense(normal, rhs)
+    solve_dense_in_place(
+        &mut workspace.normal,
+        &mut workspace.rhs,
+        &mut workspace.coeffs,
+        &mut workspace.pivot_row,
+    )
 }
 
-fn evaluate_coefficients(
-    rows: usize,
-    cols: usize,
-    terms: &[(usize, usize)],
-    coeffs: &[f64],
+fn evaluate_coefficients_with_workspace(
     baseline: &mut [f64],
+    workspace: &SurfacePolynomialWorkspace,
 ) {
-    let mut basis = vec![0.0; terms.len()];
-    for row in 0..rows {
-        let y = scaled_axis(row, rows);
-        for col in 0..cols {
-            let x = scaled_axis(col, cols);
-            fill_basis(x, y, terms, &mut basis);
-            baseline[row * cols + col] = coeffs.iter().zip(&basis).map(|(c, b)| c * b).sum();
-        }
+    let n_coeffs = workspace.terms.len();
+    for (index, fitted) in baseline.iter_mut().enumerate() {
+        let offset = index * n_coeffs;
+        *fitted = workspace.coeffs[..n_coeffs]
+            .iter()
+            .zip(&workspace.basis_values[offset..offset + n_coeffs])
+            .map(|(coefficient, basis)| coefficient * basis)
+            .sum();
     }
 }
 
@@ -572,17 +613,72 @@ fn basis_terms(order: usize) -> Vec<(usize, usize)> {
     terms
 }
 
-fn fill_basis(x: f64, y: f64, terms: &[(usize, usize)], output: &mut [f64]) {
-    for ((x_degree, y_degree), target) in terms.iter().zip(output) {
-        *target = x.powi(*x_degree as i32) * y.powi(*y_degree as i32);
-    }
-}
-
 fn scaled_axis(index: usize, len: usize) -> f64 {
     if len <= 1 {
         0.0
     } else {
         -1.0 + 2.0 * index as f64 / (len - 1) as f64
+    }
+}
+
+#[derive(Debug, Default)]
+struct SurfacePolynomialWorkspace {
+    cached_basis: Option<(usize, usize, usize)>,
+    terms: Vec<(usize, usize)>,
+    basis_values: Vec<f64>,
+    x_powers: Vec<f64>,
+    y_powers: Vec<f64>,
+    normal: Vec<f64>,
+    rhs: Vec<f64>,
+    coeffs: Vec<f64>,
+    pivot_row: Vec<f64>,
+}
+
+impl SurfacePolynomialWorkspace {
+    fn new(rows: usize, cols: usize, order: usize) -> Self {
+        let mut workspace = Self::default();
+        workspace.ensure_basis(rows, cols, order);
+        workspace
+    }
+
+    fn ensure_basis(&mut self, rows: usize, cols: usize, order: usize) {
+        if self.cached_basis == Some((rows, cols, order)) {
+            return;
+        }
+
+        self.terms = basis_terms(order);
+        let n_coeffs = self.terms.len();
+        self.basis_values.resize(rows * cols * n_coeffs, 0.0);
+        self.x_powers.resize(order + 1, 0.0);
+        self.y_powers.resize(order + 1, 0.0);
+        self.normal.resize(n_coeffs * n_coeffs, 0.0);
+        self.rhs.resize(n_coeffs, 0.0);
+        self.coeffs.resize(n_coeffs, 0.0);
+        self.pivot_row.resize(n_coeffs, 0.0);
+
+        for row in 0..rows {
+            fill_axis_powers(scaled_axis(row, rows), &mut self.y_powers);
+            for col in 0..cols {
+                fill_axis_powers(scaled_axis(col, cols), &mut self.x_powers);
+                let pixel_offset = (row * cols + col) * n_coeffs;
+                for (term_index, (x_degree, y_degree)) in self.terms.iter().enumerate() {
+                    self.basis_values[pixel_offset + term_index] =
+                        self.x_powers[*x_degree] * self.y_powers[*y_degree];
+                }
+            }
+        }
+
+        self.cached_basis = Some((rows, cols, order));
+    }
+}
+
+fn fill_axis_powers(value: f64, powers: &mut [f64]) {
+    if powers.is_empty() {
+        return;
+    }
+    powers[0] = 1.0;
+    for degree in 1..powers.len() {
+        powers[degree] = powers[degree - 1] * value;
     }
 }
 
