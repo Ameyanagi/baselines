@@ -23,6 +23,13 @@ cargo bench --bench baseline_workloads -- optimizers_misc_1d/beads_256 --profile
 sample <baseline_workloads-pid> 5 -file /tmp/baselines-beads.sample.txt
 cargo bench --bench baseline_workloads -- optimizers_misc_1d/beads_256 --save-baseline beads_after_banded_threshold
 cargo bench --bench baseline_workloads -- optimizers_misc_1d/beads_256 --baseline perf_before_opt
+cargo bench --bench baseline_workloads -- optimizers_misc_1d/beads_256 --save-baseline beads_current_profile
+cargo bench --bench baseline_workloads -- optimizers_misc_1d/beads_256 --profile-time 20
+sample <baseline_workloads-pid> 5 -file /tmp/baselines-beads-current.sample.txt
+cargo bench --bench baseline_workloads -- optimizers_misc_1d/beads_256 --save-baseline beads_after_direct_band_assembly
+cargo bench --bench baseline_workloads -- optimizers_misc_1d/beads_256 --baseline beads_current_profile
+cargo bench --bench baseline_workloads -- optimizers_misc_1d/beads_256 --profile-time 20
+sample <baseline_workloads-pid> 5 -file /tmp/baselines-beads-direct-band.sample.txt
 cargo bench --bench baseline_workloads -- polynomial_1d/goldindec_256 --profile-time 20
 sample <baseline_workloads-pid> 5 -file /tmp/baselines-goldindec.sample.txt
 cargo bench --bench baseline_workloads -- polynomial_1d/goldindec_256 --save-baseline goldindec_after_polynomial_workspace
@@ -182,6 +189,31 @@ BEADS optimization result:
 The retained change narrows BEADS dense compatibility to fixture-sized small
 inputs and sends the 256-point benchmark through the banded solver. Fixture
 compatibility remained passing for the pinned pybaselines references.
+
+BEADS follow-up profiling after the banded-solver threshold:
+
+- Target: `optimizers_misc_1d/beads_256`
+- Saved Criterion baseline before the change: `beads_current_profile`
+- `sample` captured 4230 samples from the normal Criterion profile run.
+- A temporary no-inline profile captured 3836 samples and attributed 1968
+  samples to `add_a_penalty_a_bands`, 911 samples to `solve_spd_banded`, and
+  313 samples to `add_btb_tridiagonal_bands`.
+- The retained change writes the BEADS penalty bands and `B^T B` bands
+  directly, and rewrites `A * penalty * A` assembly to use direct band indexing
+  instead of generic symmetric-band helpers.
+
+BEADS direct band assembly result:
+
+| Benchmark | Before mean | After mean | Change |
+| --- | ---: | ---: | ---: |
+| `optimizers_misc_1d/beads_256` | 594.097 us | 453.495 us | -23.67% |
+
+The follow-up profile captured 3800 samples after the change. The former
+`add_a_penalty_a_bands` and `add_btb_tridiagonal_bands` leaf costs were no
+longer visible as named hotspots in the normal optimized profile; remaining
+visible secondary costs were the tridiagonal solve, logarithms in the BEADS
+loss calculation, and small allocation/free stacks. Fixture compatibility
+remained passing for the pinned pybaselines references.
 
 P-spline solver optimization results:
 

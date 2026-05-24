@@ -360,27 +360,22 @@ fn beads_system_bands(
 ) -> Vec<Vec<f64>> {
     let mut penalty = zero_symmetric_bands(n, BEADS_PENALTY_BANDWIDTH);
     for (index, value) in inputs.diagonal.iter().enumerate() {
-        add_symmetric_band_value(&mut penalty, index, index, *value);
+        penalty[0][index] += *value;
     }
     for (index, value) in inputs.d1_x.iter().enumerate() {
         let weight = params.lam_1 * beads_weighting(*value, params.cost_function, params.eps_1);
-        add_symmetric_band_value(&mut penalty, index, index, weight);
-        add_symmetric_band_value(&mut penalty, index + 1, index + 1, weight);
-        add_symmetric_band_value(&mut penalty, index + 1, index, -weight);
+        penalty[0][index] += weight;
+        penalty[0][index + 1] += weight;
+        penalty[1][index + 1] -= weight;
     }
     for (index, value) in inputs.d2_x.iter().enumerate() {
         let weight = params.lam_2 * beads_weighting(*value, params.cost_function, params.eps_1);
-        let coeffs = [1.0, -2.0, 1.0];
-        for row in 0..3 {
-            for col in 0..=row {
-                add_symmetric_band_value(
-                    &mut penalty,
-                    index + row,
-                    index + col,
-                    weight * coeffs[row] * coeffs[col],
-                );
-            }
-        }
+        penalty[0][index] += weight;
+        penalty[0][index + 1] += 4.0 * weight;
+        penalty[0][index + 2] += weight;
+        penalty[1][index + 1] -= 2.0 * weight;
+        penalty[1][index + 2] -= 2.0 * weight;
+        penalty[2][index + 2] += weight;
     }
 
     let mut system = zero_symmetric_bands(n, BEADS_SYSTEM_BANDWIDTH);
@@ -391,19 +386,6 @@ fn beads_system_bands(
 
 fn zero_symmetric_bands(n: usize, bandwidth: usize) -> Vec<Vec<f64>> {
     vec![vec![0.0; n]; bandwidth + 1]
-}
-
-fn add_symmetric_band_value(bands: &mut [Vec<f64>], row: usize, col: usize, value: f64) {
-    let (lower, upper) = if row >= col { (row, col) } else { (col, row) };
-    let offset = lower - upper;
-    debug_assert!(
-        offset < bands.len(),
-        "band offset {offset} exceeds bandwidth {}",
-        bands.len() - 1
-    );
-    if offset < bands.len() {
-        bands[offset][lower] += value;
-    }
 }
 
 fn set_symmetric_band_value(bands: &mut [Vec<f64>], row: usize, col: usize, value: f64) {
@@ -431,14 +413,25 @@ fn symmetric_band_value(bands: &[Vec<f64>], row: usize, col: usize) -> f64 {
 
 fn add_btb_tridiagonal_bands(system: &mut [Vec<f64>], coefficients: TridiagonalCoefficients) {
     let n = system[0].len();
-    for row in 0..n {
-        for col in row.saturating_sub(2)..=row {
-            let mut value = 0.0;
-            for mid in row.saturating_sub(1)..=(row + 1).min(n - 1) {
-                value += tridiagonal_value(coefficients, row, mid)
-                    * tridiagonal_value(coefficients, mid, col);
-            }
-            add_symmetric_band_value(system, row, col, value);
+    let offdiag_sq = coefficients.offdiag * coefficients.offdiag;
+    let diagonal_sq = coefficients.diag * coefficients.diag;
+    let first_offdiag = 2.0 * coefficients.offdiag * coefficients.diag;
+    let (diag_bands, offdiag_bands) = system.split_at_mut(1);
+    let diagonal = &mut diag_bands[0];
+    let (first_bands, second_bands) = offdiag_bands.split_at_mut(1);
+    let first = &mut first_bands[0];
+    let second = &mut second_bands[0];
+    for (row, diagonal_value) in diagonal.iter_mut().enumerate() {
+        *diagonal_value += diagonal_sq;
+        if row > 0 {
+            *diagonal_value += offdiag_sq;
+            first[row] += first_offdiag;
+        }
+        if row + 1 < n {
+            *diagonal_value += offdiag_sq;
+        }
+        if row >= 2 {
+            second[row] += offdiag_sq;
         }
     }
 }
@@ -449,34 +442,28 @@ fn add_a_penalty_a_bands(
     penalty: &[Vec<f64>],
 ) {
     let n = system[0].len();
+    let a_offdiag = coefficients.offdiag;
+    let a_diag = coefficients.diag;
     for row in 0..n {
         for col in row.saturating_sub(BEADS_SYSTEM_BANDWIDTH)..=row {
             let mut value = 0.0;
-            for left in row.saturating_sub(1)..=(row + 1).min(n - 1) {
-                let a_left = tridiagonal_value(coefficients, row, left);
-                if a_left == 0.0 {
-                    continue;
-                }
-                for right in col.saturating_sub(1)..=(col + 1).min(n - 1) {
-                    let a_right = tridiagonal_value(coefficients, right, col);
-                    if a_right == 0.0 {
-                        continue;
+            let left_start = row.saturating_sub(1);
+            let left_end = (row + 1).min(n - 1);
+            let right_start = col.saturating_sub(1);
+            let right_end = (col + 1).min(n - 1);
+            for left in left_start..=left_end {
+                let a_left = if left == row { a_diag } else { a_offdiag };
+                for right in right_start..=right_end {
+                    let offset = left.abs_diff(right);
+                    if offset <= BEADS_PENALTY_BANDWIDTH {
+                        let lower = left.max(right);
+                        let a_right = if right == col { a_diag } else { a_offdiag };
+                        value += a_left * penalty[offset][lower] * a_right;
                     }
-                    value += a_left * symmetric_band_value(penalty, left, right) * a_right;
                 }
             }
-            add_symmetric_band_value(system, row, col, value);
+            system[row - col][row] += value;
         }
-    }
-}
-
-fn tridiagonal_value(coefficients: TridiagonalCoefficients, row: usize, col: usize) -> f64 {
-    if row == col {
-        coefficients.diag
-    } else if row.abs_diff(col) == 1 {
-        coefficients.offdiag
-    } else {
-        0.0
     }
 }
 
@@ -719,4 +706,114 @@ fn reflect_index(index: isize, len: usize) -> usize {
         value = period - value;
     }
     value as usize
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn beads_system_bands_matches_dense_reference() {
+        let n = 7;
+        let coefficients = BeadsSystemCoefficients {
+            a: TridiagonalCoefficients {
+                offdiag: -0.21,
+                diag: 1.64,
+            },
+            b: TridiagonalCoefficients {
+                offdiag: -1.0,
+                diag: 2.0,
+            },
+        };
+        let diagonal = [1.1, 0.7, 1.8, 0.9, 1.3, 1.6, 0.8];
+        let d1_x = [0.4, 0.9, 1.2, 0.6, 1.5, 0.8];
+        let d2_x = [0.7, 1.1, 0.5, 1.6, 0.9];
+        let params = BeadsPenaltyParams {
+            lam_1: 0.8,
+            lam_2: 1.4,
+            cost_function: BeadsCostFunction::L1V2,
+            eps_1: 1.0e-3,
+        };
+
+        let bands = beads_system_bands(
+            n,
+            coefficients,
+            BeadsPenaltyInputs {
+                d1_x: &d1_x,
+                d2_x: &d2_x,
+                diagonal: &diagonal,
+            },
+            params,
+        );
+        let expected = dense_beads_system(n, coefficients, &diagonal, &d1_x, &d2_x, params);
+
+        for row in 0..n {
+            for col in row.saturating_sub(BEADS_SYSTEM_BANDWIDTH)..=row {
+                let actual = bands[row - col][row];
+                let expected = expected[row][col];
+                assert!(
+                    (actual - expected).abs() < 1.0e-9,
+                    "band ({row}, {col}) mismatch: actual={actual}, expected={expected}"
+                );
+            }
+        }
+    }
+
+    fn dense_beads_system(
+        n: usize,
+        coefficients: BeadsSystemCoefficients,
+        diagonal: &[f64],
+        d1_x: &[f64],
+        d2_x: &[f64],
+        params: BeadsPenaltyParams,
+    ) -> Vec<Vec<f64>> {
+        let mut penalty = vec![vec![0.0; n]; n];
+        for (index, &value) in diagonal.iter().enumerate() {
+            penalty[index][index] += value;
+        }
+        for (index, &value) in d1_x.iter().enumerate() {
+            let weight = params.lam_1 * beads_weighting(value, params.cost_function, params.eps_1);
+            penalty[index][index] += weight;
+            penalty[index + 1][index + 1] += weight;
+            penalty[index + 1][index] -= weight;
+            penalty[index][index + 1] -= weight;
+        }
+        for (index, &value) in d2_x.iter().enumerate() {
+            let weight = params.lam_2 * beads_weighting(value, params.cost_function, params.eps_1);
+            let coeffs = [1.0, -2.0, 1.0];
+            for row in 0..3 {
+                for col in 0..3 {
+                    penalty[index + row][index + col] += weight * coeffs[row] * coeffs[col];
+                }
+            }
+        }
+
+        let mut expected = vec![vec![0.0; n]; n];
+        for (row, expected_row) in expected.iter_mut().enumerate() {
+            for (col, expected_cell) in expected_row.iter_mut().enumerate() {
+                for mid in 0..n {
+                    *expected_cell += tridiagonal_dense(coefficients.b, mid, row)
+                        * tridiagonal_dense(coefficients.b, mid, col);
+                }
+                for (left, penalty_row) in penalty.iter().enumerate() {
+                    for (right, penalty_value) in penalty_row.iter().enumerate() {
+                        *expected_cell += tridiagonal_dense(coefficients.a, row, left)
+                            * penalty_value
+                            * tridiagonal_dense(coefficients.a, right, col);
+                    }
+                }
+            }
+        }
+        expected
+    }
+
+    fn tridiagonal_dense(coefficients: TridiagonalCoefficients, row: usize, col: usize) -> f64 {
+        if row == col {
+            coefficients.diag
+        } else if row.abs_diff(col) == 1 {
+            coefficients.offdiag
+        } else {
+            0.0
+        }
+    }
 }

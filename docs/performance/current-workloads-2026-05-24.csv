@@ -29,7 +29,7 @@ optimizers_2d/adaptive_minmax_16x16,68216.20739413162
 optimizers_2d/collab_pls_2x16x16,1063533.2921568626
 optimizers_2d/individual_axes_16x16,41985.01053174603
 optimizers_misc_1d/adaptive_minmax_256,12496.924740719234
-optimizers_misc_1d/beads_256,619322.9487830688
+optimizers_misc_1d/beads_256,453495.0611815476
 optimizers_misc_1d/collab_pls_3x256,56895.07160641251
 optimizers_misc_1d/custom_bc_256,41967.99120100422
 optimizers_misc_1d/custom_bc_with_256,42172.74958979643
