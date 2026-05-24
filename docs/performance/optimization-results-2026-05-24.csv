@@ -19,3 +19,13 @@ spline_2d/pspline_brpls_16x16,522743,321805,-38.44,2a9564b
 spline_2d/pspline_lsrpls_16x16,88214,61569,-30.20,2a9564b
 spline_2d/irsqr_16x16,428911,288705,-32.69,2a9564b
 spline_2d/mixture_model_16x16,89067,58332,-34.51,2a9564b
+whittaker_2d/asls_16x16,819674,666876,-18.64,bece835
+whittaker_2d/iasls_16x16,821791,663294,-19.29,bece835
+whittaker_2d/airpls_16x16,1180308,978738,-17.08,bece835
+whittaker_2d/arpls_16x16,6647698,5399629,-18.77,bece835
+whittaker_2d/drpls_16x16,1373644,1114648,-18.85,bece835
+whittaker_2d/iarpls_16x16,1636827,1312802,-19.80,bece835
+whittaker_2d/aspls_16x16,2236234,1795232,-19.72,bece835
+whittaker_2d/psalsa_16x16,2093622,1700623,-18.77,bece835
+whittaker_2d/brpls_16x16,8232144,6700514,-18.61,bece835
+whittaker_2d/lsrpls_16x16,821803,671233,-18.32,bece835

@@ -37,6 +37,10 @@ cargo bench --bench baseline_workloads -- spline_2d/pspline_iarpls_16x16 --profi
 sample <baseline_workloads-pid> 5 -file /tmp/baselines-pspline-iarpls2d.sample.txt
 cargo bench --bench baseline_workloads -- spline_2d --baseline perf_before_opt
 cargo bench --bench baseline_workloads -- spline_2d --save-baseline pspline2d_after_workspace
+cargo bench --bench baseline_workloads -- whittaker_2d/arpls_16x16 --profile-time 20
+sample <baseline_workloads-pid> 5 -file /tmp/baselines-arpls2d.sample.txt
+cargo bench --bench baseline_workloads -- whittaker_2d --baseline perf_before_opt
+cargo bench --bench baseline_workloads -- whittaker_2d --save-baseline whittaker2d_after_cg_fusion
 ```
 
 Full saved baseline means are in
@@ -148,6 +152,32 @@ references.
 - `sample` captured 3831 samples from the Criterion profile run.
 - The profile was dominated by `solve_weighted_system`, with 2373 samples in
   `apply_operator` and 1429 samples in the surrounding conjugate-gradient loop.
+- Target: `whittaker_2d/arpls_16x16`
+- `sample` captured 4216 samples from the Criterion profile run.
+- The profile had the same matrix-free CG shape, with 2632 samples in
+  `apply_operator` and 1557 samples in the surrounding `solve_weighted_system`
+  dot/update loops.
+
+2D Whittaker CG loop-fusion optimization results:
+
+| Benchmark | Before mean | After mean | Change |
+| --- | ---: | ---: | ---: |
+| `whittaker_2d/asls_16x16` | 819.674 us | 666.876 us | -18.64% |
+| `whittaker_2d/iasls_16x16` | 821.791 us | 663.294 us | -19.29% |
+| `whittaker_2d/airpls_16x16` | 1.180 ms | 0.979 ms | -17.08% |
+| `whittaker_2d/arpls_16x16` | 6.648 ms | 5.400 ms | -18.77% |
+| `whittaker_2d/drpls_16x16` | 1.374 ms | 1.115 ms | -18.85% |
+| `whittaker_2d/iarpls_16x16` | 1.637 ms | 1.313 ms | -19.80% |
+| `whittaker_2d/aspls_16x16` | 2.236 ms | 1.795 ms | -19.72% |
+| `whittaker_2d/psalsa_16x16` | 2.094 ms | 1.701 ms | -18.77% |
+| `whittaker_2d/brpls_16x16` | 8.232 ms | 6.701 ms | -18.61% |
+| `whittaker_2d/lsrpls_16x16` | 821.803 us | 671.233 us | -18.32% |
+
+The retained change fuses CG dot products and residual-norm accumulation into
+the existing operator and update loops. This reduces row-major passes over the
+image-sized vectors without changing the matrix-free operator or public API.
+`arpls_eigen` uses a separate eigenspace solver and showed no significant
+change in the same benchmark group comparison.
 
 Rejected or no-op 2D experiments:
 
