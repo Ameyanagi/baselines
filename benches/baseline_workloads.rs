@@ -55,6 +55,11 @@ fn bench_whittaker_1d(c: &mut Criterion) {
     group.bench_function("asls_256", |bench| {
         bench.iter(|| whit::asls(black_box(y.as_slice()), whit::AslsParams::default()).unwrap())
     });
+    group.bench_function("asls_with_history_256", |bench| {
+        bench.iter(|| {
+            whit::asls_with_history(black_box(y.as_slice()), whit::AslsParams::default()).unwrap()
+        })
+    });
     group.bench_function("airpls_256", |bench| {
         bench.iter(|| whit::airpls(black_box(y.as_slice()), whit::AirPlsParams::default()).unwrap())
     });
@@ -72,6 +77,11 @@ fn bench_whittaker_1d(c: &mut Criterion) {
     });
     group.bench_function("aspls_256", |bench| {
         bench.iter(|| whit::aspls(black_box(y.as_slice()), whit::AsPlsParams::default()).unwrap())
+    });
+    group.bench_function("aspls_with_history_256", |bench| {
+        bench.iter(|| {
+            whit::aspls_with_history(black_box(y.as_slice()), whit::AsPlsParams::default()).unwrap()
+        })
     });
     group.bench_function("psalsa_256", |bench| {
         bench.iter(|| whit::psalsa(black_box(y.as_slice()), whit::PsalsaParams::default()).unwrap())
@@ -463,6 +473,14 @@ fn bench_optimizers_and_misc_1d(c: &mut Criterion) {
     });
     group.bench_function("custom_bc_256", |bench| {
         bench.iter(|| opt::custom_bc(black_box(y.as_slice()), custom_bc.clone()).unwrap())
+    });
+    group.bench_function("custom_bc_with_256", |bench| {
+        bench.iter(|| {
+            opt::custom_bc_with(black_box(y.as_slice()), custom_bc.clone(), |values| {
+                whit::asls(values, whit::AslsParams::default())
+            })
+            .unwrap()
+        })
     });
     group.bench_function("adaptive_minmax_256", |bench| {
         bench.iter(|| {
