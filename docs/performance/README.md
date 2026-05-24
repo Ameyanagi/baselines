@@ -86,6 +86,10 @@ cargo bench --bench baseline_workloads -- whittaker_1d --save-baseline coverage_
 cargo bench --bench baseline_workloads -- optimizers_misc_1d --save-baseline coverage_after_history_custom
 cargo bench --bench baseline_workloads whittaker_1d_into -- --save-baseline whittaker_into_coverage_2026_05_24
 cargo bench --bench baseline_workloads whittaker_2d_into -- --save-baseline whittaker_into_coverage_2026_05_24
+cargo bench --bench baseline_workloads polynomial_2d_into -- --save-baseline nonwhittaker_2d_into_coverage_2026_05_24
+cargo bench --bench baseline_workloads morphology_2d_into -- --save-baseline nonwhittaker_2d_into_coverage_2026_05_24
+cargo bench --bench baseline_workloads spline_2d_into -- --save-baseline nonwhittaker_2d_into_coverage_2026_05_24
+cargo bench --bench baseline_workloads optimizers_2d_into -- --save-baseline nonwhittaker_2d_into_coverage_2026_05_24
 cargo doc --workspace --all-features --no-deps
 cargo package --allow-dirty
 cargo bench --bench baseline_workloads -- --save-baseline perf_current_2026_05_24
@@ -101,9 +105,9 @@ Rejected optimization experiments are in
 [`rejected-experiments-2026-05-24.csv`](rejected-experiments-2026-05-24.csv).
 Benchmark coverage additions made after the initial full baseline run are in
 [`coverage-additions-2026-05-24.csv`](coverage-additions-2026-05-24.csv).
-That file now includes Whittaker 1D and 2D reusable-output `*_into`
-benchmarks, which measure the allocation-reuse API surface separately from the
-allocating fit APIs.
+That file now includes Whittaker and non-Whittaker reusable-output `*_into`
+benchmarks, which measure the allocation-reuse API surface separately from
+the allocating fit APIs.
 
 Top slow paths before optimization:
 

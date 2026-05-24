@@ -49,6 +49,22 @@ fn matrix(data: &[f64], rows: usize, cols: usize) -> MatrixView<'_> {
     MatrixView::row_major(data, rows, cols).unwrap()
 }
 
+macro_rules! bench_2d_into {
+    ($group:expr, $name:literal, $input:expr, $rows:expr, $cols:expr, |$values:ident, $output:ident| $body:expr) => {{
+        let input = $input;
+        let mut baseline = vec![0.0; input.len()];
+        $group.bench_function($name, move |bench| {
+            bench.iter(|| {
+                let $values = black_box(input);
+                let $output =
+                    MatrixViewMut::row_major(black_box(baseline.as_mut_slice()), $rows, $cols)
+                        .unwrap();
+                $body.unwrap()
+            })
+        });
+    }};
+}
+
 fn bench_whittaker_1d(c: &mut Criterion) {
     let y = signal(256);
     let mut group = c.benchmark_group("whittaker_1d");
@@ -924,6 +940,63 @@ fn bench_polynomial_2d(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_polynomial_2d_into(c: &mut Criterion) {
+    let rows = 16;
+    let cols = 16;
+    let data = surface(rows, cols);
+    let input = matrix(&data, rows, cols);
+    let mut group = c.benchmark_group("polynomial_2d_into");
+    bench_2d_into!(
+        group,
+        "poly_into_16x16",
+        input,
+        rows,
+        cols,
+        |values, output| poly2d::poly_into(values, poly2d::Poly2DParams::default(), output)
+    );
+    bench_2d_into!(
+        group,
+        "modpoly_into_16x16",
+        input,
+        rows,
+        cols,
+        |values, output| poly2d::modpoly_into(values, poly2d::ModPoly2DParams::default(), output)
+    );
+    bench_2d_into!(
+        group,
+        "imodpoly_into_16x16",
+        input,
+        rows,
+        cols,
+        |values, output| poly2d::imodpoly_into(values, poly2d::ImodPoly2DParams::default(), output)
+    );
+    bench_2d_into!(
+        group,
+        "penalized_poly_into_16x16",
+        input,
+        rows,
+        cols,
+        |values, output| poly2d::penalized_poly_into(
+            values,
+            poly2d::PenalizedPoly2DParams::default(),
+            output,
+        )
+    );
+    bench_2d_into!(
+        group,
+        "quant_reg_into_16x16",
+        input,
+        rows,
+        cols,
+        |values, output| poly2d::quant_reg_into(
+            values,
+            poly2d::QuantReg2DParams::default(),
+            output,
+        )
+    );
+    group.finish();
+}
+
 fn bench_morphology_2d(c: &mut Criterion) {
     let rows = 16;
     let cols = 16;
@@ -949,6 +1022,59 @@ fn bench_morphology_2d(c: &mut Criterion) {
     group.bench_function("noise_median_16x16", |bench| {
         bench.iter(|| morph2d::noise_median(black_box(input), params).unwrap())
     });
+    group.finish();
+}
+
+fn bench_morphology_2d_into(c: &mut Criterion) {
+    let rows = 16;
+    let cols = 16;
+    let data = surface(rows, cols);
+    let input = matrix(&data, rows, cols);
+    let params = morph2d::Morphology2DParams {
+        window_rows: 5,
+        window_cols: 5,
+    };
+    let mut group = c.benchmark_group("morphology_2d_into");
+    bench_2d_into!(
+        group,
+        "rolling_ball_into_16x16",
+        input,
+        rows,
+        cols,
+        |values, output| morph2d::rolling_ball_into(values, params, output)
+    );
+    bench_2d_into!(
+        group,
+        "tophat_into_16x16",
+        input,
+        rows,
+        cols,
+        |values, output| morph2d::tophat_into(values, params, output)
+    );
+    bench_2d_into!(
+        group,
+        "mor_into_16x16",
+        input,
+        rows,
+        cols,
+        |values, output| morph2d::mor_into(values, params, output)
+    );
+    bench_2d_into!(
+        group,
+        "imor_into_16x16",
+        input,
+        rows,
+        cols,
+        |values, output| morph2d::imor_into(values, morph2d::Imor2DParams::default(), output)
+    );
+    bench_2d_into!(
+        group,
+        "noise_median_into_16x16",
+        input,
+        rows,
+        cols,
+        |values, output| morph2d::noise_median_into(values, params, output)
+    );
     group.finish();
 }
 
@@ -1019,6 +1145,175 @@ fn bench_spline_2d(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_spline_2d_into(c: &mut Criterion) {
+    let rows = 16;
+    let cols = 16;
+    let data = surface(rows, cols);
+    let input = matrix(&data, rows, cols);
+    let mut group = c.benchmark_group("spline_2d_into");
+    {
+        let mut workspace = spline2d::Spline2DWorkspace::new(rows, cols);
+        bench_2d_into!(
+            group,
+            "pspline_asls_into_16x16",
+            input,
+            rows,
+            cols,
+            |values, output| spline2d::pspline_asls_into(
+                values,
+                spline2d::PsplineAsls2DParams::default(),
+                output,
+                &mut workspace,
+            )
+        );
+    }
+    {
+        let mut workspace = spline2d::Spline2DWorkspace::new(rows, cols);
+        bench_2d_into!(
+            group,
+            "pspline_iasls_into_16x16",
+            input,
+            rows,
+            cols,
+            |values, output| spline2d::pspline_iasls_into(
+                values,
+                spline2d::PsplineIasls2DParams::default(),
+                output,
+                &mut workspace,
+            )
+        );
+    }
+    {
+        let mut workspace = spline2d::Spline2DWorkspace::new(rows, cols);
+        bench_2d_into!(
+            group,
+            "pspline_airpls_into_16x16",
+            input,
+            rows,
+            cols,
+            |values, output| spline2d::pspline_airpls_into(
+                values,
+                spline2d::PsplineAirPls2DParams::default(),
+                output,
+                &mut workspace,
+            )
+        );
+    }
+    {
+        let mut workspace = spline2d::Spline2DWorkspace::new(rows, cols);
+        bench_2d_into!(
+            group,
+            "pspline_arpls_into_16x16",
+            input,
+            rows,
+            cols,
+            |values, output| spline2d::pspline_arpls_into(
+                values,
+                spline2d::PsplineArPls2DParams::default(),
+                output,
+                &mut workspace,
+            )
+        );
+    }
+    {
+        let mut workspace = spline2d::Spline2DWorkspace::new(rows, cols);
+        bench_2d_into!(
+            group,
+            "pspline_iarpls_into_16x16",
+            input,
+            rows,
+            cols,
+            |values, output| spline2d::pspline_iarpls_into(
+                values,
+                spline2d::PsplineIarPls2DParams::default(),
+                output,
+                &mut workspace,
+            )
+        );
+    }
+    {
+        let mut workspace = spline2d::Spline2DWorkspace::new(rows, cols);
+        bench_2d_into!(
+            group,
+            "pspline_psalsa_into_16x16",
+            input,
+            rows,
+            cols,
+            |values, output| spline2d::pspline_psalsa_into(
+                values,
+                spline2d::PsplinePsalsa2DParams::default(),
+                output,
+                &mut workspace,
+            )
+        );
+    }
+    {
+        let mut workspace = spline2d::Spline2DWorkspace::new(rows, cols);
+        bench_2d_into!(
+            group,
+            "pspline_brpls_into_16x16",
+            input,
+            rows,
+            cols,
+            |values, output| spline2d::pspline_brpls_into(
+                values,
+                spline2d::PsplineBrPls2DParams::default(),
+                output,
+                &mut workspace,
+            )
+        );
+    }
+    {
+        let mut workspace = spline2d::Spline2DWorkspace::new(rows, cols);
+        bench_2d_into!(
+            group,
+            "pspline_lsrpls_into_16x16",
+            input,
+            rows,
+            cols,
+            |values, output| spline2d::pspline_lsrpls_into(
+                values,
+                spline2d::PsplineLsrPls2DParams::default(),
+                output,
+                &mut workspace,
+            )
+        );
+    }
+    {
+        let mut workspace = spline2d::Spline2DWorkspace::new(rows, cols);
+        bench_2d_into!(
+            group,
+            "irsqr_into_16x16",
+            input,
+            rows,
+            cols,
+            |values, output| spline2d::irsqr_into(
+                values,
+                spline2d::Irsqr2DParams::default(),
+                output,
+                &mut workspace,
+            )
+        );
+    }
+    {
+        let mut workspace = spline2d::Spline2DWorkspace::new(rows, cols);
+        bench_2d_into!(
+            group,
+            "mixture_model_into_16x16",
+            input,
+            rows,
+            cols,
+            |values, output| spline2d::mixture_model_into(
+                values,
+                spline2d::MixtureModel2DParams::default(),
+                output,
+                &mut workspace,
+            )
+        );
+    }
+    group.finish();
+}
+
 fn bench_optimizers_2d(c: &mut Criterion) {
     let rows = 16;
     let cols = 16;
@@ -1049,6 +1344,39 @@ fn bench_optimizers_2d(c: &mut Criterion) {
             .unwrap()
         })
     });
+    group.finish();
+}
+
+fn bench_optimizers_2d_into(c: &mut Criterion) {
+    let rows = 16;
+    let cols = 16;
+    let data = surface(rows, cols);
+    let input = matrix(&data, rows, cols);
+    let mut group = c.benchmark_group("optimizers_2d_into");
+    bench_2d_into!(
+        group,
+        "adaptive_minmax_into_16x16",
+        input,
+        rows,
+        cols,
+        |values, output| opt2d::adaptive_minmax_into(
+            values,
+            opt2d::AdaptiveMinmax2DParams::default(),
+            output,
+        )
+    );
+    bench_2d_into!(
+        group,
+        "individual_axes_into_16x16",
+        input,
+        rows,
+        cols,
+        |values, output| opt2d::individual_axes_into(
+            values,
+            opt2d::IndividualAxes2DParams::default(),
+            output,
+        )
+    );
     group.finish();
 }
 
@@ -1096,9 +1424,13 @@ criterion_group! {
         bench_whittaker_2d,
         bench_whittaker_2d_into,
         bench_polynomial_2d,
+        bench_polynomial_2d_into,
         bench_morphology_2d,
+        bench_morphology_2d_into,
         bench_spline_2d,
+        bench_spline_2d_into,
         bench_optimizers_2d,
+        bench_optimizers_2d_into,
         bench_batch_cpu
 }
 criterion_main!(benches);
