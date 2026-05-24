@@ -49,6 +49,20 @@ fn matrix(data: &[f64], rows: usize, cols: usize) -> MatrixView<'_> {
     MatrixView::row_major(data, rows, cols).unwrap()
 }
 
+macro_rules! bench_1d_into {
+    ($group:expr, $name:literal, $input:expr, |$values:ident, $output:ident| $body:expr) => {{
+        let input = $input;
+        let mut baseline = vec![0.0; input.len()];
+        $group.bench_function($name, move |bench| {
+            bench.iter(|| {
+                let $values = black_box(input);
+                let $output = black_box(baseline.as_mut_slice());
+                $body.unwrap()
+            })
+        });
+    }};
+}
+
 macro_rules! bench_2d_into {
     ($group:expr, $name:literal, $input:expr, $rows:expr, $cols:expr, |$values:ident, $output:ident| $body:expr) => {{
         let input = $input;
@@ -280,6 +294,34 @@ fn bench_polynomial_1d(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_polynomial_1d_into(c: &mut Criterion) {
+    let y = signal(256);
+    let input = y.as_slice();
+    let mut group = c.benchmark_group("polynomial_1d_into");
+    bench_1d_into!(group, "poly_into_256", input, |values, output| {
+        poly::poly_into(values, poly::PolyParams::default(), output)
+    });
+    bench_1d_into!(group, "modpoly_into_256", input, |values, output| {
+        poly::modpoly_into(values, poly::ModPolyParams::default(), output)
+    });
+    bench_1d_into!(group, "imodpoly_into_256", input, |values, output| {
+        poly::imodpoly_into(values, poly::ImodPolyParams::default(), output)
+    });
+    bench_1d_into!(group, "penalized_poly_into_256", input, |values, output| {
+        poly::penalized_poly_into(values, poly::PenalizedPolyParams::default(), output)
+    });
+    bench_1d_into!(group, "loess_into_256", input, |values, output| {
+        poly::loess_into(values, poly::LoessParams::default(), output)
+    });
+    bench_1d_into!(group, "quant_reg_into_256", input, |values, output| {
+        poly::quant_reg_into(values, poly::QuantRegParams::default(), output)
+    });
+    bench_1d_into!(group, "goldindec_into_256", input, |values, output| {
+        poly::goldindec_into(values, poly::GoldindecParams::default(), output)
+    });
+    group.finish();
+}
+
 fn bench_morphology_1d(c: &mut Criterion) {
     let y = signal(256);
     let mut group = c.benchmark_group("morphology_1d");
@@ -379,6 +421,47 @@ fn bench_morphology_1d(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_morphology_1d_into(c: &mut Criterion) {
+    let y = signal(256);
+    let input = y.as_slice();
+    let params = morph::MorphologyParams { window_size: 17 };
+    let mut group = c.benchmark_group("morphology_1d_into");
+    bench_1d_into!(group, "rolling_ball_into_256", input, |values, output| {
+        morph::rolling_ball_into(values, params, output)
+    });
+    bench_1d_into!(group, "tophat_into_256", input, |values, output| {
+        morph::tophat_into(values, params, output)
+    });
+    bench_1d_into!(group, "mwmv_into_256", input, |values, output| {
+        morph::mwmv_into(values, params, output)
+    });
+    bench_1d_into!(group, "mor_into_256", input, |values, output| {
+        morph::mor_into(values, params, output)
+    });
+    bench_1d_into!(group, "mpls_into_256", input, |values, output| {
+        morph::mpls_into(values, params, output)
+    });
+    bench_1d_into!(group, "imor_into_256", input, |values, output| {
+        morph::imor_into(values, params, output)
+    });
+    bench_1d_into!(group, "mormol_into_256", input, |values, output| {
+        morph::mormol_into(values, params, output)
+    });
+    bench_1d_into!(group, "amormol_into_256", input, |values, output| {
+        morph::amormol_into(values, params, output)
+    });
+    bench_1d_into!(group, "mpspline_into_256", input, |values, output| {
+        morph::mpspline_into(values, params, output)
+    });
+    bench_1d_into!(group, "jbcd_into_256", input, |values, output| {
+        morph::jbcd_into(values, params, output)
+    });
+    bench_1d_into!(group, "snip_into_256", input, |values, output| {
+        morph::snip_into(values, morph::SnipParams::default(), output)
+    });
+    group.finish();
+}
+
 fn bench_smoothing_1d(c: &mut Criterion) {
     let y = signal(256);
     let mut group = c.benchmark_group("smoothing_1d");
@@ -431,6 +514,25 @@ fn bench_smoothing_1d(c: &mut Criterion) {
             )
             .unwrap()
         })
+    });
+    group.finish();
+}
+
+fn bench_smoothing_1d_into(c: &mut Criterion) {
+    let y = signal(256);
+    let input = y.as_slice();
+    let mut group = c.benchmark_group("smoothing_1d_into");
+    bench_1d_into!(group, "noise_median_into_256", input, |values, output| {
+        smoothing::noise_median_into(values, smoothing::SmoothingParams::default(), output)
+    });
+    bench_1d_into!(group, "snip_into_256", input, |values, output| {
+        smoothing::snip_into(values, morph::SnipParams::default(), output)
+    });
+    bench_1d_into!(group, "swima_into_256", input, |values, output| {
+        smoothing::swima_into(values, smoothing::SmoothingParams::default(), output)
+    });
+    bench_1d_into!(group, "ria_into_256", input, |values, output| {
+        smoothing::ria_into(values, smoothing::SmoothingParams::default(), output)
     });
     group.finish();
 }
@@ -1416,8 +1518,11 @@ criterion_group! {
         bench_whittaker_1d,
         bench_whittaker_1d_into,
         bench_polynomial_1d,
+        bench_polynomial_1d_into,
         bench_morphology_1d,
+        bench_morphology_1d_into,
         bench_smoothing_1d,
+        bench_smoothing_1d_into,
         bench_spline_1d,
         bench_classification_1d,
         bench_optimizers_and_misc_1d,
