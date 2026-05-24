@@ -41,6 +41,10 @@ cargo bench --bench baseline_workloads -- whittaker_2d/arpls_16x16 --profile-tim
 sample <baseline_workloads-pid> 5 -file /tmp/baselines-arpls2d.sample.txt
 cargo bench --bench baseline_workloads -- whittaker_2d --baseline perf_before_opt
 cargo bench --bench baseline_workloads -- whittaker_2d --save-baseline whittaker2d_after_cg_fusion
+cargo bench --bench baseline_workloads -- whittaker_2d/brpls_16x16 --profile-time 20
+sample <baseline_workloads-pid> 5 -file /tmp/baselines-brpls2d-current.sample.txt
+cargo bench --bench baseline_workloads -- whittaker_2d --baseline whittaker2d_after_cg_fusion
+cargo bench --bench baseline_workloads -- whittaker_2d --save-baseline whittaker2d_after_clamped_weights
 ```
 
 Full saved baseline means are in
@@ -178,6 +182,26 @@ the existing operator and update loops. This reduces row-major passes over the
 image-sized vectors without changing the matrix-free operator or public API.
 `arpls_eigen` uses a separate eigenspace solver and showed no significant
 change in the same benchmark group comparison.
+
+After CG loop fusion, `whittaker_2d/brpls_16x16` was profiled again. `sample`
+captured 4215 samples, all still in `solve_weighted_system`, confirming the
+remaining hotspot was the same image-sized CG/operator loop. Pre-clamping
+weights once per reweighting iteration, instead of applying `max(MIN_WEIGHT)`
+inside every CG operator application, produced this incremental result against
+`whittaker2d_after_cg_fusion`:
+
+| Benchmark | Before mean | After mean | Incremental change |
+| --- | ---: | ---: | ---: |
+| `whittaker_2d/asls_16x16` | 666.876 us | 651.440 us | -2.31% |
+| `whittaker_2d/iasls_16x16` | 663.294 us | 651.268 us | -1.81% |
+| `whittaker_2d/airpls_16x16` | 978.738 us | 941.755 us | -3.78% |
+| `whittaker_2d/arpls_16x16` | 5.400 ms | 5.243 ms | -2.90% |
+| `whittaker_2d/drpls_16x16` | 1.115 ms | 1.086 ms | -2.61% |
+| `whittaker_2d/iarpls_16x16` | 1.313 ms | 1.281 ms | -2.44% |
+| `whittaker_2d/aspls_16x16` | 1.795 ms | 1.754 ms | -2.28% |
+| `whittaker_2d/psalsa_16x16` | 1.701 ms | 1.651 ms | -2.91% |
+| `whittaker_2d/brpls_16x16` | 6.701 ms | 6.533 ms | -2.50% |
+| `whittaker_2d/lsrpls_16x16` | 671.233 us | 660.735 us | -1.56% |
 
 Rejected or no-op 2D experiments:
 
