@@ -65,5 +65,5 @@ classification_1d/dietrich_256,88800,37107,-58.21,de4b108
 classification_1d/dietrich_256,37107,33597,-9.46,de4b108
 classification_1d/fabc_256,25393,23177,-8.73,de4b108
 whittaker_2d/arpls_eigen_16x16,787690,571920,-27.07,98c4287
-spline_2d/pspline_iasls_16x16,356970,131100,-63.27,worktree
-spline_2d_into/pspline_iasls_into_16x16,358548,122230,-65.91,worktree
+spline_2d/pspline_iasls_16x16,356970,131100,-63.27,f9c0a04
+spline_2d_into/pspline_iasls_into_16x16,358548,122230,-65.91,f9c0a04
