@@ -27,6 +27,11 @@ cargo bench --bench baseline_workloads -- polynomial_1d/goldindec_256 --profile-
 sample <baseline_workloads-pid> 5 -file /tmp/baselines-goldindec.sample.txt
 cargo bench --bench baseline_workloads -- polynomial_1d/goldindec_256 --save-baseline goldindec_after_polynomial_workspace
 cargo bench --bench baseline_workloads -- polynomial_1d/goldindec_256 --baseline perf_before_opt
+cargo bench --bench baseline_workloads -- polynomial_1d/goldindec_256 --profile-time 20
+sample <baseline_workloads-pid> 5 -file /tmp/baselines-goldindec-current.sample.txt
+git worktree add /tmp/baselines-before-unweighted-cache 496c8ac
+cargo bench --manifest-path /tmp/baselines-before-unweighted-cache/Cargo.toml --bench baseline_workloads -- polynomial_1d --save-baseline before_unweighted_cache
+cargo bench --bench baseline_workloads -- polynomial_1d --save-baseline polynomial1d_after_unweighted_cache
 cargo bench --bench baseline_workloads -- morphology_2d/imor_16x16 --profile-time 20
 sample <baseline_workloads-pid> 5 -file /tmp/baselines-imor2d.sample.txt
 cargo bench --bench baseline_workloads -- morphology_2d --baseline perf_before_opt
@@ -149,6 +154,34 @@ The retained change reuses the penalized polynomial work buffers and replaces
 the repeated `Vec<Vec<_>>` normal-equation solve with a contiguous internal
 workspace. Fixture compatibility remained passing for the pinned pybaselines
 references.
+
+Goldindec profiling after the first workspace optimization:
+
+- Target: `polynomial_1d/goldindec_256`
+- `sample` captured 3817 samples from the Criterion profile run.
+- 3415 samples were still inside
+  `polynomial::fit_penalized_polynomial_with_threshold`.
+- The hottest repeated leaf was
+  `fit_weighted_polynomial_coefficients_with_workspace`, showing that the
+  remaining work was rebuilding fixed unweighted polynomial normal equations
+  during each threshold fit.
+
+Unweighted polynomial-fit cache optimization results:
+
+| Benchmark | Before mean | After mean | Change |
+| --- | ---: | ---: | ---: |
+| `polynomial_1d/poly_256` | 2.812 us | 2.597 us | -7.65% |
+| `polynomial_1d/modpoly_256` | 39.209 us | 17.095 us | -56.40% |
+| `polynomial_1d/penalized_poly_256` | 34.112 us | 14.798 us | -56.62% |
+| `polynomial_1d/goldindec_256` | 3.361 ms | 1.354 ms | -59.72% |
+
+The retained change adds a cached unweighted polynomial workspace for repeated
+fits that share the same scaled grid and order. `modpoly`, `penalized_poly`,
+and `goldindec` reuse the cached powers and normal matrix across iterations;
+direct `poly` uses a one-shot unweighted solve to avoid cache setup overhead.
+The full `polynomial_1d` Criterion group was saved as
+`polynomial1d_after_unweighted_cache` so unchanged controls can be checked
+later.
 
 2D Whittaker profiling:
 

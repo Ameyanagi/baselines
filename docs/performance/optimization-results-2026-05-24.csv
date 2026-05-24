@@ -39,3 +39,7 @@ whittaker_2d/aspls_16x16,1795232,1754287,-2.28,f5463a9
 whittaker_2d/psalsa_16x16,1700623,1651115,-2.91,f5463a9
 whittaker_2d/brpls_16x16,6700514,6533301,-2.50,f5463a9
 whittaker_2d/lsrpls_16x16,671233,660735,-1.56,f5463a9
+polynomial_1d/poly_256,2812,2597,-7.65,ee2467e
+polynomial_1d/modpoly_256,39209,17095,-56.40,ee2467e
+polynomial_1d/penalized_poly_256,34112,14798,-56.62,ee2467e
+polynomial_1d/goldindec_256,3361222,1353887,-59.72,ee2467e
