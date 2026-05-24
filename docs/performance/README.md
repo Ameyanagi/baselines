@@ -23,10 +23,16 @@ cargo bench --bench baseline_workloads -- optimizers_misc_1d/beads_256 --profile
 sample <baseline_workloads-pid> 5 -file /tmp/baselines-beads.sample.txt
 cargo bench --bench baseline_workloads -- optimizers_misc_1d/beads_256 --save-baseline beads_after_banded_threshold
 cargo bench --bench baseline_workloads -- optimizers_misc_1d/beads_256 --baseline perf_before_opt
+cargo bench --bench baseline_workloads -- polynomial_1d/goldindec_256 --profile-time 20
+sample <baseline_workloads-pid> 5 -file /tmp/baselines-goldindec.sample.txt
+cargo bench --bench baseline_workloads -- polynomial_1d/goldindec_256 --save-baseline goldindec_after_polynomial_workspace
+cargo bench --bench baseline_workloads -- polynomial_1d/goldindec_256 --baseline perf_before_opt
 ```
 
 Full saved baseline means are in
 [`baseline-workloads-2026-05-24.csv`](baseline-workloads-2026-05-24.csv).
+Optimization comparison results are in
+[`optimization-results-2026-05-24.csv`](optimization-results-2026-05-24.csv).
 
 Top slow paths before optimization:
 
@@ -71,3 +77,24 @@ to use sparse differences between adjacent B-spline basis rows and use a
 general banded solver for narrow non-symmetric P-spline systems, while keeping
 the original dense solve path for smaller basis counts. The public API remains
 unchanged.
+
+Goldindec profiling before optimization:
+
+- Target: `polynomial_1d/goldindec_256`
+- The sampled Criterion profile was dominated by
+  `baselines::polynomial::fit_penalized_polynomial_with_threshold` repeatedly
+  calling `fit_weighted_polynomial`.
+- The hottest leaf was `fit_weighted_polynomial_coefficients`; allocator,
+  memset, and free stacks were also prominent, pointing to repeated tiny
+  polynomial-fit allocations.
+
+Goldindec optimization result:
+
+| Benchmark | Before mean | After mean | Change |
+| --- | ---: | ---: | ---: |
+| `polynomial_1d/goldindec_256` | 6.662 ms | 3.371 ms | -49.20% |
+
+The retained change reuses the penalized polynomial work buffers and replaces
+the repeated `Vec<Vec<_>>` normal-equation solve with a contiguous internal
+workspace. Fixture compatibility remained passing for the pinned pybaselines
+references.

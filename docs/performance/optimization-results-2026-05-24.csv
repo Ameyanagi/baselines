@@ -1,0 +1,6 @@
+benchmark,before_mean_ns,after_mean_ns,change_percent,commit_or_worktree
+optimizers_misc_1d/beads_256,23094000,609000,-97.36,3913b07
+spline_1d/pspline_iasls_256,15934000,159000,-99.00,922817e
+spline_1d/pspline_aspls_256,8954000,990000,-88.74,922817e
+spline_1d/pspline_drpls_256,3713000,348000,-90.60,922817e
+polynomial_1d/goldindec_256,6661665,3371000,-49.20,worktree

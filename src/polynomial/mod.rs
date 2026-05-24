@@ -394,8 +394,14 @@ pub fn penalized_poly_into(
     let threshold = params
         .threshold
         .unwrap_or_else(|| standard_deviation(y) / 10.0);
-    let weights = vec![1.0; y.len()];
-    fit_weighted_polynomial(y, &weights, params.order, baseline)?;
+    let mut workspace = PenalizedPolynomialWorkspace::new(y.len(), params.order);
+    fit_weighted_polynomial_with_workspace(
+        y,
+        &workspace.weights,
+        params.order,
+        baseline,
+        &mut workspace.polynomial,
+    )?;
     fit_penalized_polynomial_with_threshold(
         y,
         PenalizedFitParams {
@@ -407,6 +413,7 @@ pub fn penalized_poly_into(
             tol: params.tol,
         },
         baseline,
+        &mut workspace,
     )
 }
 
@@ -419,8 +426,14 @@ pub fn goldindec_into(
     validate_goldindec_params(params)?;
     validate_poly_input(y, params.order, baseline)?;
 
-    let weights = vec![1.0; y.len()];
-    fit_weighted_polynomial(y, &weights, params.order, baseline)?;
+    let mut workspace = PenalizedPolynomialWorkspace::new(y.len(), params.order);
+    fit_weighted_polynomial_with_workspace(
+        y,
+        &workspace.weights,
+        params.order,
+        baseline,
+        &mut workspace.polynomial,
+    )?;
     let initial = baseline.to_vec();
     let goal = goldindec_up_down_ratio_goal(params.peak_ratio);
     let mut lower = 0.0;
@@ -449,6 +462,7 @@ pub fn goldindec_into(
                 tol: params.tol,
             },
             baseline,
+            &mut workspace,
         )?;
 
         let above = y
@@ -664,15 +678,16 @@ fn fit_penalized_polynomial_with_threshold(
     y: &[f64],
     params: PenalizedFitParams,
     baseline: &mut [f64],
+    workspace: &mut PenalizedPolynomialWorkspace,
 ) -> Result<FitReport> {
-    let weights = vec![1.0; y.len()];
-    let mut adjusted = y.to_vec();
-    let mut previous = vec![0.0; y.len()];
+    workspace.resize(y.len(), params.order);
     let mut tolerance = f64::INFINITY;
 
     for iter in 0..params.max_iter {
-        previous.copy_from_slice(baseline);
-        for ((target, observed), fitted) in adjusted.iter_mut().zip(y).zip(baseline.iter()) {
+        workspace.previous.copy_from_slice(baseline);
+        for ((target, observed), fitted) in
+            workspace.adjusted.iter_mut().zip(y).zip(baseline.iter())
+        {
             let residual = observed - fitted;
             *target = observed
                 + non_quadratic_correction(
@@ -683,14 +698,44 @@ fn fit_penalized_polynomial_with_threshold(
                 );
         }
 
-        fit_weighted_polynomial(&adjusted, &weights, params.order, baseline)?;
-        tolerance = relative_baseline_change(&previous, baseline);
+        fit_weighted_polynomial_with_workspace(
+            &workspace.adjusted,
+            &workspace.weights,
+            params.order,
+            baseline,
+            &mut workspace.polynomial,
+        )?;
+        tolerance = relative_baseline_change(&workspace.previous, baseline);
         if iter > 0 && tolerance <= params.tol {
             return Ok(FitReport::new(iter + 1, true, tolerance));
         }
     }
 
     Ok(FitReport::new(params.max_iter, false, tolerance))
+}
+
+#[derive(Debug, Default)]
+struct PenalizedPolynomialWorkspace {
+    weights: Vec<f64>,
+    adjusted: Vec<f64>,
+    previous: Vec<f64>,
+    polynomial: PolynomialFitWorkspace,
+}
+
+impl PenalizedPolynomialWorkspace {
+    fn new(len: usize, order: usize) -> Self {
+        let mut workspace = Self::default();
+        workspace.resize(len, order);
+        workspace
+    }
+
+    fn resize(&mut self, len: usize, order: usize) {
+        self.weights.resize(len, 1.0);
+        self.weights.fill(1.0);
+        self.adjusted.resize(len, 0.0);
+        self.previous.resize(len, 0.0);
+        self.polynomial.resize(order);
+    }
 }
 
 fn goldindec_up_down_ratio_goal(peak_ratio: f64) -> f64 {
@@ -936,8 +981,19 @@ pub(crate) fn fit_weighted_polynomial(
     order: usize,
     baseline: &mut [f64],
 ) -> Result<()> {
-    let coeffs = fit_weighted_polynomial_coefficients(y, weights, order)?;
-    evaluate_polynomial_coefficients(&coeffs, baseline);
+    let mut workspace = PolynomialFitWorkspace::new(order);
+    fit_weighted_polynomial_with_workspace(y, weights, order, baseline, &mut workspace)
+}
+
+pub(crate) fn fit_weighted_polynomial_with_workspace(
+    y: &[f64],
+    weights: &[f64],
+    order: usize,
+    baseline: &mut [f64],
+    workspace: &mut PolynomialFitWorkspace,
+) -> Result<()> {
+    let coeffs = fit_weighted_polynomial_coefficients_with_workspace(y, weights, order, workspace)?;
+    evaluate_polynomial_coefficients(coeffs, baseline);
     Ok(())
 }
 
@@ -947,22 +1003,70 @@ pub(crate) fn fit_weighted_polynomial_coefficients(
     weights: &[f64],
     order: usize,
 ) -> Result<Vec<f64>> {
+    let mut workspace = PolynomialFitWorkspace::new(order);
+    fit_weighted_polynomial_coefficients_with_workspace(y, weights, order, &mut workspace)?;
+    Ok(workspace.coeffs[..order + 1].to_vec())
+}
+
+pub(crate) fn fit_weighted_polynomial_coefficients_with_workspace<'a>(
+    y: &[f64],
+    weights: &[f64],
+    order: usize,
+    workspace: &'a mut PolynomialFitWorkspace,
+) -> Result<&'a [f64]> {
     let n_coeffs = order + 1;
-    let mut normal = vec![vec![0.0; n_coeffs]; n_coeffs];
-    let mut rhs = vec![0.0; n_coeffs];
+    workspace.resize(order);
+    workspace.normal.fill(0.0);
+    workspace.rhs.fill(0.0);
 
     for (i, (observed, weight)) in y.iter().zip(weights).enumerate() {
         let x = scaled_x(i, y.len());
-        let powers = powers(x, order);
+        workspace.powers[0] = 1.0;
+        for power in 1..n_coeffs {
+            workspace.powers[power] = workspace.powers[power - 1] * x;
+        }
         for row in 0..n_coeffs {
-            rhs[row] += weight * observed * powers[row];
+            workspace.rhs[row] += weight * observed * workspace.powers[row];
             for col in 0..n_coeffs {
-                normal[row][col] += weight * powers[row] * powers[col];
+                workspace.normal[row * n_coeffs + col] +=
+                    weight * workspace.powers[row] * workspace.powers[col];
             }
         }
     }
 
-    solve_dense(normal, rhs)
+    solve_dense_in_place(
+        &mut workspace.normal,
+        &mut workspace.rhs,
+        &mut workspace.coeffs,
+        &mut workspace.pivot_row,
+    )?;
+    Ok(&workspace.coeffs[..n_coeffs])
+}
+
+#[derive(Debug, Default)]
+pub(crate) struct PolynomialFitWorkspace {
+    normal: Vec<f64>,
+    rhs: Vec<f64>,
+    coeffs: Vec<f64>,
+    powers: Vec<f64>,
+    pivot_row: Vec<f64>,
+}
+
+impl PolynomialFitWorkspace {
+    pub(crate) fn new(order: usize) -> Self {
+        let mut workspace = Self::default();
+        workspace.resize(order);
+        workspace
+    }
+
+    fn resize(&mut self, order: usize) {
+        let n_coeffs = order + 1;
+        self.normal.resize(n_coeffs * n_coeffs, 0.0);
+        self.rhs.resize(n_coeffs, 0.0);
+        self.coeffs.resize(n_coeffs, 0.0);
+        self.powers.resize(n_coeffs, 0.0);
+        self.pivot_row.resize(n_coeffs, 0.0);
+    }
 }
 
 /// Evaluates polynomial coefficients on the crate's standard scaled grid.
@@ -982,57 +1086,61 @@ fn scaled_x(index: usize, len: usize) -> f64 {
     }
 }
 
-fn powers(x: f64, order: usize) -> Vec<f64> {
-    let mut values = Vec::with_capacity(order + 1);
-    let mut current = 1.0;
-    for _ in 0..=order {
-        values.push(current);
-        current *= x;
-    }
-    values
-}
-
 fn evaluate_polynomial(coeffs: &[f64], x: f64) -> f64 {
     coeffs.iter().rev().fold(0.0, |acc, coeff| acc * x + coeff)
 }
 
-fn solve_dense(mut matrix: Vec<Vec<f64>>, mut rhs: Vec<f64>) -> Result<Vec<f64>> {
+fn solve_dense_in_place(
+    matrix: &mut [f64],
+    rhs: &mut [f64],
+    solution: &mut [f64],
+    pivot_row: &mut [f64],
+) -> Result<()> {
     let n = rhs.len();
+    debug_assert_eq!(matrix.len(), n * n);
+    debug_assert!(solution.len() >= n);
+    debug_assert!(pivot_row.len() >= n);
+
     for pivot in 0..n {
         let mut best = pivot;
         for row in pivot + 1..n {
-            if matrix[row][pivot].abs() > matrix[best][pivot].abs() {
+            if matrix[row * n + pivot].abs() > matrix[best * n + pivot].abs() {
                 best = row;
             }
         }
-        if matrix[best][pivot].abs() <= f64::EPSILON {
+        if matrix[best * n + pivot].abs() <= f64::EPSILON {
             return Err(BaselineError::LinearSolve {
                 reason: "singular polynomial normal equations",
             });
         }
-        matrix.swap(pivot, best);
-        rhs.swap(pivot, best);
+        if best != pivot {
+            for col in 0..n {
+                matrix.swap(pivot * n + col, best * n + col);
+            }
+            rhs.swap(pivot, best);
+        }
 
-        let pivot_row = matrix[pivot].clone();
+        pivot_row[..n].copy_from_slice(&matrix[pivot * n..(pivot + 1) * n]);
         for row in pivot + 1..n {
-            let factor = matrix[row][pivot] / matrix[pivot][pivot];
-            for (entry, pivot_entry) in matrix[row][pivot..].iter_mut().zip(&pivot_row[pivot..]) {
-                *entry -= factor * pivot_entry;
+            let factor = matrix[row * n + pivot] / pivot_row[pivot];
+            for col in pivot..n {
+                matrix[row * n + col] -= factor * pivot_row[col];
             }
             rhs[row] -= factor * rhs[pivot];
         }
     }
 
-    let mut solution = vec![0.0; n];
+    solution[..n].fill(0.0);
     for row in (0..n).rev() {
-        let known = matrix[row][row + 1..]
+        let known = matrix[row * n + row + 1..(row + 1) * n]
             .iter()
-            .zip(&solution[row + 1..])
+            .zip(&solution[row + 1..n])
             .map(|(coeff, value)| coeff * value)
             .sum::<f64>();
-        solution[row] = (rhs[row] - known) / matrix[row][row];
+        solution[row] = (rhs[row] - known) / matrix[row * n + row];
     }
-    Ok(solution)
+
+    Ok(())
 }
 
 fn relative_baseline_change(previous: &[f64], current: &[f64]) -> f64 {
