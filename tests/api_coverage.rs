@@ -25,7 +25,7 @@ use baselines::spline::{
 use baselines::whittaker::{
     AirPlsParams, ArPlsParams, AsPlsParams, AslsParams, BrPlsParams, DerPsalsaParams, DrPlsParams,
     IarPlsParams, IaslsParams, LsrPlsParams, PsalsaParams, airpls, arpls, asls, asls_with_history,
-    aspls, aspls_with_history, brpls, derpsalsa, drpls, iarpls, iasls, lsrpls, psalsa,
+    aspls, aspls_into, aspls_with_history, brpls, derpsalsa, drpls, iarpls, iasls, lsrpls, psalsa,
 };
 
 #[test]
@@ -132,6 +132,9 @@ fn exposed_1d_algorithms_return_finite_baselines() {
         aspls_history.report.iterations,
         aspls_history.tol_history.len()
     );
+    let mut aspls_reuse = vec![0.0; y.len()];
+    aspls_into(&y, AsPlsParams::default(), &mut aspls_reuse).unwrap();
+    assert!(aspls_reuse.iter().all(|value| value.is_finite()));
 
     for fit in fits {
         assert_eq!(fit.baseline.len(), y.len());

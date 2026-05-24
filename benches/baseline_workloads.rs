@@ -224,6 +224,19 @@ fn bench_whittaker_1d_into(c: &mut Criterion) {
     }
     {
         let mut baseline = vec![0.0; input.len()];
+        group.bench_function("aspls_into_256", move |bench| {
+            bench.iter(|| {
+                whit::aspls_into(
+                    black_box(input),
+                    whit::AsPlsParams::default(),
+                    black_box(baseline.as_mut_slice()),
+                )
+                .unwrap()
+            })
+        });
+    }
+    {
+        let mut baseline = vec![0.0; input.len()];
         let mut tol_history = Vec::new();
         group.bench_function("aspls_into_with_history_256", move |bench| {
             bench.iter(|| {

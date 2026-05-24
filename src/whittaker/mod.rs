@@ -23,6 +23,6 @@ pub use asls::{AslsParams, asls, asls_into, asls_into_with_history, asls_with_hi
 pub use engine::{WhittakerParams, WhittakerWorkspace};
 pub use variants::{
     AsPlsParams, BrPlsParams, DerPsalsaParams, DrPlsParams, IarPlsParams, IaslsParams,
-    LsrPlsParams, PsalsaParams, aspls, aspls_into_with_history, aspls_with_history, brpls,
-    brpls_into, derpsalsa, drpls, drpls_into, iarpls, iasls, iasls_into, lsrpls, psalsa,
+    LsrPlsParams, PsalsaParams, aspls, aspls_into, aspls_into_with_history, aspls_with_history,
+    brpls, brpls_into, derpsalsa, drpls, drpls_into, iarpls, iasls, iasls_into, lsrpls, psalsa,
 };

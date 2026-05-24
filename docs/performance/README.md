@@ -86,6 +86,7 @@ cargo bench --bench baseline_workloads -- whittaker_1d --save-baseline coverage_
 cargo bench --bench baseline_workloads -- optimizers_misc_1d --save-baseline coverage_after_history_custom
 cargo bench --bench baseline_workloads whittaker_1d_into -- --save-baseline whittaker_into_coverage_2026_05_24
 cargo bench --bench baseline_workloads whittaker_2d_into -- --save-baseline whittaker_into_coverage_2026_05_24
+cargo bench --bench baseline_workloads whittaker_1d_into/aspls_into_256 -- --save-baseline whittaker_into_coverage_2026_05_24
 cargo bench --bench baseline_workloads polynomial_1d_into -- --save-baseline nonwhittaker_1d_into_coverage_2026_05_24
 cargo bench --bench baseline_workloads morphology_1d_into -- --save-baseline nonwhittaker_1d_into_coverage_2026_05_24
 cargo bench --bench baseline_workloads smoothing_1d_into -- --save-baseline nonwhittaker_1d_into_coverage_2026_05_24
