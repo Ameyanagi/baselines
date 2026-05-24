@@ -54,6 +54,9 @@ cargo bench --bench baseline_workloads -- whittaker_2d/brpls_16x16 --profile-tim
 sample <baseline_workloads-pid> 5 -file /tmp/baselines-brpls2d-current.sample.txt
 cargo bench --bench baseline_workloads -- whittaker_2d --baseline whittaker2d_after_cg_fusion
 cargo bench --bench baseline_workloads -- whittaker_2d --save-baseline whittaker2d_after_clamped_weights
+cargo bench --bench baseline_workloads -- spline_1d/pspline_aspls_256 --profile-time 20
+sample <baseline_workloads-pid> 5 -file /tmp/baselines-pspline-aspls1d.sample.txt
+cargo bench --bench baseline_workloads -- spline_1d --baseline perf_before_opt
 ```
 
 Full saved baseline means are in
@@ -106,6 +109,19 @@ to use sparse differences between adjacent B-spline basis rows and use a
 general banded solver for narrow non-symmetric P-spline systems, while keeping
 the original dense solve path for smaller basis counts. The public API remains
 unchanged.
+
+P-spline asPLS profiling after the solver optimization:
+
+- Target: `spline_1d/pspline_aspls_256`
+- `sample` captured 3831 samples from the Criterion profile run.
+- The profile was dominated by
+  `linalg::pspline::PenalizedSpline::solve_coefficients_with_options`, with
+  2291 samples in that path. Secondary costs included 506 samples in the dense
+  fallback solve, 155 samples in coefficient evaluation, and 129 samples in
+  exponential weight calculations.
+- A direct dense row-scaled P-spline workspace experiment measured 7.489 ms
+  against the current optimized 0.990 ms result, so it was rejected and not
+  retained.
 
 2D P-spline profiling before optimization:
 
@@ -264,13 +280,14 @@ inside every CG operator application, produced this incremental result against
 | `whittaker_2d/brpls_16x16` | 6.701 ms | 6.533 ms | -2.50% |
 | `whittaker_2d/lsrpls_16x16` | 671.233 us | 660.735 us | -1.56% |
 
-Rejected or no-op 2D experiments:
+Rejected or no-op experiments:
 
 | Benchmark | Experiment | Before mean | After mean | Change |
 | --- | --- | ---: | ---: | ---: |
 | `whittaker_2d/brpls_16x16` | Precomputed operator coefficients | 8.232 ms | 9.174 ms | +10.7% |
 | `whittaker_2d/brpls_16x16` | Jacobi-preconditioned CG | 8.232 ms | 12.802 ms | +55.63% |
 | `optimizers_2d/collab_pls_2x16x16` | Reuse shared Whittaker workspace and fill weights in place | 1.300 ms | 1.293 ms | no significant change |
+| `spline_1d/pspline_aspls_256` | Direct dense row-scaled P-spline workspace | 0.990 ms | 7.489 ms | +656.45% |
 
 2D morphology profiling before optimization:
 
