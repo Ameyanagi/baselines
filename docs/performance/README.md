@@ -157,6 +157,8 @@ Full saved baseline means are in
 [`baseline-workloads-2026-05-24.csv`](baseline-workloads-2026-05-24.csv).
 Current post-optimization full-run means are in
 [`current-workloads-2026-05-24.csv`](current-workloads-2026-05-24.csv).
+This snapshot was refreshed after the BEADS workspace-reuse change and now
+contains 166 allocating, reusable-output, 2D, and batch workloads.
 Optimization comparison results are in
 [`optimization-results-2026-05-24.csv`](optimization-results-2026-05-24.csv).
 Rejected optimization experiments are in
@@ -183,16 +185,23 @@ Top slow paths before optimization:
 | `polynomial_1d/goldindec_256` | 6.662 ms |
 | `whittaker_2d/arpls_16x16` | 6.648 ms |
 
-Top slow paths in the current full-run snapshot:
+Top slow paths in the current full-run snapshot, including reusable-output
+workloads:
 
 | Benchmark | Mean |
 | --- | ---: |
-| `whittaker_2d/brpls_16x16` | 3.563 ms |
-| `whittaker_2d/arpls_16x16` | 2.535 ms |
-| `whittaker_2d/aspls_16x16` | 1.734 ms |
-| `optimizers_2d/collab_pls_2x16x16` | 1.064 ms |
-| `spline_1d/pspline_aspls_256` | 991.249 us |
-| `whittaker_2d/airpls_16x16` | 940.155 us |
+| `whittaker_2d_into/brpls_into_16x16` | 3.565 ms |
+| `whittaker_2d/brpls_16x16` | 3.564 ms |
+| `whittaker_2d_into/arpls_into_16x16` | 2.562 ms |
+| `whittaker_2d/arpls_16x16` | 2.540 ms |
+| `whittaker_2d/aspls_16x16` | 1.750 ms |
+| `whittaker_2d_into/aspls_into_16x16` | 1.746 ms |
+| `spline_1d/pspline_aspls_256` | 972.390 us |
+| `whittaker_2d/airpls_16x16` | 942.410 us |
+| `whittaker_2d_into/airpls_into_16x16` | 941.502 us |
+| `polynomial_1d_into/goldindec_into_256` | 925.623 us |
+| `polynomial_1d/goldindec_256` | 917.285 us |
+| `whittaker_2d_into/iarpls_into_16x16` | 779.994 us |
 
 BEADS profiling before optimization:
 
