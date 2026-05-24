@@ -4,6 +4,7 @@ use crate::linalg::dense::solve_dense;
 use crate::{BaselineError, Result};
 
 const DENSE_COMPAT_THRESHOLD: usize = 256;
+const GENERAL_BANDED_MIN_BASES: usize = 100;
 
 /// Dense penalized B-spline basis and solver.
 #[derive(Debug, Clone)]
@@ -174,7 +175,126 @@ impl PenalizedSpline {
                 actual: scales.len(),
             });
         }
+        if n_bases < GENERAL_BANDED_MIN_BASES {
+            return self.solve_coefficients_dense_with_options(
+                y,
+                weights,
+                lambda,
+                row_scales,
+                basis_first_difference_lambda,
+                data_first_difference_lambda,
+            );
+        }
 
+        let bandwidth = if data_first_difference_lambda > 0.0 {
+            2 * (self.degree + 1)
+        } else {
+            self.degree.max(self.diff_order).max(1)
+        };
+        let mut normal = zero_general_bands(n_bases, bandwidth);
+        let mut rhs = vec![0.0; n_bases];
+
+        for ((basis_row, observed), weight) in self.basis.iter().zip(y).zip(weights) {
+            for (row, row_value) in basis_row.entries() {
+                rhs[row] += row_value * weight * observed;
+                for (col, col_value) in basis_row.entries() {
+                    add_general_band_value(
+                        &mut normal,
+                        bandwidth,
+                        row,
+                        col,
+                        row_value * weight * col_value,
+                    );
+                }
+            }
+        }
+
+        for row in 0..n_bases {
+            let scale = row_scales.map_or(1.0, |scales| scales[row]);
+            for col in
+                row.saturating_sub(self.diff_order)..=(row + self.diff_order).min(n_bases - 1)
+            {
+                add_general_band_value(
+                    &mut normal,
+                    bandwidth,
+                    row,
+                    col,
+                    lambda * scale * symmetric_band_value(&self.penalty, row, col),
+                );
+            }
+        }
+
+        if basis_first_difference_lambda > 0.0 {
+            for row in 0..n_bases {
+                for col in row.saturating_sub(1)..=(row + 1).min(n_bases - 1) {
+                    add_general_band_value(
+                        &mut normal,
+                        bandwidth,
+                        row,
+                        col,
+                        basis_first_difference_lambda
+                            * symmetric_band_value(&self.first_order_penalty, row, col),
+                    );
+                }
+            }
+        }
+
+        if data_first_difference_lambda > 0.0 {
+            let mut basis_difference = Vec::with_capacity(2 * (self.degree + 1));
+            for (basis_pair, observed_pair) in self.basis.windows(2).zip(y.windows(2)) {
+                let observed_difference = observed_pair[1] - observed_pair[0];
+                SparseBasisRow::difference_entries_into(
+                    &basis_pair[0],
+                    &basis_pair[1],
+                    &mut basis_difference,
+                );
+                for &(row, basis_row_difference) in &basis_difference {
+                    rhs[row] +=
+                        data_first_difference_lambda * basis_row_difference * observed_difference;
+                    for &(col, basis_col_difference) in &basis_difference {
+                        add_general_band_value(
+                            &mut normal,
+                            bandwidth,
+                            row,
+                            col,
+                            data_first_difference_lambda
+                                * basis_row_difference
+                                * basis_col_difference,
+                        );
+                    }
+                }
+            }
+        }
+
+        match solve_general_banded(&mut normal, bandwidth, &rhs) {
+            Ok(solution) => Ok(solution),
+            Err(error) => {
+                if n_bases <= DENSE_COMPAT_THRESHOLD {
+                    self.solve_coefficients_dense_with_options(
+                        y,
+                        weights,
+                        lambda,
+                        row_scales,
+                        basis_first_difference_lambda,
+                        data_first_difference_lambda,
+                    )
+                } else {
+                    Err(error)
+                }
+            }
+        }
+    }
+
+    fn solve_coefficients_dense_with_options(
+        &self,
+        y: &[f64],
+        weights: &[f64],
+        lambda: f64,
+        row_scales: Option<&[f64]>,
+        basis_first_difference_lambda: f64,
+        data_first_difference_lambda: f64,
+    ) -> Result<Vec<f64>> {
+        let n_bases = self.basis_count();
         let mut normal = vec![vec![0.0; n_bases]; n_bases];
         let mut rhs = vec![0.0; n_bases];
 
@@ -205,22 +325,17 @@ impl PenalizedSpline {
         }
 
         if data_first_difference_lambda > 0.0 {
-            let mut basis_difference = Vec::with_capacity(2 * (self.degree + 1));
             for (basis_pair, observed_pair) in self.basis.windows(2).zip(y.windows(2)) {
                 let observed_difference = observed_pair[1] - observed_pair[0];
-                SparseBasisRow::difference_entries_into(
-                    &basis_pair[0],
-                    &basis_pair[1],
-                    &mut basis_difference,
-                );
-                for &(row, basis_row_difference) in &basis_difference {
+                for row in 0..n_bases {
+                    let basis_row_difference =
+                        basis_pair[1].value_at(row) - basis_pair[0].value_at(row);
                     rhs[row] +=
                         data_first_difference_lambda * basis_row_difference * observed_difference;
-                    for &(col, basis_col_difference) in &basis_difference {
-                        let normal_value = &mut normal[row][col];
+                    for (col, normal_value) in normal[row].iter_mut().enumerate() {
                         *normal_value += data_first_difference_lambda
                             * basis_row_difference
-                            * basis_col_difference;
+                            * (basis_pair[1].value_at(col) - basis_pair[0].value_at(col));
                     }
                 }
             }
@@ -458,6 +573,55 @@ fn zero_symmetric_bands(n: usize, bandwidth: usize) -> Vec<Vec<f64>> {
     vec![vec![0.0; n]; bandwidth + 1]
 }
 
+fn zero_general_bands(n: usize, bandwidth: usize) -> Vec<Vec<f64>> {
+    vec![vec![0.0; n]; 2 * bandwidth + 1]
+}
+
+fn general_band_index(bandwidth: usize, row: usize, col: usize) -> Option<usize> {
+    let offset = col as isize - row as isize;
+    if offset.unsigned_abs() <= bandwidth {
+        Some((offset + bandwidth as isize) as usize)
+    } else {
+        None
+    }
+}
+
+fn add_general_band_value(
+    bands: &mut [Vec<f64>],
+    bandwidth: usize,
+    row: usize,
+    col: usize,
+    value: f64,
+) {
+    debug_assert!(
+        general_band_index(bandwidth, row, col).is_some(),
+        "column {col} is outside bandwidth {bandwidth} for row {row}",
+    );
+    if let Some(index) = general_band_index(bandwidth, row, col) {
+        bands[index][row] += value;
+    }
+}
+
+fn set_general_band_value(
+    bands: &mut [Vec<f64>],
+    bandwidth: usize,
+    row: usize,
+    col: usize,
+    value: f64,
+) {
+    debug_assert!(
+        general_band_index(bandwidth, row, col).is_some(),
+        "column {col} is outside bandwidth {bandwidth} for row {row}",
+    );
+    if let Some(index) = general_band_index(bandwidth, row, col) {
+        bands[index][row] = value;
+    }
+}
+
+fn general_band_value(bands: &[Vec<f64>], bandwidth: usize, row: usize, col: usize) -> f64 {
+    general_band_index(bandwidth, row, col).map_or(0.0, |index| bands[index][row])
+}
+
 fn add_symmetric_band_value(bands: &mut [Vec<f64>], row: usize, col: usize, value: f64) {
     let (lower, upper) = if row >= col { (row, col) } else { (col, row) };
     let offset = lower - upper;
@@ -508,6 +672,47 @@ fn symmetric_bands_to_dense(bands: &[Vec<f64>]) -> Vec<Vec<f64>> {
         matrix[col][row] = value;
     }
     matrix
+}
+
+fn solve_general_banded(bands: &mut [Vec<f64>], bandwidth: usize, rhs: &[f64]) -> Result<Vec<f64>> {
+    let n = rhs.len();
+    let mut rhs = rhs.to_vec();
+    for pivot in 0..n {
+        let pivot_value = general_band_value(bands, bandwidth, pivot, pivot);
+        if pivot_value.abs() <= f64::EPSILON {
+            return Err(BaselineError::LinearSolve {
+                reason: "singular banded system",
+            });
+        }
+        for row in pivot + 1..=(pivot + bandwidth).min(n - 1) {
+            let factor = general_band_value(bands, bandwidth, row, pivot) / pivot_value;
+            if factor == 0.0 {
+                continue;
+            }
+            set_general_band_value(bands, bandwidth, row, pivot, 0.0);
+            for col in pivot + 1..=(pivot + bandwidth).min(n - 1) {
+                let value = general_band_value(bands, bandwidth, row, col)
+                    - factor * general_band_value(bands, bandwidth, pivot, col);
+                set_general_band_value(bands, bandwidth, row, col, value);
+            }
+            rhs[row] -= factor * rhs[pivot];
+        }
+    }
+
+    let mut output = vec![0.0; n];
+    for row in (0..n).rev() {
+        let tail = (row + 1..=(row + bandwidth).min(n - 1))
+            .map(|col| general_band_value(bands, bandwidth, row, col) * output[col])
+            .sum::<f64>();
+        let diag = general_band_value(bands, bandwidth, row, row);
+        if diag.abs() <= f64::EPSILON {
+            return Err(BaselineError::LinearSolve {
+                reason: "singular banded system",
+            });
+        }
+        output[row] = (rhs[row] - tail) / diag;
+    }
+    Ok(output)
 }
 
 fn solve_spd_banded(bands: &mut [Vec<f64>], rhs: &[f64]) -> Result<Vec<f64>> {
