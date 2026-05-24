@@ -407,9 +407,24 @@ fn bench_classification_1d(c: &mut Criterion) {
             .unwrap()
         })
     });
+    group.bench_function("std_distribution_with_mask_256", |bench| {
+        bench.iter(|| {
+            class::std_distribution_with_mask(
+                black_box(y.as_slice()),
+                class::StdDistributionParams::default(),
+            )
+            .unwrap()
+        })
+    });
     group.bench_function("fastchrom_256", |bench| {
         bench.iter(|| {
             class::fastchrom(black_box(y.as_slice()), class::FastChromParams::default()).unwrap()
+        })
+    });
+    group.bench_function("fastchrom_with_mask_256", |bench| {
+        bench.iter(|| {
+            class::fastchrom_with_mask(black_box(y.as_slice()), class::FastChromParams::default())
+                .unwrap()
         })
     });
     group.bench_function("cwt_br_256", |bench| {
