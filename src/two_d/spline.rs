@@ -17,7 +17,7 @@
 
 use crate::data::{MatrixView, MatrixViewMut};
 use crate::fit::{Fit2D, FitReport};
-use crate::linalg::pspline::PenalizedSpline;
+use crate::linalg::pspline::{PenalizedSpline, PenalizedSplineWorkspace};
 use crate::workspace::logistic;
 use crate::{BaselineError, Result};
 
@@ -100,6 +100,11 @@ pub struct Spline2DWorkspace {
     row_weights: Vec<f64>,
     column_values: Vec<f64>,
     column_weights: Vec<f64>,
+    column_output: Vec<f64>,
+    row_spline: CachedPenalizedSpline,
+    column_spline: CachedPenalizedSpline,
+    row_solver: PenalizedSplineWorkspace,
+    column_solver: PenalizedSplineWorkspace,
 }
 
 impl Spline2DWorkspace {
@@ -115,6 +120,11 @@ impl Spline2DWorkspace {
             row_weights: vec![1.0; cols],
             column_values: vec![0.0; rows],
             column_weights: vec![1.0; rows],
+            column_output: vec![0.0; rows],
+            row_spline: CachedPenalizedSpline::default(),
+            column_spline: CachedPenalizedSpline::default(),
+            row_solver: PenalizedSplineWorkspace::new(),
+            column_solver: PenalizedSplineWorkspace::new(),
         }
     }
 
@@ -128,6 +138,42 @@ impl Spline2DWorkspace {
         self.row_weights.resize(cols, 1.0);
         self.column_values.resize(rows, 0.0);
         self.column_weights.resize(rows, 1.0);
+        self.column_output.resize(rows, 0.0);
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+struct CachedPenalizedSpline {
+    n: usize,
+    num_knots: usize,
+    degree: usize,
+    diff_order: usize,
+    spline: Option<PenalizedSpline>,
+}
+
+impl CachedPenalizedSpline {
+    fn get(
+        &mut self,
+        n: usize,
+        num_knots: usize,
+        degree: usize,
+        diff_order: usize,
+    ) -> &PenalizedSpline {
+        if self.spline.is_none()
+            || self.n != n
+            || self.num_knots != num_knots
+            || self.degree != degree
+            || self.diff_order != diff_order
+        {
+            self.n = n;
+            self.num_knots = num_knots;
+            self.degree = degree;
+            self.diff_order = diff_order;
+            self.spline = Some(PenalizedSpline::new(n, num_knots, degree, diff_order));
+        }
+        self.spline
+            .as_ref()
+            .expect("cached spline is initialized above")
     }
 }
 
@@ -668,12 +714,8 @@ fn fit_with_policy<P: ReweightPolicy>(
             diff_order,
             first_difference_lambda,
             input.as_slice(),
-            &workspace.weights,
             output.as_mut_slice(),
-            &mut workspace.temp,
-            &mut workspace.row_weights,
-            &mut workspace.column_values,
-            &mut workspace.column_weights,
+            workspace,
         )?;
         if !policy.update(
             input.as_slice(),
@@ -701,14 +743,10 @@ fn solve_separable_pspline(
     diff_order: usize,
     first_difference_lambda: f64,
     data: &[f64],
-    weights: &[f64],
     output: &mut [f64],
-    temp: &mut [f64],
-    row_weights: &mut [f64],
-    column_values: &mut [f64],
-    column_weights: &mut [f64],
+    workspace: &mut Spline2DWorkspace,
 ) -> Result<()> {
-    let row_spline = PenalizedSpline::new(
+    let row_spline = workspace.row_spline.get(
         cols,
         params.num_knots_cols.min(cols).max(2),
         PSPLINE_DEGREE,
@@ -716,23 +754,33 @@ fn solve_separable_pspline(
     );
     for row in 0..rows {
         let start = row * cols;
-        for (target, weight) in row_weights.iter_mut().zip(&weights[start..start + cols]) {
+        for (target, weight) in workspace
+            .row_weights
+            .iter_mut()
+            .zip(&workspace.weights[start..start + cols])
+        {
             *target = weight.max(MIN_WEIGHT);
         }
-        let smoothed = if first_difference_lambda > 0.0 {
-            row_spline.solve_with_first_difference_penalty(
+        if first_difference_lambda > 0.0 {
+            let smoothed = row_spline.solve_with_first_difference_penalty(
                 &data[start..start + cols],
-                row_weights,
+                &workspace.row_weights,
                 params.lambda,
                 first_difference_lambda,
-            )?
+            )?;
+            workspace.temp[start..start + cols].copy_from_slice(&smoothed);
         } else {
-            row_spline.solve(&data[start..start + cols], row_weights, params.lambda)?
-        };
-        temp[start..start + cols].copy_from_slice(&smoothed);
+            row_spline.solve_into(
+                &data[start..start + cols],
+                &workspace.row_weights,
+                params.lambda,
+                &mut workspace.temp[start..start + cols],
+                &mut workspace.row_solver,
+            )?;
+        }
     }
 
-    let column_spline = PenalizedSpline::new(
+    let column_spline = workspace.column_spline.get(
         rows,
         params.num_knots_rows.min(rows).max(2),
         PSPLINE_DEGREE,
@@ -741,21 +789,30 @@ fn solve_separable_pspline(
     for col in 0..cols {
         for row in 0..rows {
             let index = row * cols + col;
-            column_values[row] = temp[index];
-            column_weights[row] = weights[index].max(MIN_WEIGHT);
+            workspace.column_values[row] = workspace.temp[index];
+            workspace.column_weights[row] = workspace.weights[index].max(MIN_WEIGHT);
         }
-        let smoothed = if first_difference_lambda > 0.0 {
-            column_spline.solve_with_first_difference_penalty(
-                column_values,
-                column_weights,
+        if first_difference_lambda > 0.0 {
+            let smoothed = column_spline.solve_with_first_difference_penalty(
+                &workspace.column_values,
+                &workspace.column_weights,
                 params.lambda,
                 first_difference_lambda,
-            )?
+            )?;
+            for (row, value) in smoothed.iter().enumerate() {
+                output[row * cols + col] = *value;
+            }
         } else {
-            column_spline.solve(column_values, column_weights, params.lambda)?
-        };
-        for (row, value) in smoothed.iter().enumerate() {
-            output[row * cols + col] = *value;
+            column_spline.solve_into(
+                &workspace.column_values,
+                &workspace.column_weights,
+                params.lambda,
+                &mut workspace.column_output,
+                &mut workspace.column_solver,
+            )?;
+            for (row, value) in workspace.column_output.iter().enumerate() {
+                output[row * cols + col] = *value;
+            }
         }
     }
 

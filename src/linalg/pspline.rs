@@ -17,10 +17,41 @@ pub(crate) struct PenalizedSpline {
     diff_order: usize,
 }
 
+/// Reusable buffers for repeated penalized-spline solves.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct PenalizedSplineWorkspace {
+    symmetric_bands: Vec<Vec<f64>>,
+    rhs: Vec<f64>,
+    intermediate: Vec<f64>,
+    coefficients: Vec<f64>,
+}
+
 #[derive(Debug, Clone)]
 struct SparseBasisRow {
     start: usize,
     values: Vec<f64>,
+}
+
+impl PenalizedSplineWorkspace {
+    /// Creates an empty P-spline workspace.
+    #[must_use]
+    pub(crate) fn new() -> Self {
+        Self::default()
+    }
+
+    fn reset_symmetric_bands(&mut self, n: usize, bandwidth: usize) {
+        self.symmetric_bands
+            .resize_with(bandwidth.saturating_add(1), Vec::new);
+        for band in &mut self.symmetric_bands {
+            band.resize(n, 0.0);
+            band.fill(0.0);
+        }
+    }
+
+    fn reset_rhs(&mut self, n: usize) {
+        self.rhs.resize(n, 0.0);
+        self.rhs.fill(0.0);
+    }
 }
 
 impl PenalizedSpline {
@@ -49,6 +80,27 @@ impl PenalizedSpline {
     /// Fits a weighted penalized spline and returns the evaluated baseline.
     pub(crate) fn solve(&self, y: &[f64], weights: &[f64], lambda: f64) -> Result<Vec<f64>> {
         self.solve_with_options(y, weights, lambda, None, 0.0, 0.0)
+    }
+
+    /// Fits a weighted penalized spline into an existing output buffer.
+    pub(crate) fn solve_into(
+        &self,
+        y: &[f64],
+        weights: &[f64],
+        lambda: f64,
+        output: &mut [f64],
+        workspace: &mut PenalizedSplineWorkspace,
+    ) -> Result<()> {
+        if output.len() != self.basis.len() {
+            return Err(BaselineError::LengthMismatch {
+                name: "output",
+                expected: self.basis.len(),
+                actual: output.len(),
+            });
+        }
+        self.solve_coefficients_banded_into(y, weights, lambda, workspace)?;
+        self.evaluate_coefficients_into(&workspace.coefficients, output);
+        Ok(())
     }
 
     /// Fits a weighted penalized spline and returns the baseline and coefficients.
@@ -389,16 +441,72 @@ impl PenalizedSpline {
         }
     }
 
+    fn solve_coefficients_banded_into(
+        &self,
+        y: &[f64],
+        weights: &[f64],
+        lambda: f64,
+        workspace: &mut PenalizedSplineWorkspace,
+    ) -> Result<()> {
+        let n_bases = self.basis_count();
+        let bandwidth = self.degree.max(self.diff_order);
+        workspace.reset_symmetric_bands(n_bases, bandwidth);
+        workspace.reset_rhs(n_bases);
+
+        for ((basis_row, observed), weight) in self.basis.iter().zip(y).zip(weights) {
+            for (row, row_value) in basis_row.entries() {
+                workspace.rhs[row] += row_value * weight * observed;
+                for (col, col_value) in basis_row.entries() {
+                    if row >= col {
+                        add_symmetric_band_value(
+                            &mut workspace.symmetric_bands,
+                            row,
+                            col,
+                            row_value * weight * col_value,
+                        );
+                    }
+                }
+            }
+        }
+        for (offset, penalty_band) in self.penalty.iter().enumerate() {
+            for (index, value) in penalty_band.iter().enumerate() {
+                workspace.symmetric_bands[offset][index] += lambda * value;
+            }
+        }
+
+        match solve_spd_banded_into(
+            &mut workspace.symmetric_bands,
+            &workspace.rhs,
+            &mut workspace.intermediate,
+            &mut workspace.coefficients,
+        ) {
+            Ok(()) => Ok(()),
+            Err(error) => {
+                if n_bases <= DENSE_COMPAT_THRESHOLD {
+                    workspace.coefficients = self.solve_coefficients_dense_with_options(
+                        y, weights, lambda, None, 0.0, 0.0,
+                    )?;
+                    Ok(())
+                } else {
+                    Err(error)
+                }
+            }
+        }
+    }
+
     fn evaluate_coefficients(&self, coefficients: &[f64]) -> Vec<f64> {
-        self.basis
-            .iter()
-            .map(|basis_row| {
-                basis_row
-                    .entries()
-                    .map(|(index, value)| value * coefficients[index])
-                    .sum()
-            })
-            .collect()
+        let mut output = vec![0.0; self.basis.len()];
+        self.evaluate_coefficients_into(coefficients, &mut output);
+        output
+    }
+
+    fn evaluate_coefficients_into(&self, coefficients: &[f64], output: &mut [f64]) {
+        for (target, basis_row) in output.iter_mut().zip(&self.basis) {
+            *target = basis_row
+                .entries()
+                .map(|(index, value)| value * coefficients[index])
+                .sum();
+        }
     }
 }
 
@@ -716,6 +824,18 @@ fn solve_general_banded(bands: &mut [Vec<f64>], bandwidth: usize, rhs: &[f64]) -
 }
 
 fn solve_spd_banded(bands: &mut [Vec<f64>], rhs: &[f64]) -> Result<Vec<f64>> {
+    let mut intermediate = Vec::new();
+    let mut output = Vec::new();
+    solve_spd_banded_into(bands, rhs, &mut intermediate, &mut output)?;
+    Ok(output)
+}
+
+fn solve_spd_banded_into(
+    bands: &mut [Vec<f64>],
+    rhs: &[f64],
+    intermediate: &mut Vec<f64>,
+    output: &mut Vec<f64>,
+) -> Result<()> {
     let n = rhs.len();
     let bandwidth = bands.len() - 1;
     for row in 0..n {
@@ -749,7 +869,8 @@ fn solve_spd_banded(bands: &mut [Vec<f64>], rhs: &[f64]) -> Result<Vec<f64>> {
         set_symmetric_band_value(bands, row, row, diag.sqrt());
     }
 
-    let mut intermediate = vec![0.0; n];
+    intermediate.resize(n, 0.0);
+    intermediate.fill(0.0);
     for row in 0..n {
         let start = row.saturating_sub(bandwidth);
         let tail = (start..row)
@@ -758,7 +879,8 @@ fn solve_spd_banded(bands: &mut [Vec<f64>], rhs: &[f64]) -> Result<Vec<f64>> {
         intermediate[row] = (rhs[row] - tail) / symmetric_band_value(bands, row, row);
     }
 
-    let mut output = vec![0.0; n];
+    output.resize(n, 0.0);
+    output.fill(0.0);
     for row in (0..n).rev() {
         let end = (row + bandwidth).min(n - 1);
         let tail = (row + 1..=end)
@@ -766,7 +888,7 @@ fn solve_spd_banded(bands: &mut [Vec<f64>], rhs: &[f64]) -> Result<Vec<f64>> {
             .sum::<f64>();
         output[row] = (intermediate[row] - tail) / symmetric_band_value(bands, row, row);
     }
-    Ok(output)
+    Ok(())
 }
 
 fn difference_coefficients(order: usize) -> Vec<f64> {
