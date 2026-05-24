@@ -31,6 +31,12 @@ cargo bench --bench baseline_workloads -- morphology_2d/imor_16x16 --profile-tim
 sample <baseline_workloads-pid> 5 -file /tmp/baselines-imor2d.sample.txt
 cargo bench --bench baseline_workloads -- morphology_2d --baseline perf_before_opt
 cargo bench --bench baseline_workloads -- morphology_2d --save-baseline morphology2d_after_separable
+cargo bench --bench baseline_workloads -- optimizers_2d/collab_pls_2x16x16 --profile-time 20
+sample <baseline_workloads-pid> 5 -file /tmp/baselines-collab2d.sample.txt
+cargo bench --bench baseline_workloads -- spline_2d/pspline_iarpls_16x16 --profile-time 20
+sample <baseline_workloads-pid> 5 -file /tmp/baselines-pspline-iarpls2d.sample.txt
+cargo bench --bench baseline_workloads -- spline_2d --baseline perf_before_opt
+cargo bench --bench baseline_workloads -- spline_2d --save-baseline pspline2d_after_workspace
 ```
 
 Full saved baseline means are in
@@ -84,6 +90,37 @@ general banded solver for narrow non-symmetric P-spline systems, while keeping
 the original dense solve path for smaller basis counts. The public API remains
 unchanged.
 
+2D P-spline profiling before optimization:
+
+- Target: `spline_2d/pspline_iarpls_16x16`
+- `sample` captured 3816 samples from the Criterion profile run.
+- The profile was dominated by `two_d::spline::fit_with_policy` and
+  `solve_separable_pspline`, especially repeated
+  `linalg::pspline::PenalizedSpline` solve allocation and small banded solves
+  for each row and column pass.
+
+2D P-spline optimization results:
+
+| Benchmark | Before mean | After mean | Change |
+| --- | ---: | ---: | ---: |
+| `spline_2d/pspline_asls_16x16` | 85.921 us | 60.206 us | -29.93% |
+| `spline_2d/pspline_iasls_16x16` | 359.947 us | 348.561 us | -3.16% |
+| `spline_2d/pspline_airpls_16x16` | 1.095 ms | 0.729 ms | -33.41% |
+| `spline_2d/pspline_arpls_16x16` | 250.138 us | 170.790 us | -31.72% |
+| `spline_2d/pspline_iarpls_16x16` | 1.124 ms | 0.740 ms | -34.16% |
+| `spline_2d/pspline_psalsa_16x16` | 218.839 us | 144.543 us | -33.95% |
+| `spline_2d/pspline_brpls_16x16` | 522.743 us | 321.805 us | -38.44% |
+| `spline_2d/pspline_lsrpls_16x16` | 88.214 us | 61.569 us | -30.20% |
+| `spline_2d/irsqr_16x16` | 428.911 us | 288.705 us | -32.69% |
+| `spline_2d/mixture_model_16x16` | 89.067 us | 58.332 us | -34.51% |
+
+The retained change caches the row and column spline bases in
+`Spline2DWorkspace` and reuses the hot banded P-spline solve buffers instead
+of rebuilding the basis, normal bands, right-hand side, and output vectors for
+every row and column pass. The first-difference variant still uses the
+compatibility allocation path, so its improvement is intentionally smaller.
+Fixture compatibility remained passing for the pinned pybaselines references.
+
 Goldindec profiling before optimization:
 
 - Target: `polynomial_1d/goldindec_256`
@@ -112,12 +149,13 @@ references.
 - The profile was dominated by `solve_weighted_system`, with 2373 samples in
   `apply_operator` and 1429 samples in the surrounding conjugate-gradient loop.
 
-Rejected 2D Whittaker experiments:
+Rejected or no-op 2D experiments:
 
 | Benchmark | Experiment | Before mean | After mean | Change |
 | --- | --- | ---: | ---: | ---: |
 | `whittaker_2d/brpls_16x16` | Precomputed operator coefficients | 8.232 ms | 9.174 ms | +10.7% |
 | `whittaker_2d/brpls_16x16` | Jacobi-preconditioned CG | 8.232 ms | 12.802 ms | +55.63% |
+| `optimizers_2d/collab_pls_2x16x16` | Reuse shared Whittaker workspace and fill weights in place | 1.300 ms | 1.293 ms | no significant change |
 
 2D morphology profiling before optimization:
 

@@ -9,3 +9,13 @@ morphology_2d/tophat_16x16,8886,3501,-60.60,5c9b453
 morphology_2d/mor_16x16,18266,6781,-62.88,5c9b453
 morphology_2d/imor_16x16,1537424,409770,-73.35,5c9b453
 morphology_2d/noise_median_16x16,25796,24759,-4.02,5c9b453
+spline_2d/pspline_asls_16x16,85921,60206,-29.93,2a9564b
+spline_2d/pspline_iasls_16x16,359947,348561,-3.16,2a9564b
+spline_2d/pspline_airpls_16x16,1095354,729414,-33.41,2a9564b
+spline_2d/pspline_arpls_16x16,250138,170790,-31.72,2a9564b
+spline_2d/pspline_iarpls_16x16,1124229,740230,-34.16,2a9564b
+spline_2d/pspline_psalsa_16x16,218839,144543,-33.95,2a9564b
+spline_2d/pspline_brpls_16x16,522743,321805,-38.44,2a9564b
+spline_2d/pspline_lsrpls_16x16,88214,61569,-30.20,2a9564b
+spline_2d/irsqr_16x16,428911,288705,-32.69,2a9564b
+spline_2d/mixture_model_16x16,89067,58332,-34.51,2a9564b
