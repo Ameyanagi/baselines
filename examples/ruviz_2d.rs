@@ -1,5 +1,4 @@
-use baselines::MatrixView;
-use baselines::two_d::whittaker::{Asls2DParams, Whittaker2DParams, asls};
+use baselines::prelude::*;
 use ruviz::prelude::*;
 use std::error::Error;
 use std::f64::consts::PI;
@@ -13,21 +12,15 @@ fn main() -> std::result::Result<(), Box<dyn Error>> {
     std::fs::create_dir_all(OUTPUT_DIR)?;
 
     let (observed, true_baseline) = synthetic_surface();
-    let input = MatrixView::row_major(&observed, ROWS, COLS)?;
-    let fit = asls(
-        input,
-        Asls2DParams {
-            whittaker: Whittaker2DParams {
-                lambda: 8.0e3,
-                max_iter: 40,
-                tol: 1.0e-3,
-                cg_max_iter: 500,
-                cg_tol: 1.0e-6,
-                ..Whittaker2DParams::default()
-            },
-            p: 0.01,
-        },
-    )?;
+    let fit = Baseline2D::row_major(&observed, ROWS, COLS)?
+        .asls()
+        .lambda(8.0e3)
+        .max_iter(40)
+        .tol(1.0e-3)
+        .cg_max_iter(500)
+        .cg_tol(1.0e-6)
+        .p(0.01)
+        .fit()?;
     let corrected = fit.corrected(&observed)?;
 
     let observed_path = output_path("2d_observed.png");

@@ -6,10 +6,14 @@ inspired by the baseline correction literature and by the public behavior of
 [`pybaselines`](https://pybaselines.readthedocs.io/).
 
 ```rust
-use baselines::whittaker::{AslsParams, asls};
+use baselines::prelude::*;
 
 let y = vec![1.0, 1.1, 4.2, 1.2, 1.0];
-let fit = asls(&y, AslsParams::default())?;
+let fit = Baseline::new(&y)
+    .asls()
+    .lambda(1.0e6)
+    .p(0.01)
+    .fit()?;
 let corrected = fit.corrected(&y)?;
 # Ok::<(), baselines::BaselineError>(())
 ```
@@ -24,7 +28,11 @@ is staged under `baselines::two_d`; all pinned `pybaselines.Baseline2D` 1.2.1
 families now have first-pass native Rust implementations.
 
 Algorithms are organized by family module. Core data types such as `Fit1D`,
-`Fit2D`, and row-major matrix views are available at the crate root.
+`Fit2D`, and row-major matrix views are available at the crate root. The
+recommended Rust API starts from `Baseline::new(&y)` for 1D data and
+`Baseline2D::row_major(&data, rows, cols)` for row-major 2D data. The explicit
+family modules and parameter structs remain public for advanced workflows and
+for users who prefer free functions.
 
 Golden fixtures generated from a pinned `pybaselines` release check the
 one-dimensional algorithms with algorithm-specific tolerances. GPU support is
@@ -59,6 +67,34 @@ not.
 
 See `docs/PYBASELINES_EXAMPLES.md` for the pybaselines gallery coverage matrix
 and additional gallery-batch example commands.
+
+## API style
+
+Use the method-chain API for ordinary fits:
+
+```rust
+use baselines::prelude::*;
+
+let fit = Baseline::new(&y)
+    .arpls()
+    .lambda(1.0e6)
+    .max_iter(50)
+    .tol(1.0e-3)
+    .fit()?;
+# Ok::<(), baselines::BaselineError>(())
+```
+
+Use the lower-level family modules when you want to pass a complete params
+struct, reuse workspaces, or compare directly against existing code:
+
+```rust
+use baselines::whittaker::{AslsParams, asls};
+
+let fit = asls(&y, AslsParams::default())?;
+# Ok::<(), baselines::BaselineError>(())
+```
+
+See `docs/API.md` for more examples.
 
 ## Attribution
 

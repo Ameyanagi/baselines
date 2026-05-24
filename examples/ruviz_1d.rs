@@ -1,4 +1,4 @@
-use baselines::whittaker::{ArPlsParams, AslsParams, WhittakerParams, arpls, asls};
+use baselines::prelude::*;
 use ruviz::prelude::*;
 use std::error::Error;
 use std::f64::consts::PI;
@@ -11,14 +11,19 @@ fn main() -> std::result::Result<(), Box<dyn Error>> {
     std::fs::create_dir_all(OUTPUT_DIR)?;
 
     let (x, y, true_baseline) = synthetic_spectrum();
-    let whittaker = WhittakerParams {
-        lambda: 5.0e5,
-        max_iter: 60,
-        tol: 1.0e-4,
-    };
-
-    let asls_fit = asls(&y, AslsParams { whittaker, p: 0.01 })?;
-    let arpls_fit = arpls(&y, ArPlsParams { whittaker })?;
+    let asls_fit = Baseline::new(&y)
+        .asls()
+        .lambda(5.0e5)
+        .max_iter(60)
+        .tol(1.0e-4)
+        .p(0.01)
+        .fit()?;
+    let arpls_fit = Baseline::new(&y)
+        .arpls()
+        .lambda(5.0e5)
+        .max_iter(60)
+        .tol(1.0e-4)
+        .fit()?;
     let asls_corrected = asls_fit.corrected(&y)?;
     let arpls_corrected = arpls_fit.corrected(&y)?;
     let true_corrected: Vec<f64> = y

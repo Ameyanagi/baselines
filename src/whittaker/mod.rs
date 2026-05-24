@@ -24,5 +24,5 @@ pub use engine::{WhittakerParams, WhittakerWorkspace};
 pub use variants::{
     AsPlsParams, BrPlsParams, DerPsalsaParams, DrPlsParams, IarPlsParams, IaslsParams,
     LsrPlsParams, PsalsaParams, aspls, aspls_into_with_history, aspls_with_history, brpls,
-    derpsalsa, drpls, iarpls, iasls, lsrpls, psalsa,
+    brpls_into, derpsalsa, drpls, drpls_into, iarpls, iasls, iasls_into, lsrpls, psalsa,
 };
