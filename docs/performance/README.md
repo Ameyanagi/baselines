@@ -65,6 +65,10 @@ cargo bench --bench baseline_workloads -- whittaker_2d/brpls_16x16 --profile-tim
 sample <baseline_workloads-pid> 5 -file /tmp/baselines-brpls2d-current.sample.txt
 cargo bench --bench baseline_workloads -- whittaker_2d --baseline whittaker2d_after_cg_fusion
 cargo bench --bench baseline_workloads -- whittaker_2d --save-baseline whittaker2d_after_clamped_weights
+cargo bench --bench baseline_workloads -- whittaker_2d/brpls_16x16 --profile-time 30
+sample <baseline_workloads-pid> 5 -file /tmp/baselines-brpls2d-operator-current.sample.txt
+cargo bench --bench baseline_workloads -- whittaker_2d --save-baseline whittaker2d_before_operator_split
+cargo bench --bench baseline_workloads -- whittaker_2d --baseline whittaker2d_before_operator_split
 cargo bench --bench baseline_workloads -- spline_1d/pspline_aspls_256 --profile-time 20
 sample <baseline_workloads-pid> 5 -file /tmp/baselines-pspline-aspls1d.sample.txt
 cargo bench --bench baseline_workloads -- spline_1d --baseline perf_before_opt
@@ -357,6 +361,15 @@ inside every CG operator application, produced this incremental result against
 | `whittaker_2d/brpls_16x16` | 6.701 ms | 6.533 ms | -2.50% |
 | `whittaker_2d/lsrpls_16x16` | 671.233 us | 660.735 us | -1.56% |
 
+After the clamped-weight optimization, `whittaker_2d/brpls_16x16` was profiled
+again. `sample` captured 3836 samples; `brpls_into` spent 3773 samples in
+`solve_weighted_system`, while `BrPlsWeights::update` remained small. An
+interior/boundary split for the second-order operator was compared against the
+saved Criterion baseline `whittaker2d_before_operator_split`. It regressed
+`brpls_16x16` from 6.462 ms to 7.949 ms (+23.02%) and regressed the rest of the
+matrix-free Whittaker group, so the code was reverted and the experiment is
+recorded in `rejected-experiments-2026-05-24.csv`.
+
 1D classification profiling before optimization:
 
 - Target: `classification_1d/dietrich_256`
@@ -400,6 +413,7 @@ Rejected or no-op experiments:
 | `polynomial_1d/goldindec_256` | Direct adjusted-RHS computation with cached-power evaluation | 1.347 ms | 1.540 ms | +14.30% |
 | `spline_1d/pspline_aspls_256` | Reuse asPLS residual/weight/interpolation buffers | 0.944 ms | 0.960 ms | +1.75% |
 | `whittaker_1d/arpls_256` | No-allocation arPLS weight update | 0.312 ms | 0.335 ms | +7.45% |
+| `whittaker_2d/brpls_16x16` | Interior/boundary split for second-order operator | 6.462 ms | 7.949 ms | +23.02% |
 
 2D morphology profiling before optimization:
 

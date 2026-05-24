@@ -6,3 +6,4 @@ spline_1d/pspline_aspls_256,direct dense row-scaled P-spline workspace,990000,74
 polynomial_1d/goldindec_256,direct adjusted-RHS computation with cached-power evaluation,1347031,1539700,+14.30,rejected
 spline_1d/pspline_aspls_256,reuse asPLS residual/weight/interpolation buffers,943588,960087,+1.75,rejected
 whittaker_1d/arpls_256,no-allocation arPLS weight update,311677,334911,+7.45,rejected
+whittaker_2d/brpls_16x16,interior/boundary split for second-order operator,6461777,7949078,+23.02,rejected
