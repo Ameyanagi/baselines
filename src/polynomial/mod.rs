@@ -96,8 +96,7 @@ pub fn poly(y: &[f64], params: PolyParams) -> Result<Fit> {
 /// Fits a least-squares polynomial baseline into an existing output buffer.
 pub fn poly_into(y: &[f64], params: PolyParams, baseline: &mut [f64]) -> Result<FitReport> {
     validate_poly_input(y, params.order, baseline)?;
-    let weights = vec![1.0; y.len()];
-    fit_weighted_polynomial(y, &weights, params.order, baseline)?;
+    fit_unweighted_polynomial(y, params.order, baseline)?;
     Ok(FitReport::new(1, true, 0.0))
 }
 
@@ -119,12 +118,12 @@ pub fn modpoly_into(y: &[f64], params: ModPolyParams, baseline: &mut [f64]) -> R
     validate_poly_input(y, params.order, baseline)?;
     let mut clipped = y.to_vec();
     let mut previous = vec![0.0; y.len()];
-    let weights = vec![1.0; y.len()];
+    let mut workspace = PolynomialFitWorkspace::new(params.order);
     let mut tolerance = f64::INFINITY;
 
     for iter in 0..params.max_iter {
         previous.copy_from_slice(baseline);
-        fit_weighted_polynomial(&clipped, &weights, params.order, baseline)?;
+        fit_unweighted_polynomial_with_workspace(&clipped, params.order, baseline, &mut workspace)?;
         tolerance = relative_baseline_change(&previous, baseline);
         let residual: Vec<f64> = clipped
             .iter()
@@ -395,13 +394,7 @@ pub fn penalized_poly_into(
         .threshold
         .unwrap_or_else(|| standard_deviation(y) / 10.0);
     let mut workspace = PenalizedPolynomialWorkspace::new(y.len(), params.order);
-    fit_weighted_polynomial_with_workspace(
-        y,
-        &workspace.weights,
-        params.order,
-        baseline,
-        &mut workspace.polynomial,
-    )?;
+    fit_unweighted_polynomial_with_workspace(y, params.order, baseline, &mut workspace.polynomial)?;
     fit_penalized_polynomial_with_threshold(
         y,
         PenalizedFitParams {
@@ -427,13 +420,7 @@ pub fn goldindec_into(
     validate_poly_input(y, params.order, baseline)?;
 
     let mut workspace = PenalizedPolynomialWorkspace::new(y.len(), params.order);
-    fit_weighted_polynomial_with_workspace(
-        y,
-        &workspace.weights,
-        params.order,
-        baseline,
-        &mut workspace.polynomial,
-    )?;
+    fit_unweighted_polynomial_with_workspace(y, params.order, baseline, &mut workspace.polynomial)?;
     let initial = baseline.to_vec();
     let goal = goldindec_up_down_ratio_goal(params.peak_ratio);
     let mut lower = 0.0;
@@ -698,9 +685,8 @@ fn fit_penalized_polynomial_with_threshold(
                 );
         }
 
-        fit_weighted_polynomial_with_workspace(
+        fit_unweighted_polynomial_with_workspace(
             &workspace.adjusted,
-            &workspace.weights,
             params.order,
             baseline,
             &mut workspace.polynomial,
@@ -716,7 +702,6 @@ fn fit_penalized_polynomial_with_threshold(
 
 #[derive(Debug, Default)]
 struct PenalizedPolynomialWorkspace {
-    weights: Vec<f64>,
     adjusted: Vec<f64>,
     previous: Vec<f64>,
     polynomial: PolynomialFitWorkspace,
@@ -730,8 +715,6 @@ impl PenalizedPolynomialWorkspace {
     }
 
     fn resize(&mut self, len: usize, order: usize) {
-        self.weights.resize(len, 1.0);
-        self.weights.fill(1.0);
         self.adjusted.resize(len, 0.0);
         self.previous.resize(len, 0.0);
         self.polynomial.resize(order);
@@ -997,6 +980,28 @@ pub(crate) fn fit_weighted_polynomial_with_workspace(
     Ok(())
 }
 
+pub(crate) fn fit_unweighted_polynomial(
+    y: &[f64],
+    order: usize,
+    baseline: &mut [f64],
+) -> Result<()> {
+    let mut workspace = PolynomialFitWorkspace::new(order);
+    let coeffs = fit_single_pass_unweighted_polynomial_coefficients(y, order, &mut workspace)?;
+    evaluate_polynomial_coefficients(coeffs, baseline);
+    Ok(())
+}
+
+pub(crate) fn fit_unweighted_polynomial_with_workspace(
+    y: &[f64],
+    order: usize,
+    baseline: &mut [f64],
+    workspace: &mut PolynomialFitWorkspace,
+) -> Result<()> {
+    let coeffs = fit_unweighted_polynomial_coefficients_with_workspace(y, order, workspace)?;
+    evaluate_polynomial_coefficients(coeffs, baseline);
+    Ok(())
+}
+
 /// Fits weighted polynomial coefficients in increasing order.
 pub(crate) fn fit_weighted_polynomial_coefficients(
     y: &[f64],
@@ -1006,6 +1011,70 @@ pub(crate) fn fit_weighted_polynomial_coefficients(
     let mut workspace = PolynomialFitWorkspace::new(order);
     fit_weighted_polynomial_coefficients_with_workspace(y, weights, order, &mut workspace)?;
     Ok(workspace.coeffs[..order + 1].to_vec())
+}
+
+fn fit_unweighted_polynomial_coefficients_with_workspace<'a>(
+    y: &[f64],
+    order: usize,
+    workspace: &'a mut PolynomialFitWorkspace,
+) -> Result<&'a [f64]> {
+    let n_coeffs = order + 1;
+    workspace.ensure_unweighted_cache(y.len(), order);
+    workspace
+        .normal
+        .copy_from_slice(&workspace.unweighted_normal);
+    workspace.rhs.fill(0.0);
+
+    let sample_powers = &workspace.sample_powers;
+    let rhs = &mut workspace.rhs;
+    for (i, observed) in y.iter().enumerate() {
+        let offset = i * n_coeffs;
+        for row in 0..n_coeffs {
+            rhs[row] += observed * sample_powers[offset + row];
+        }
+    }
+
+    solve_dense_in_place(
+        &mut workspace.normal,
+        &mut workspace.rhs,
+        &mut workspace.coeffs,
+        &mut workspace.pivot_row,
+    )?;
+    Ok(&workspace.coeffs[..n_coeffs])
+}
+
+fn fit_single_pass_unweighted_polynomial_coefficients<'a>(
+    y: &[f64],
+    order: usize,
+    workspace: &'a mut PolynomialFitWorkspace,
+) -> Result<&'a [f64]> {
+    let n_coeffs = order + 1;
+    workspace.resize(order);
+    workspace.normal.fill(0.0);
+    workspace.rhs.fill(0.0);
+
+    for (i, observed) in y.iter().enumerate() {
+        let x = scaled_x(i, y.len());
+        workspace.powers[0] = 1.0;
+        for power in 1..n_coeffs {
+            workspace.powers[power] = workspace.powers[power - 1] * x;
+        }
+        for row in 0..n_coeffs {
+            workspace.rhs[row] += observed * workspace.powers[row];
+            for col in 0..n_coeffs {
+                workspace.normal[row * n_coeffs + col] +=
+                    workspace.powers[row] * workspace.powers[col];
+            }
+        }
+    }
+
+    solve_dense_in_place(
+        &mut workspace.normal,
+        &mut workspace.rhs,
+        &mut workspace.coeffs,
+        &mut workspace.pivot_row,
+    )?;
+    Ok(&workspace.coeffs[..n_coeffs])
 }
 
 pub(crate) fn fit_weighted_polynomial_coefficients_with_workspace<'a>(
@@ -1050,6 +1119,9 @@ pub(crate) struct PolynomialFitWorkspace {
     coeffs: Vec<f64>,
     powers: Vec<f64>,
     pivot_row: Vec<f64>,
+    cached_unweighted: Option<(usize, usize)>,
+    unweighted_normal: Vec<f64>,
+    sample_powers: Vec<f64>,
 }
 
 impl PolynomialFitWorkspace {
@@ -1066,6 +1138,35 @@ impl PolynomialFitWorkspace {
         self.coeffs.resize(n_coeffs, 0.0);
         self.powers.resize(n_coeffs, 0.0);
         self.pivot_row.resize(n_coeffs, 0.0);
+    }
+
+    fn ensure_unweighted_cache(&mut self, len: usize, order: usize) {
+        self.resize(order);
+        if self.cached_unweighted == Some((len, order)) {
+            return;
+        }
+
+        let n_coeffs = order + 1;
+        self.unweighted_normal.resize(n_coeffs * n_coeffs, 0.0);
+        self.unweighted_normal.fill(0.0);
+        self.sample_powers.resize(len * n_coeffs, 0.0);
+
+        for i in 0..len {
+            let x = scaled_x(i, len);
+            let offset = i * n_coeffs;
+            self.sample_powers[offset] = 1.0;
+            for power in 1..n_coeffs {
+                self.sample_powers[offset + power] = self.sample_powers[offset + power - 1] * x;
+            }
+            for row in 0..n_coeffs {
+                for col in 0..n_coeffs {
+                    self.unweighted_normal[row * n_coeffs + col] +=
+                        self.sample_powers[offset + row] * self.sample_powers[offset + col];
+                }
+            }
+        }
+
+        self.cached_unweighted = Some((len, order));
     }
 }
 
