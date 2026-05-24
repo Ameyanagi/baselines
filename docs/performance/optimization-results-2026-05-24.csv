@@ -43,3 +43,8 @@ polynomial_1d/poly_256,2812,2597,-7.65,ee2467e
 polynomial_1d/modpoly_256,39209,17095,-56.40,ee2467e
 polynomial_1d/penalized_poly_256,34112,14798,-56.62,ee2467e
 polynomial_1d/goldindec_256,3361222,1353887,-59.72,ee2467e
+polynomial_2d/poly_16x16,20723,11443,-44.78,13f5388
+polynomial_2d/modpoly_16x16,150220,65565,-56.35,13f5388
+polynomial_2d/imodpoly_16x16,184343,59038,-67.97,13f5388
+polynomial_2d/penalized_poly_16x16,203859,82462,-59.55,13f5388
+polynomial_2d/quant_reg_16x16,609275,259076,-57.48,13f5388

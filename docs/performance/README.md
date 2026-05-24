@@ -32,6 +32,10 @@ sample <baseline_workloads-pid> 5 -file /tmp/baselines-goldindec-current.sample.
 git worktree add /tmp/baselines-before-unweighted-cache 496c8ac
 cargo bench --manifest-path /tmp/baselines-before-unweighted-cache/Cargo.toml --bench baseline_workloads -- polynomial_1d --save-baseline before_unweighted_cache
 cargo bench --bench baseline_workloads -- polynomial_1d --save-baseline polynomial1d_after_unweighted_cache
+cargo bench --bench baseline_workloads -- polynomial_2d/quant_reg_16x16 --profile-time 20
+sample <baseline_workloads-pid> 5 -file /tmp/baselines-quantreg2d.sample.txt
+cargo bench --bench baseline_workloads -- polynomial_2d --baseline perf_before_opt
+cargo bench --bench baseline_workloads -- polynomial_2d --save-baseline polynomial2d_after_basis_workspace
 cargo bench --bench baseline_workloads -- morphology_2d/imor_16x16 --profile-time 20
 sample <baseline_workloads-pid> 5 -file /tmp/baselines-imor2d.sample.txt
 cargo bench --bench baseline_workloads -- morphology_2d --baseline perf_before_opt
@@ -182,6 +186,30 @@ direct `poly` uses a one-shot unweighted solve to avoid cache setup overhead.
 The full `polynomial_1d` Criterion group was saved as
 `polynomial1d_after_unweighted_cache` so unchanged controls can be checked
 later.
+
+2D polynomial profiling before basis caching:
+
+- Target: `polynomial_2d/quant_reg_16x16`
+- `sample` captured 3816 samples from the Criterion profile run.
+- 3640 samples were in `two_d::polynomial::quant_reg_into`.
+- The hottest leaf was `fit_weighted_surface`; repeated polynomial basis
+  construction and `powi` calls accounted for most of the profile, while the
+  dense solve and allocation stacks were secondary.
+
+2D polynomial basis-workspace optimization results:
+
+| Benchmark | Before mean | After mean | Change |
+| --- | ---: | ---: | ---: |
+| `polynomial_2d/poly_16x16` | 20.723 us | 11.443 us | -44.78% |
+| `polynomial_2d/modpoly_16x16` | 150.220 us | 65.565 us | -56.35% |
+| `polynomial_2d/imodpoly_16x16` | 184.343 us | 59.038 us | -67.97% |
+| `polynomial_2d/penalized_poly_16x16` | 203.859 us | 82.462 us | -59.55% |
+| `polynomial_2d/quant_reg_16x16` | 609.275 us | 259.076 us | -57.48% |
+
+The retained change caches 2D polynomial basis values per shape and order,
+reuses contiguous dense-solve buffers, and evaluates fitted surfaces from the
+cached basis. The full `polynomial_2d` Criterion group was saved as
+`polynomial2d_after_basis_workspace`.
 
 2D Whittaker profiling:
 
