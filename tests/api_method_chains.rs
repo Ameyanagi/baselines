@@ -89,9 +89,12 @@ fn xy_whittaker_uniform_grid_matches_existing_methods() {
         &xy.derpsalsa().fit().unwrap(),
         &derpsalsa(&y, DerPsalsaParams::default()).unwrap(),
     );
-    assert_fit_close(
+    // X-aware brPLS keeps the converged candidate; the legacy path remains
+    // pybaselines-fixture compatible and can differ within convergence tol.
+    assert_fit_close_with_epsilon(
         &xy.brpls().fit().unwrap(),
         &brpls(&y, BrPlsParams::default()).unwrap(),
+        BrPlsParams::default().whittaker.tol,
     );
     assert_fit_close(
         &xy.lsrpls().fit().unwrap(),
@@ -199,6 +202,14 @@ fn xy_whittaker_validates_x_and_masks() {
             .unwrap()
             .asls()
             .exclude_range(x[0], x[y.len() - 1])
+            .fit()
+            .is_err()
+    );
+    assert!(
+        Baseline::new_xy(&x, &y)
+            .unwrap()
+            .asls()
+            .exclude_range(x[0], x[y.len() - 3])
             .fit()
             .is_err()
     );
@@ -341,8 +352,12 @@ fn surface() -> Vec<f64> {
 }
 
 fn assert_fit_close(left: &Fit, right: &Fit) {
+    assert_fit_close_with_epsilon(left, right, 1.0e-6);
+}
+
+fn assert_fit_close_with_epsilon(left: &Fit, right: &Fit, epsilon: f64) {
     assert_eq!(left.baseline.len(), right.baseline.len());
     for (left, right) in left.baseline.iter().zip(&right.baseline) {
-        assert_abs_diff_eq!(*left, *right, epsilon = 1.0e-6);
+        assert_abs_diff_eq!(*left, *right, epsilon = epsilon);
     }
 }

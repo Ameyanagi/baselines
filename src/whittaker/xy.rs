@@ -565,8 +565,8 @@ fn brpls_xy_into(
     let mut outer_tolerance = f64::INFINITY;
     let mut total_iterations = 0usize;
 
-    'outer: for outer in 0..=params.max_iter_2 {
-        for inner in 0..=params.whittaker.max_iter {
+    'outer: for _outer in 0..=params.max_iter_2 {
+        for _inner in 0..=params.whittaker.max_iter {
             solve_second_order_x(
                 &prepared.x,
                 y,
@@ -589,9 +589,7 @@ fn brpls_xy_into(
 
             tolerance = relative_change(&current_baseline, &candidate);
             if tolerance < params.whittaker.tol {
-                if outer == 0 && inner == 0 {
-                    current_baseline.copy_from_slice(&candidate);
-                }
+                current_baseline.copy_from_slice(&candidate);
                 break;
             }
 
@@ -632,17 +630,18 @@ struct PreparedXy {
 }
 
 fn prepare_xy(x: &[f64], y: &[f64], masks: &XyMaskSpec<'_>) -> Result<PreparedXy> {
-    validate_xy(x, y)?;
+    // Public x-aware construction validates x/y once. This internal prepare
+    // step only resolves per-fit masks and normalized coordinates.
     let mean_dx = (x[x.len() - 1] - x[0]) / (x.len() - 1) as f64;
     let normalized_x: Vec<f64> = x.iter().map(|value| (value - x[0]) / mean_dx).collect();
     let mut active = vec![true; y.len()];
 
     apply_masks(x, y.len(), masks, &mut active)?;
     let active_count = active.iter().filter(|value| **value).count();
-    if active_count < 2 {
+    if active_count < 3 {
         return Err(BaselineError::InvalidParameter {
             name: "mask",
-            reason: "at least two unmasked points are required",
+            reason: "at least three unmasked points are required",
         });
     }
 
