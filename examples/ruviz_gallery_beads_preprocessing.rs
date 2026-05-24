@@ -1,10 +1,11 @@
-//! Ruviz counterpart for pybaselines' BEADS preprocessing gallery.
+//! BEADS preprocessing gallery rendered with ruviz.
 //!
 //! The signal, three baseline formulas, 1000-point x grid, noise scale, and
 //! BEADS parameter sets mirror:
 //! <https://pybaselines.readthedocs.io/en/latest/generated/examples/misc/plot_beads_preprocessing.html>.
-//! pybaselines is used as a behavioral and documentation reference only; this
-//! example calls this crate's native Rust implementation.
+//! Inspired by the linked pybaselines example; pybaselines is used as a
+//! behavioral and documentation reference only, and this example calls this
+//! crate's native Rust implementation.
 
 mod common;
 
@@ -28,7 +29,7 @@ fn main() -> std::result::Result<(), Box<dyn Error>> {
             lam_2: 1.0,
             ..BeadsParams::default()
         },
-        "pybaselines_gallery_beads_baseline_1.png",
+        "gallery_beads_baseline_1.png",
     )?;
     save_beads_fit(
         &x,
@@ -39,7 +40,7 @@ fn main() -> std::result::Result<(), Box<dyn Error>> {
             lam_2: 1.0,
             ..BeadsParams::default()
         },
-        "pybaselines_gallery_beads_baseline_2.png",
+        "gallery_beads_baseline_2.png",
     )?;
     save_beads_fit(
         &x,
@@ -53,7 +54,7 @@ fn main() -> std::result::Result<(), Box<dyn Error>> {
             asymmetry: 3.0,
             ..BeadsParams::default()
         },
-        "pybaselines_gallery_beads_baseline_3.png",
+        "gallery_beads_baseline_3.png",
     )?;
 
     Ok(())
@@ -65,14 +66,11 @@ fn save_preprocessing_inputs(x: &[f64]) -> std::result::Result<(), Box<dyn Error
         let parabola = endpoint_parabola(&y);
         let processed: Vec<f64> = y.iter().zip(&parabola).map(|(y, p)| y - p).collect();
         let path = output_path(&format!(
-            "pybaselines_gallery_beads_preprocessing_baseline_{}.png",
+            "gallery_beads_preprocessing_baseline_{}.png",
             baseline_type + 1
         ));
         save_lines(
-            &format!(
-                "pybaselines BEADS preprocessing: baseline {}",
-                baseline_type + 1
-            ),
+            &format!("BEADS Preprocessing: Baseline {}", baseline_type + 1),
             "x",
             "intensity",
             x,
@@ -123,7 +121,7 @@ fn save_beads_fit(
     )?;
     let path = output_path(filename);
     save_lines(
-        &format!("pybaselines BEADS baseline {}", baseline_type + 1),
+        &format!("BEADS Baseline {}", baseline_type + 1),
         "x",
         "intensity",
         x,

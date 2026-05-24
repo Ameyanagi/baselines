@@ -1,3 +1,10 @@
+//! Reference gallery batch rendered with ruviz.
+//!
+//! Inspired by multiple examples from the pybaselines gallery; pybaselines is
+//! used as a behavioral and documentation reference only, and this example
+//! calls this crate's native Rust implementations.
+//! <https://pybaselines.readthedocs.io/en/latest/generated/examples/index.html>.
+
 mod common;
 
 use baselines::classification::{
@@ -78,9 +85,9 @@ fn general_algorithm_convergence() -> std::result::Result<(), Box<dyn Error>> {
         },
     )?;
 
-    let path = output_path("pybaselines_gallery_algorithm_convergence.png");
+    let path = output_path("gallery_algorithm_convergence.png");
     save_lines(
-        "pybaselines algorithm convergence",
+        "Algorithm Convergence",
         "x",
         "intensity",
         &x,
@@ -115,9 +122,9 @@ fn general_algorithm_convergence() -> std::result::Result<(), Box<dyn Error>> {
     )?;
     print_output(&path);
 
-    let history_path = output_path("pybaselines_gallery_algorithm_convergence_tolerance.png");
+    let history_path = output_path("gallery_algorithm_convergence_tolerance.png");
     save_history_lines(
-        "pybaselines algorithm convergence tolerance",
+        "Algorithm Convergence Tolerance",
         "iteration",
         "log10(relative difference)",
         &[
@@ -182,9 +189,9 @@ fn general_noisy_data() -> std::result::Result<(), Box<dyn Error>> {
         },
     )?;
 
-    let path = output_path("pybaselines_gallery_noisy_data.png");
+    let path = output_path("gallery_noisy_data.png");
     save_lines(
-        "pybaselines noisy data",
+        "Noisy Data",
         "x",
         "intensity",
         &x,
@@ -303,9 +310,9 @@ fn general_masked_data() -> std::result::Result<(), Box<dyn Error>> {
     let mask_aware_arpls = masked_arpls(&y_bad, &fit_mask, 1.0e5)?;
     let mor_linear = mor(&y_linear, MorphologyParams { window_size: 71 })?;
 
-    let path = output_path("pybaselines_gallery_masked_data.png");
+    let path = output_path("gallery_masked_data.png");
     save_lines(
-        "pybaselines masked data",
+        "Masked Data",
         "x",
         "intensity",
         &x,
@@ -372,9 +379,9 @@ fn general_padding() -> std::result::Result<(), Box<dyn Error>> {
         reflect.len(),
     );
 
-    let path = output_path("pybaselines_gallery_padding.png");
+    let path = output_path("gallery_padding.png");
     save_lines(
-        "pybaselines padding",
+        "Padding",
         "sample",
         "offset intensity",
         &padded_x,
@@ -424,9 +431,9 @@ fn general_padding_extrapolate() -> std::result::Result<(), Box<dyn Error>> {
         ex_1.len(),
     );
 
-    let path = output_path("pybaselines_gallery_padding_extrapolate.png");
+    let path = output_path("gallery_padding_extrapolate.png");
     save_lines(
-        "pybaselines padding extrapolate",
+        "Padding Extrapolate",
         "sample",
         "offset intensity",
         &padded_x,
@@ -515,9 +522,9 @@ fn general_reuse_baseline() -> std::result::Result<(), Box<dyn Error>> {
         },
     )?;
 
-    let path = output_path("pybaselines_gallery_reuse_baseline.png");
+    let path = output_path("gallery_reuse_baseline.png");
     save_lines(
-        "pybaselines reuse Baseline",
+        "Reuse Baseline",
         "x",
         "intensity",
         &x,
@@ -610,9 +617,9 @@ fn general_sorted_data() -> std::result::Result<(), Box<dyn Error>> {
     .baseline;
     fit_reversed.reverse();
 
-    let path = output_path("pybaselines_gallery_sorted_data.png");
+    let path = output_path("gallery_sorted_data.png");
     save_lines(
-        "pybaselines sorted data",
+        "Sorted Data",
         "x",
         "absorbance",
         &x,
@@ -668,9 +675,9 @@ fn morphology_half_window_effects() -> std::result::Result<(), Box<dyn Error>> {
     let fit_60 = mor(&y, MorphologyParams { window_size: 121 })?;
     let fit_120 = mor(&y, MorphologyParams { window_size: 241 })?;
 
-    let path = output_path("pybaselines_gallery_half_window_effects.png");
+    let path = output_path("gallery_half_window_effects.png");
     save_lines(
-        "pybaselines half_window effects",
+        "Half-Window Effects",
         "x",
         "intensity",
         &x,
@@ -732,9 +739,9 @@ fn classification_masks() -> std::result::Result<(), Box<dyn Error>> {
         },
     )?;
 
-    let path = output_path("pybaselines_gallery_classifier_masks.png");
+    let path = output_path("gallery_classifier_masks.png");
     save_lines(
-        "pybaselines classification masks",
+        "Classification Masks",
         "x",
         "intensity",
         &x,
@@ -761,9 +768,9 @@ fn classification_masks() -> std::result::Result<(), Box<dyn Error>> {
 
     let mask_15 = mask_as_float(&fit_15.mask);
     let mask_45 = mask_as_float(&fit_45.mask);
-    let mask_path = output_path("pybaselines_gallery_classifier_mask_diagnostics.png");
+    let mask_path = output_path("gallery_classifier_mask_diagnostics.png");
     save_lines(
-        "pybaselines classification mask diagnostics",
+        "Classification Mask Diagnostics",
         "x",
         "baseline mask",
         &x,
@@ -827,9 +834,9 @@ fn classification_fastchrom_threshold() -> std::result::Result<(), Box<dyn Error
         },
     )?;
 
-    let path = output_path("pybaselines_gallery_fastchrom_threshold.png");
+    let path = output_path("gallery_fastchrom_threshold.png");
     save_lines(
-        "pybaselines fastchrom threshold",
+        "FastChrom Threshold",
         "x",
         "intensity",
         &x,
@@ -862,9 +869,9 @@ fn classification_fastchrom_threshold() -> std::result::Result<(), Box<dyn Error
     let thresholds_default = vec![default_threshold; rolling_std.len()];
     let thresholds_fixed = vec![fixed_threshold; rolling_std.len()];
     let thresholds_custom = vec![custom_threshold; rolling_std.len()];
-    let threshold_path = output_path("pybaselines_gallery_fastchrom_rolling_std.png");
+    let threshold_path = output_path("gallery_fastchrom_rolling_std.png");
     save_lines(
-        "pybaselines fastchrom rolling std",
+        "FastChrom Rolling Std",
         "x",
         "standard deviation",
         &x,
@@ -897,9 +904,9 @@ fn classification_fastchrom_threshold() -> std::result::Result<(), Box<dyn Error
     let mask_default = mask_as_float(&fit_default.mask);
     let mask_fixed = mask_as_float(&fit_fixed.mask);
     let mask_custom = mask_as_float(&fit_custom.mask);
-    let mask_path = output_path("pybaselines_gallery_fastchrom_masks.png");
+    let mask_path = output_path("gallery_fastchrom_masks.png");
     save_lines(
-        "pybaselines fastchrom masks",
+        "FastChrom Masks",
         "x",
         "baseline mask",
         &x,
@@ -999,9 +1006,9 @@ fn optimizer_custom_bc() -> std::result::Result<(), Box<dyn Error>> {
         },
     )?;
 
-    let path = output_path("pybaselines_gallery_custom_bc_whittaker.png");
+    let path = output_path("gallery_custom_bc_whittaker.png");
     save_lines(
-        "pybaselines custom_bc whittaker",
+        "Custom BC Whittaker",
         "x",
         "intensity",
         &x,
@@ -1082,23 +1089,23 @@ fn two_d_individual_axes() -> std::result::Result<(), Box<dyn Error>> {
         .map(|(observed, baseline)| observed - baseline)
         .collect();
 
-    let observed_path = output_path("pybaselines_gallery_2d_individual_axes_observed.png");
+    let observed_path = output_path("gallery_2d_individual_axes_observed.png");
     save_heatmap(
         &data,
         len_temperature,
         wavenumber.len(),
-        "pybaselines 2D individual_axes observed",
+        "2D individual_axes observed",
         "intensity",
         &observed_path,
     )?;
     print_output(&observed_path);
 
-    let corrected_path = output_path("pybaselines_gallery_2d_individual_axes_corrected.png");
+    let corrected_path = output_path("gallery_2d_individual_axes_corrected.png");
     save_heatmap(
         &corrected,
         len_temperature,
         wavenumber.len(),
-        "pybaselines 2D individual_axes corrected",
+        "2D individual_axes corrected",
         "corrected",
         &corrected_path,
     )?;

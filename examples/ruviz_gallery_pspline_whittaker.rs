@@ -1,10 +1,11 @@
-//! Ruviz counterpart for pybaselines' P-spline Whittaker gallery.
+//! P-spline and Whittaker lambda sweep rendered with ruviz.
 //!
 //! The data formula, data sizes, lambda-search grid, `arpls` and
 //! `pspline_arpls` functions, and `tol=1e-2, max_iter=50` settings mirror:
 //! <https://pybaselines.readthedocs.io/en/latest/generated/examples/spline/plot_pspline_whittaker.html>.
-//! pybaselines is used as a behavioral and documentation reference only; this
-//! example calls this crate's native Rust implementations.
+//! Inspired by the linked pybaselines example; pybaselines is used as a
+//! behavioral and documentation reference only, and this example calls this
+//! crate's native Rust implementations.
 
 mod common;
 
@@ -12,7 +13,7 @@ use baselines::BaselineError;
 use baselines::spline::pspline_arpls;
 use baselines::whittaker::{ArPlsParams, WhittakerParams, arpls};
 use common::{
-    PybaselinesBaseline, ensure_output_dir, output_path, print_output, pybaselines_make_data,
+    ReferenceBaseline, ensure_output_dir, output_path, print_output, reference_make_data,
 };
 use ruviz::prelude::*;
 use std::error::Error;
@@ -43,7 +44,7 @@ fn calculate_lam_sweeps(
         let mut best_lams = Vec::with_capacity(NUM_POINTS.as_slice().len());
         let mut previous_min = None;
         for &num_x in &NUM_POINTS {
-            let (_, y, baseline) = pybaselines_make_data(num_x, PybaselinesBaseline::Exponential);
+            let (_, y, baseline) = reference_make_data(num_x, ReferenceBaseline::Exponential);
             let best_lam = optimize_lam(&y, &baseline, algorithm, previous_min, 1.0e-2, 50)?;
             previous_min = Some(best_lam);
             best_lams.push(best_lam);
@@ -116,7 +117,7 @@ fn save_plot(results: &[AlgorithmSweep]) -> std::result::Result<(), Box<dyn Erro
     let x = log10_usizes(&NUM_POINTS);
     let colors = [Color::new(43, 70, 104), Color::new(218, 111, 76)];
     let mut plot = Plot::new()
-        .title("pybaselines P-spline Whittaker lam vs data size")
+        .title("P-spline Whittaker Lambda vs Data Size")
         .xlabel("log10(Input Array Size, N)")
         .ylabel("log10(Optimal lam)")
         .max_resolution(1800, 1200)
@@ -135,7 +136,7 @@ fn save_plot(results: &[AlgorithmSweep]) -> std::result::Result<(), Box<dyn Erro
             .into();
     }
 
-    let path = output_path("pybaselines_gallery_pspline_whittaker.png");
+    let path = output_path("gallery_pspline_whittaker.png");
     plot.save(&path)?;
     print_output(&path);
     Ok(())

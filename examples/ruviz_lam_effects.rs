@@ -1,3 +1,10 @@
+//! Whittaker lambda effects gallery rendered with ruviz.
+//!
+//! Inspired by pybaselines' Whittaker lambda-effects example; pybaselines is
+//! used as a behavioral and documentation reference only, and this example
+//! calls this crate's native Rust implementation.
+//! <https://pybaselines.readthedocs.io/en/latest/generated/examples/whittaker/plot_lam_effects.html>.
+
 use baselines::whittaker::{ArPlsParams, WhittakerParams, arpls};
 use ruviz::prelude::*;
 use std::error::Error;
@@ -10,7 +17,7 @@ const LAMBDAS: [f64; 4] = [1.0, 1.0e3, 1.0e6, 1.0e10];
 fn main() -> std::result::Result<(), Box<dyn Error>> {
     std::fs::create_dir_all(OUTPUT_DIR)?;
 
-    let (x, y, true_baseline) = pybaselines_lam_effects_signal();
+    let (x, y, true_baseline) = lam_effects_signal();
     let fits: Vec<(f64, Vec<f64>)> = LAMBDAS
         .iter()
         .map(|&lambda| {
@@ -27,9 +34,9 @@ fn main() -> std::result::Result<(), Box<dyn Error>> {
         })
         .collect::<baselines::Result<_>>()?;
 
-    let combined_path = output_path("pybaselines_lam_effects.png");
+    let combined_path = output_path("lam_effects.png");
     Plot::new()
-        .title("pybaselines lam effects")
+        .title("Lambda Effects")
         .xlabel("x")
         .ylabel("intensity")
         .max_resolution(1800, 1200)
@@ -56,15 +63,9 @@ fn main() -> std::result::Result<(), Box<dyn Error>> {
 
     print_output(&combined_path);
     for (lambda, baseline) in &fits {
-        let path = output_path(&format!(
-            "pybaselines_lam_effects_1e{:.0}.png",
-            lambda.log10()
-        ));
+        let path = output_path(&format!("lam_effects_1e{:.0}.png", lambda.log10()));
         Plot::new()
-            .title(format!(
-                "pybaselines lam effects: {}",
-                lambda_label(*lambda)
-            ))
+            .title(format!("Lambda Effects: {}", lambda_label(*lambda)))
             .xlabel("x")
             .ylabel("intensity")
             .max_resolution(1800, 1200)
@@ -82,7 +83,7 @@ fn main() -> std::result::Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn pybaselines_lam_effects_signal() -> (Vec<f64>, Vec<f64>, Vec<f64>) {
+fn lam_effects_signal() -> (Vec<f64>, Vec<f64>, Vec<f64>) {
     let x: Vec<f64> = linspace(0.0, 1000.0, N);
     let signal: Vec<f64> = x
         .iter()

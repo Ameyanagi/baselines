@@ -1,10 +1,11 @@
-//! Ruviz counterpart for pybaselines' Whittaker `lam` versus data-size gallery.
+//! Whittaker lambda and data-size sweep rendered with ruviz.
 //!
 //! The data formula, algorithm list, data sizes, lambda-search grid, and
 //! `tol=1e-2, max_iter=50` settings mirror:
 //! <https://pybaselines.readthedocs.io/en/latest/generated/examples/whittaker/plot_lam_vs_data_size.html>.
-//! pybaselines is used as a behavioral and documentation reference only; this
-//! example calls this crate's native Rust implementations.
+//! Inspired by the linked pybaselines example; pybaselines is used as a
+//! behavioral and documentation reference only, and this example calls this
+//! crate's native Rust implementations.
 
 mod common;
 
@@ -15,7 +16,7 @@ use baselines::whittaker::{
     derpsalsa, drpls, iarpls, iasls, lsrpls, psalsa,
 };
 use common::{
-    PybaselinesBaseline, ensure_output_dir, output_path, print_output, pybaselines_make_data,
+    ReferenceBaseline, ensure_output_dir, output_path, print_output, reference_make_data,
 };
 use ruviz::prelude::*;
 use std::error::Error;
@@ -41,17 +42,17 @@ fn main() -> std::result::Result<(), Box<dyn Error>> {
     let baselines = [
         BaselineCase {
             name: "exponential",
-            kind: PybaselinesBaseline::Exponential,
+            kind: ReferenceBaseline::Exponential,
             color: Color::new(43, 70, 104),
         },
         BaselineCase {
             name: "gaussian",
-            kind: PybaselinesBaseline::Gaussian,
+            kind: ReferenceBaseline::Gaussian,
             color: Color::new(218, 111, 76),
         },
         BaselineCase {
             name: "sine",
-            kind: PybaselinesBaseline::Sine,
+            kind: ReferenceBaseline::Sine,
             color: Color::new(84, 151, 160),
         },
     ];
@@ -80,7 +81,7 @@ fn calculate_whittaker_lam_sweeps(
             let mut best_lams = Vec::with_capacity(NUM_POINTS.as_slice().len());
             let mut previous_min = None;
             for &num_x in &NUM_POINTS {
-                let (_, y, baseline) = pybaselines_make_data(num_x, case.kind);
+                let (_, y, baseline) = reference_make_data(num_x, case.kind);
                 let best_lam = optimize_lam(&y, &baseline, algorithm, previous_min, 1.0e-2, 50)?;
                 previous_min = Some(best_lam);
                 best_lams.push(best_lam);
@@ -179,7 +180,7 @@ fn save_algorithm_plots(
         }
 
         let path = output_path(&format!(
-            "pybaselines_gallery_lam_vs_data_size_{}.png",
+            "gallery_lam_vs_data_size_{}.png",
             result.algorithm.name()
         ));
         plot.save(&path)?;
@@ -213,7 +214,7 @@ fn save_baseline_summary_plots(
         }
 
         let path = output_path(&format!(
-            "pybaselines_gallery_lam_vs_data_size_{}_baseline.png",
+            "gallery_lam_vs_data_size_{}_baseline.png",
             case.name
         ));
         plot.save(&path)?;
@@ -284,7 +285,7 @@ impl LinearFit {
 #[derive(Debug, Clone, Copy)]
 struct BaselineCase {
     name: &'static str,
-    kind: PybaselinesBaseline,
+    kind: ReferenceBaseline,
     color: Color,
 }
 

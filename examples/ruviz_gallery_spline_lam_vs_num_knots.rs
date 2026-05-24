@@ -1,18 +1,19 @@
-//! Ruviz counterpart for pybaselines' spline `lam` versus knot-count gallery.
+//! Spline lambda and knot-count sweep rendered with ruviz.
 //!
 //! The data formula, knot counts, data sizes, lambda-search grid,
 //! `mixture_model`, `diff_order=2`, and `tol=1e-2, max_iter=50` settings mirror:
 //! <https://pybaselines.readthedocs.io/en/latest/generated/examples/spline/plot_lam_vs_num_knots.html>.
-//! pybaselines is used as a behavioral and documentation reference only; this
-//! example calls this crate's native Rust implementation.
+//! Inspired by the linked pybaselines example; pybaselines is used as a
+//! behavioral and documentation reference only, and this example calls this
+//! crate's native Rust implementation.
 
 mod common;
 
 use baselines::BaselineError;
 use baselines::spline::{MixtureModelParams, mixture_model};
 use common::{
-    LineSeries, PybaselinesBaseline, ensure_output_dir, output_path, print_output,
-    pybaselines_make_data, save_lines,
+    LineSeries, ReferenceBaseline, ensure_output_dir, output_path, print_output,
+    reference_make_data, save_lines,
 };
 use ruviz::prelude::*;
 use std::error::Error;
@@ -32,10 +33,10 @@ fn main() -> std::result::Result<(), Box<dyn Error>> {
 }
 
 fn save_baseline_reference() -> std::result::Result<(), Box<dyn Error>> {
-    let (x, _, baseline) = pybaselines_make_data(1000, PybaselinesBaseline::Exponential);
-    let path = output_path("pybaselines_gallery_spline_lam_vs_num_knots_baseline.png");
+    let (x, _, baseline) = reference_make_data(1000, ReferenceBaseline::Exponential);
+    let path = output_path("gallery_spline_lam_vs_num_knots_baseline.png");
     save_lines(
-        "pybaselines spline lam vs num_knots baseline",
+        "Spline Lambda vs Number of Knots Baseline",
         "x",
         "baseline",
         &x,
@@ -55,7 +56,7 @@ fn calculate_best_lambdas() -> baselines::Result<Vec<Vec<f64>>> {
     for (knot_index, &num_knot) in NUM_KNOTS.iter().enumerate() {
         let mut previous_min = Some(0.0);
         for (point_index, &num_x) in NUM_POINTS.iter().enumerate() {
-            let (_, y, baseline) = pybaselines_make_data(num_x, PybaselinesBaseline::Exponential);
+            let (_, y, baseline) = reference_make_data(num_x, ReferenceBaseline::Exponential);
             let best_lam = optimize_lam(&y, &baseline, num_knot, previous_min, 1.0e-2, 50)?;
             previous_min = Some(best_lam);
             best_lams[knot_index][point_index] = best_lam;
@@ -126,7 +127,7 @@ fn save_lam_vs_data_size_plot(best_lams: &[Vec<f64>]) -> std::result::Result<(),
     let x = log10_usizes(&NUM_POINTS);
     let colors = colors();
     let mut plot = Plot::new()
-        .title("pybaselines spline lam vs data size")
+        .title("Spline Lambda vs Data Size")
         .xlabel("log10(Input Array Size, N)")
         .ylabel("log10(Optimal lam)")
         .max_resolution(1800, 1200)
@@ -147,7 +148,7 @@ fn save_lam_vs_data_size_plot(best_lams: &[Vec<f64>]) -> std::result::Result<(),
             .into();
     }
 
-    let path = output_path("pybaselines_gallery_spline_lam_vs_num_knots_data_size.png");
+    let path = output_path("gallery_spline_lam_vs_num_knots_data_size.png");
     plot.save(&path)?;
     print_output(&path);
     Ok(())
@@ -159,7 +160,7 @@ fn save_lam_vs_num_knots_plot(best_lams: &[Vec<f64>]) -> std::result::Result<(),
     let x = log10_usizes(&NUM_KNOTS);
     let colors = colors();
     let mut plot = Plot::new()
-        .title("pybaselines spline lam vs number of knots")
+        .title("Spline Lambda vs Number of Knots")
         .xlabel("log10(Number of Knots)")
         .ylabel("log10(Optimal lam)")
         .max_resolution(1800, 1200)
@@ -181,7 +182,7 @@ fn save_lam_vs_num_knots_plot(best_lams: &[Vec<f64>]) -> std::result::Result<(),
             .into();
     }
 
-    let path = output_path("pybaselines_gallery_spline_lam_vs_num_knots_knots.png");
+    let path = output_path("gallery_spline_lam_vs_num_knots_knots.png");
     plot.save(&path)?;
     print_output(&path);
     Ok(())

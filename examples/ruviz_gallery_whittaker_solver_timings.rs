@@ -1,16 +1,17 @@
-//! Ruviz counterpart for pybaselines' Whittaker solver timings gallery.
+//! Whittaker solver timing gallery rendered with ruviz.
 //!
 //! The data sizes, repeat count, lambda equation, AsLS algorithm, and
 //! `max_iter=8` setting mirror:
 //! <https://pybaselines.readthedocs.io/en/latest/generated/examples/whittaker/plot_whittaker_solvers.html>.
-//! pybaselines compares SciPy/pentapy solver backends; this Rust-native example
-//! compares the allocating API with the reusable-workspace API over the same
-//! workload because this crate uses one native pentadiagonal solver.
+//! Inspired by the linked pybaselines example. The upstream example compares
+//! SciPy/pentapy solver backends; this Rust-native example compares the
+//! allocating API with the reusable-workspace API over the same workload because
+//! this crate uses one native pentadiagonal solver.
 
 mod common;
 
 use baselines::whittaker::{AslsParams, WhittakerParams, WhittakerWorkspace, asls, asls_into};
-use common::{PybaselinesBaseline, pybaselines_make_data as make_data};
+use common::{ReferenceBaseline, reference_make_data as make_data};
 use common::{ensure_output_dir, output_path, print_output};
 use ruviz::prelude::*;
 use std::error::Error;
@@ -49,7 +50,7 @@ where
     let mut medians = Vec::with_capacity(DATA_SIZES.as_slice().len());
     let mut std_devs = Vec::with_capacity(DATA_SIZES.as_slice().len());
     for &num_x in &DATA_SIZES {
-        let (_, y, _) = make_data(num_x, PybaselinesBaseline::Exponential);
+        let (_, y, _) = make_data(num_x, ReferenceBaseline::Exponential);
         let lambda = lam_equation(num_x);
         let params = AslsParams {
             whittaker: WhittakerParams {
@@ -95,9 +96,9 @@ fn save_timing_plot(
     let reusable_y = log10_values(&reusable.medians);
     let allocating_upper = log10_sum(&allocating.medians, &allocating.std_devs);
     let reusable_upper = log10_sum(&reusable.medians, &reusable.std_devs);
-    let path = output_path("pybaselines_gallery_whittaker_solver_timings.png");
+    let path = output_path("gallery_whittaker_solver_timings.png");
     Plot::new()
-        .title("pybaselines Whittaker solver timings")
+        .title("Whittaker Solver Timings")
         .xlabel("log10(Input Array Size)")
         .ylabel("log10(Median Time, seconds)")
         .max_resolution(1800, 1200)
@@ -136,9 +137,9 @@ fn save_relative_reduction_plot(
         .zip(&reusable.medians)
         .map(|(allocating, reusable)| 100.0 * (allocating - reusable) / allocating)
         .collect();
-    let path = output_path("pybaselines_gallery_whittaker_solver_relative_reduction.png");
+    let path = output_path("gallery_whittaker_solver_relative_reduction.png");
     Plot::new()
-        .title("pybaselines Whittaker solver relative timing")
+        .title("Whittaker Solver Relative Timing")
         .xlabel("log10(Input Array Size)")
         .ylabel("Relative Time Reduction (%)")
         .max_resolution(1800, 1200)

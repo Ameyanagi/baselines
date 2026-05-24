@@ -41,7 +41,7 @@ pub mod two_d;
 pub mod whittaker;
 pub mod workspace;
 #[doc = include_str!("../docs/PYBASELINES_EXAMPLES.md")]
-pub mod pybaselines_examples {}
+pub mod reference_examples {}
 
 pub use api::{Baseline, Baseline2D};
 pub use classification::ClassificationFit;

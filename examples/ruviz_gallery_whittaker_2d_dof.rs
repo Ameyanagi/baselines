@@ -1,9 +1,11 @@
-//! ruviz rendering of pybaselines' 2D Whittaker eigendecomposition example.
+//! 2D Whittaker eigendecomposition gallery rendered with ruviz.
 //!
 //! The grid, Gaussian peaks, polynomial and sinusoidal baselines, lambda
 //! tuples, eigen counts, `return_dof=True`, `tol=1e-3`, and `max_iter=50`
 //! mirror:
 //! <https://pybaselines.readthedocs.io/en/latest/generated/examples/two_d/plot_whittaker_2d_dof.html>
+//! Inspired by the linked pybaselines example; pybaselines is used as a
+//! behavioral and documentation reference only.
 
 mod common;
 
@@ -29,12 +31,12 @@ fn main() -> std::result::Result<(), Box<dyn Error>> {
     save_surface(
         &data.polynomial_baseline,
         "Actual Polynomial Baseline",
-        "pybaselines_gallery_2d_whittaker_actual_polynomial.png",
+        "gallery_2d_whittaker_actual_polynomial.png",
     )?;
     save_surface(
         &data.sine_baseline,
         "Actual Sinusoidal Baseline",
-        "pybaselines_gallery_2d_whittaker_actual_sinusoidal.png",
+        "gallery_2d_whittaker_actual_sinusoidal.png",
     )?;
 
     let lam_poly = (1.0e2, 1.0e4);
@@ -57,12 +59,12 @@ fn main() -> std::result::Result<(), Box<dyn Error>> {
     save_surface(
         &analytical_poly.baseline,
         "Analytical Polynomial Baseline",
-        "pybaselines_gallery_2d_whittaker_analytical_polynomial.png",
+        "gallery_2d_whittaker_analytical_polynomial.png",
     )?;
     save_surface(
         &analytical_sine.baseline,
         "Analytical Sinusoidal Baseline",
-        "pybaselines_gallery_2d_whittaker_analytical_sinusoidal.png",
+        "gallery_2d_whittaker_analytical_sinusoidal.png",
     )?;
 
     let start = Instant::now();
@@ -82,22 +84,22 @@ fn main() -> std::result::Result<(), Box<dyn Error>> {
     save_surface(
         &eigen_poly_40.baseline,
         "40x40 Eigenvalues Polynomial Baseline",
-        "pybaselines_gallery_2d_whittaker_eigen_40_polynomial.png",
+        "gallery_2d_whittaker_eigen_40_polynomial.png",
     )?;
     save_surface(
         &eigen_sine_40.baseline,
         "40x40 Eigenvalues Sinusoidal Baseline",
-        "pybaselines_gallery_2d_whittaker_eigen_40_sinusoidal.png",
+        "gallery_2d_whittaker_eigen_40_sinusoidal.png",
     )?;
     save_dof(
         &eigen_poly_40,
         "Effective Degrees of Freedom for Polynomial Baseline",
-        "pybaselines_gallery_2d_whittaker_dof_polynomial.png",
+        "gallery_2d_whittaker_dof_polynomial.png",
     )?;
     save_dof(
         &eigen_sine_40,
         "Effective Degrees of Freedom for Sinusoidal Baseline",
-        "pybaselines_gallery_2d_whittaker_dof_sinusoidal.png",
+        "gallery_2d_whittaker_dof_sinusoidal.png",
     )?;
 
     let start = Instant::now();
@@ -117,12 +119,12 @@ fn main() -> std::result::Result<(), Box<dyn Error>> {
     save_surface(
         &eigen_poly_reduced.baseline,
         "10x4 Eigenvalues Polynomial Baseline",
-        "pybaselines_gallery_2d_whittaker_eigen_reduced_polynomial.png",
+        "gallery_2d_whittaker_eigen_reduced_polynomial.png",
     )?;
     save_surface(
         &eigen_sine_reduced.baseline,
         "8x35 Eigenvalues Sinusoidal Baseline",
-        "pybaselines_gallery_2d_whittaker_eigen_reduced_sinusoidal.png",
+        "gallery_2d_whittaker_eigen_reduced_sinusoidal.png",
     )?;
 
     let start = Instant::now();
@@ -142,12 +144,12 @@ fn main() -> std::result::Result<(), Box<dyn Error>> {
     save_surface(
         &eigen_poly_underfit.baseline,
         "3x3 Eigenvalues Polynomial Baseline",
-        "pybaselines_gallery_2d_whittaker_eigen_underfit_polynomial.png",
+        "gallery_2d_whittaker_eigen_underfit_polynomial.png",
     )?;
     save_surface(
         &eigen_sine_underfit.baseline,
         "5x12 Eigenvalues Sinusoidal Baseline",
-        "pybaselines_gallery_2d_whittaker_eigen_underfit_sinusoidal.png",
+        "gallery_2d_whittaker_eigen_underfit_sinusoidal.png",
     )?;
 
     Ok(())
