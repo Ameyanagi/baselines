@@ -766,22 +766,28 @@ fn classification_masks() -> std::result::Result<(), Box<dyn Error>> {
     )?;
     print_output(&path);
 
-    let mask_15 = mask_as_float(&fit_15.mask);
-    let mask_45 = mask_as_float(&fit_45.mask);
+    let (mask_base, mask_height) = mask_band(&[&y]);
+    let mask_15 = mask_ribbon(&fit_15.mask, mask_base, mask_height);
+    let mask_45 = mask_ribbon(&fit_45.mask, mask_base - mask_height * 1.35, mask_height);
     let mask_path = output_path("gallery_classifier_mask_diagnostics.png");
     save_lines(
-        "Classification Mask Diagnostics",
+        "Classification Mask Overlay",
         "x",
-        "baseline mask",
+        "intensity / mask ribbon",
         &x,
         &[
             LineSeries {
-                label: "half_window=15 mask",
+                label: "data",
+                y: &y,
+                color: Color::new(43, 70, 104),
+            },
+            LineSeries {
+                label: "half_window=15 mask ribbon",
                 y: &mask_15,
                 color: Color::new(218, 111, 76),
             },
             LineSeries {
-                label: "half_window=45 mask",
+                label: "half_window=45 mask ribbon",
                 y: &mask_45,
                 color: Color::new(118, 85, 148),
             },
@@ -901,28 +907,38 @@ fn classification_fastchrom_threshold() -> std::result::Result<(), Box<dyn Error
     )?;
     print_output(&threshold_path);
 
-    let mask_default = mask_as_float(&fit_default.mask);
-    let mask_fixed = mask_as_float(&fit_fixed.mask);
-    let mask_custom = mask_as_float(&fit_custom.mask);
+    let (mask_base, mask_height) = mask_band(&[&y]);
+    let mask_default = mask_ribbon(&fit_default.mask, mask_base, mask_height);
+    let mask_fixed = mask_ribbon(&fit_fixed.mask, mask_base - mask_height * 1.35, mask_height);
+    let mask_custom = mask_ribbon(
+        &fit_custom.mask,
+        mask_base - mask_height * 2.70,
+        mask_height,
+    );
     let mask_path = output_path("gallery_fastchrom_masks.png");
     save_lines(
-        "FastChrom Masks",
+        "FastChrom Mask Overlay",
         "x",
-        "baseline mask",
+        "intensity / mask ribbon",
         &x,
         &[
             LineSeries {
-                label: "default mask",
+                label: "data",
+                y: &y,
+                color: Color::new(43, 70, 104),
+            },
+            LineSeries {
+                label: "default mask ribbon",
                 y: &mask_default,
                 color: Color::new(218, 111, 76),
             },
             LineSeries {
-                label: "fixed mask",
+                label: "fixed mask ribbon",
                 y: &mask_fixed,
                 color: Color::new(118, 85, 148),
             },
             LineSeries {
-                label: "custom median mask",
+                label: "median mask ribbon",
                 y: &mask_custom,
                 color: Color::new(84, 151, 160),
             },
@@ -1141,9 +1157,22 @@ fn offset(values: &[f64], amount: f64) -> Vec<f64> {
     values.iter().map(|value| value + amount).collect()
 }
 
-fn mask_as_float(mask: &[bool]) -> Vec<f64> {
+fn mask_band(series: &[&[f64]]) -> (f64, f64) {
+    let mut min_value = f64::INFINITY;
+    let mut max_value = f64::NEG_INFINITY;
+    for values in series {
+        for &value in *values {
+            min_value = min_value.min(value);
+            max_value = max_value.max(value);
+        }
+    }
+    let span = (max_value - min_value).max(1.0);
+    (min_value - 0.12 * span, 0.04 * span)
+}
+
+fn mask_ribbon(mask: &[bool], base: f64, height: f64) -> Vec<f64> {
     mask.iter()
-        .map(|is_baseline| if *is_baseline { 1.0 } else { 0.0 })
+        .map(|is_baseline| if *is_baseline { base + height } else { base })
         .collect()
 }
 

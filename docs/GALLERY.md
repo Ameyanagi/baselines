@@ -86,10 +86,10 @@ example code.
 ![Sorted data](assets/ruviz/gallery_sorted_data.png)
 ![Half window effects](assets/ruviz/gallery_half_window_effects.png)
 ![Classifier masks](assets/ruviz/gallery_classifier_masks.png)
-![Classifier mask diagnostics](assets/ruviz/gallery_classifier_mask_diagnostics.png)
+![Classifier mask overlay](assets/ruviz/gallery_classifier_mask_diagnostics.png)
 ![FastChrom threshold](assets/ruviz/gallery_fastchrom_threshold.png)
 ![FastChrom rolling std](assets/ruviz/gallery_fastchrom_rolling_std.png)
-![FastChrom masks](assets/ruviz/gallery_fastchrom_masks.png)
+![FastChrom mask overlay](assets/ruviz/gallery_fastchrom_masks.png)
 ![Custom BC Whittaker](assets/ruviz/gallery_custom_bc_whittaker.png)
 ![2D individual axes observed](assets/ruviz/gallery_2d_individual_axes_observed.png)
 ![2D individual axes corrected](assets/ruviz/gallery_2d_individual_axes_corrected.png)
@@ -118,9 +118,9 @@ example code.
 
 ### BEADS Preprocessing
 
-![BEADS preprocessing baseline 1](assets/ruviz/gallery_beads_preprocessing_baseline_1.png)
-![BEADS preprocessing baseline 2](assets/ruviz/gallery_beads_preprocessing_baseline_2.png)
-![BEADS preprocessing baseline 3](assets/ruviz/gallery_beads_preprocessing_baseline_3.png)
+![BEADS endpoint parabola baseline 1](assets/ruviz/gallery_beads_preprocessing_baseline_1.png)
+![BEADS endpoint parabola baseline 2](assets/ruviz/gallery_beads_preprocessing_baseline_2.png)
+![BEADS endpoint parabola baseline 3](assets/ruviz/gallery_beads_preprocessing_baseline_3.png)
 ![BEADS baseline 1](assets/ruviz/gallery_beads_baseline_1.png)
 ![BEADS baseline 2](assets/ruviz/gallery_beads_baseline_2.png)
 ![BEADS baseline 3](assets/ruviz/gallery_beads_baseline_3.png)

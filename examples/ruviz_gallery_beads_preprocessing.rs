@@ -62,15 +62,14 @@ fn main() -> std::result::Result<(), Box<dyn Error>> {
 
 fn save_preprocessing_inputs(x: &[f64]) -> std::result::Result<(), Box<dyn Error>> {
     for baseline_type in 0..3 {
-        let (y, _) = make_beads_data(x, baseline_type);
+        let (y, true_baseline) = make_beads_data(x, baseline_type);
         let parabola = endpoint_parabola(&y);
-        let processed: Vec<f64> = y.iter().zip(&parabola).map(|(y, p)| y - p).collect();
         let path = output_path(&format!(
             "gallery_beads_preprocessing_baseline_{}.png",
             baseline_type + 1
         ));
         save_lines(
-            &format!("BEADS Preprocessing: Baseline {}", baseline_type + 1),
+            &format!("BEADS Endpoint Parabola {}", baseline_type + 1),
             "x",
             "intensity",
             x,
@@ -86,9 +85,9 @@ fn save_preprocessing_inputs(x: &[f64]) -> std::result::Result<(), Box<dyn Error
                     color: Color::new(218, 111, 76),
                 },
                 LineSeries {
-                    label: "processed data",
-                    y: &processed,
-                    color: Color::new(84, 151, 160),
+                    label: "true baseline",
+                    y: &true_baseline,
+                    color: Color::new(80, 145, 110),
                 },
             ],
             &path,
