@@ -21,6 +21,29 @@ let corrected = fit.corrected(&y)?;
 # Ok::<(), baselines::BaselineError>(())
 ```
 
+## 1D signals with explicit x values
+
+Use `Baseline::new_xy` when samples are not evenly spaced or when peak masks
+are easier to express in x coordinates.
+
+```rust
+use baselines::prelude::*;
+
+let fit = Baseline::new_xy(&x, &y)?
+    .arpls()
+    .lambda(1.0e6)
+    .exclude_range(150.0, 220.0)
+    .exclude_mask(&peak_mask)?
+    .fit()?;
+
+let corrected = fit.corrected(&y)?;
+# Ok::<(), baselines::BaselineError>(())
+```
+
+`exclude_mask` uses `true` for ignored points. `baseline_mask` is also
+available for pybaselines-style masks where `true` marks trusted baseline
+points. Multiple range and boolean masks are combined before fitting.
+
 ## 2D row-major data
 
 ```rust

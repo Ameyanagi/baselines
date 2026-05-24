@@ -11,6 +11,7 @@ Generate every gallery image:
 
 ```console
 cargo run --example ruviz_1d
+cargo run --example ruviz_xy_whittaker_masks
 cargo run --example ruviz_2d
 cargo run --example ruviz_lam_effects
 cargo run --example ruviz_gallery_basic
@@ -39,6 +40,7 @@ find docs/assets/ruviz -maxdepth 1 -name '*.png' | sort
 | Example | Working code | Command | Generated outputs |
 | --- | --- | --- | --- |
 | Basic 1D Whittaker | [`examples/ruviz_1d.rs`](../examples/ruviz_1d.rs) | `cargo run --example ruviz_1d` | `1d_*.png` |
+| X-aware Whittaker masks | [`examples/ruviz_xy_whittaker_masks.rs`](../examples/ruviz_xy_whittaker_masks.rs) | `cargo run --example ruviz_xy_whittaker_masks` | `xy_whittaker_*.png` |
 | Basic 2D Whittaker | [`examples/ruviz_2d.rs`](../examples/ruviz_2d.rs) | `cargo run --example ruviz_2d` | `2d_*.png` |
 | Whittaker lambda effects | [`examples/ruviz_lam_effects.rs`](../examples/ruviz_lam_effects.rs) | `cargo run --example ruviz_lam_effects` | `lam_effects*.png` |
 | Basic gallery batch | [`examples/ruviz_gallery_basic.rs`](../examples/ruviz_gallery_basic.rs) | `cargo run --example ruviz_gallery_basic` | `gallery_algorithm_convergence*.png`, `gallery_noisy_data.png`, `gallery_masked_data.png`, `gallery_padding*.png`, `gallery_reuse_baseline.png`, `gallery_sorted_data.png`, `gallery_half_window_effects.png`, `gallery_classifier*.png`, `gallery_fastchrom*.png`, `gallery_custom_bc_whittaker.png`, `gallery_2d_individual_axes_*.png` |
@@ -58,6 +60,11 @@ example code.
 
 ![1D Whittaker baselines](assets/ruviz/1d_baselines.png)
 ![1D corrected signals](assets/ruviz/1d_corrected.png)
+
+### X-Aware Whittaker Masks
+
+![X-aware Whittaker masks](assets/ruviz/xy_whittaker_masks.png)
+![X-aware Whittaker mask ribbons](assets/ruviz/xy_whittaker_mask_ribbons.png)
 
 ### Basic 2D Whittaker
 

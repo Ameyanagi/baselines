@@ -43,7 +43,7 @@ pub mod workspace;
 #[doc = include_str!("../docs/PYBASELINES_EXAMPLES.md")]
 pub mod reference_examples {}
 
-pub use api::{Baseline, Baseline2D};
+pub use api::{Baseline, Baseline2D, BaselineXY};
 pub use classification::ClassificationFit;
 pub use data::{MatrixLayout, MatrixShape, MatrixView, MatrixViewMut};
 pub use error::{BaselineError, Result};
@@ -52,7 +52,7 @@ pub use fit::{Fit, Fit1D, Fit2D, FitHistory, FitReport};
 /// Common imports for the method-chain API.
 pub mod prelude {
     pub use crate::{
-        Baseline, Baseline2D, BaselineError, ClassificationFit, Fit, Fit1D, Fit2D, FitHistory,
-        FitReport, MatrixView, MatrixViewMut, Result,
+        Baseline, Baseline2D, BaselineError, BaselineXY, ClassificationFit, Fit, Fit1D, Fit2D,
+        FitHistory, FitReport, MatrixView, MatrixViewMut, Result,
     };
 }

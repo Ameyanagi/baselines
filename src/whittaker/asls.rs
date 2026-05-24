@@ -2,8 +2,8 @@
 
 use crate::fit::{Fit, FitHistory, FitReport};
 use crate::whittaker::engine::{
-    Reweighter, WhittakerParams, WhittakerWorkspace, fit_alloc, fit_alloc_with_history, fit_into,
-    fit_into_with_history, relative_change,
+    Reweighter, WhittakerParams, WhittakerWorkspace, active_at, fit_alloc, fit_alloc_with_history,
+    fit_into, fit_into_with_history, relative_change,
 };
 use crate::{BaselineError, Result};
 
@@ -99,8 +99,8 @@ pub fn asls_into_with_history(
 }
 
 #[derive(Debug, Clone, Copy)]
-struct AslsWeights {
-    p: f64,
+pub(crate) struct AslsWeights {
+    pub(crate) p: f64,
 }
 
 impl Reweighter for AslsWeights {
@@ -109,9 +109,24 @@ impl Reweighter for AslsWeights {
     }
 
     fn update(&self, y: &[f64], baseline: &[f64], weights: &mut [f64], _iter: usize) -> f64 {
+        self.update_masked(y, baseline, weights, 0, None)
+    }
+
+    fn update_masked(
+        &self,
+        y: &[f64],
+        baseline: &[f64],
+        weights: &mut [f64],
+        _iter: usize,
+        active_mask: Option<&[bool]>,
+    ) -> f64 {
         let previous = weights.to_vec();
-        for ((weight, observed), fitted) in weights.iter_mut().zip(y).zip(baseline) {
-            *weight = if observed > fitted {
+        for (index, ((weight, observed), fitted)) in
+            weights.iter_mut().zip(y).zip(baseline).enumerate()
+        {
+            *weight = if !active_at(active_mask, index) {
+                0.0
+            } else if observed > fitted {
                 self.p
             } else {
                 1.0 - self.p

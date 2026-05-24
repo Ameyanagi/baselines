@@ -16,6 +16,7 @@ mod arpls;
 mod asls;
 mod engine;
 mod variants;
+pub(crate) mod xy;
 
 pub use airpls::{AirPlsParams, airpls, airpls_into};
 pub use arpls::{ArPlsParams, arpls, arpls_into};

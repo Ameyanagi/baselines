@@ -5,6 +5,7 @@ use crate::optimizers;
 use crate::polynomial::{self, PenalizedCost};
 use crate::smoothing;
 use crate::spline;
+use crate::whittaker::xy::XyMaskSpec;
 use crate::whittaker::{self, WhittakerWorkspace};
 use crate::{Fit, FitHistory, FitReport, Result};
 
@@ -38,6 +39,76 @@ macro_rules! builder_1d {
 
             pub fn fit(self) -> Result<Fit> {
                 $fit(self.y, self.params)
+            }
+        }
+    };
+}
+
+macro_rules! builder_xy_whittaker {
+    ($builder:ident, $params:ty, $fit:path) => {
+        #[derive(Debug, Clone)]
+        #[must_use]
+        pub struct $builder<'a> {
+            x: &'a [f64],
+            y: &'a [f64],
+            params: $params,
+            masks: XyMaskSpec<'a>,
+        }
+
+        impl<'a> $builder<'a> {
+            pub(crate) fn new(x: &'a [f64], y: &'a [f64]) -> Self {
+                Self {
+                    x,
+                    y,
+                    params: <$params>::default(),
+                    masks: XyMaskSpec::default(),
+                }
+            }
+
+            #[must_use]
+            pub fn with_params(mut self, params: $params) -> Self {
+                self.params = params;
+                self
+            }
+
+            #[must_use]
+            pub fn params(&self) -> &$params {
+                &self.params
+            }
+
+            #[must_use]
+            pub fn exclude_range(mut self, start: f64, end: f64) -> Self {
+                self.masks.exclude_range(start, end);
+                self
+            }
+
+            #[must_use]
+            pub fn exclude_ranges<I>(mut self, ranges: I) -> Self
+            where
+                I: IntoIterator<Item = (f64, f64)>,
+            {
+                self.masks.exclude_ranges(ranges);
+                self
+            }
+
+            pub fn exclude_mask(mut self, mask: &'a [bool]) -> Result<Self> {
+                self.masks.exclude_mask(mask, self.y.len())?;
+                Ok(self)
+            }
+
+            pub fn baseline_mask(mut self, mask: &'a [bool]) -> Result<Self> {
+                self.masks.baseline_mask(mask, self.y.len())?;
+                Ok(self)
+            }
+
+            #[must_use]
+            pub fn clear_masks(mut self) -> Self {
+                self.masks.clear();
+                self
+            }
+
+            pub fn fit(self) -> Result<Fit> {
+                $fit(self.x, self.y, self.params, &self.masks)
             }
         }
     };
@@ -102,6 +173,11 @@ impl<'a> Baseline<'a> {
     /// Creates a method-chain entrypoint for a one-dimensional signal.
     pub fn new(y: &'a [f64]) -> Self {
         Self { y }
+    }
+
+    /// Creates a method-chain entrypoint for a one-dimensional signal with explicit x values.
+    pub fn new_xy(x: &'a [f64], y: &'a [f64]) -> Result<BaselineXY<'a>> {
+        BaselineXY::new(x, y)
     }
 
     /// Returns the input signal.
@@ -366,6 +442,99 @@ impl<'a> Baseline<'a> {
     }
 }
 
+/// Ergonomic entrypoint for one-dimensional baseline correction with explicit x values.
+///
+/// The x-aware Whittaker builders use finite-difference penalties on the
+/// supplied coordinate grid rather than interpolating to a uniform grid.
+///
+/// # References
+///
+/// - B. Fornberg, "Generation of Finite Difference Formulas on Arbitrarily
+///   Spaced Grids", *Mathematics of Computation*, 1988.
+/// - P. H. C. Eilers, "A Perfect Smoother", *Analytical Chemistry*, 2003.
+/// - `pybaselines.Baseline` mask semantics are used as a behavioral reference.
+#[derive(Debug, Clone, Copy)]
+#[must_use]
+pub struct BaselineXY<'a> {
+    x: &'a [f64],
+    y: &'a [f64],
+}
+
+impl<'a> BaselineXY<'a> {
+    /// Creates a method-chain entrypoint for a one-dimensional signal with explicit x values.
+    pub fn new(x: &'a [f64], y: &'a [f64]) -> Result<Self> {
+        whittaker::xy::validate_xy(x, y)?;
+        Ok(Self { x, y })
+    }
+
+    /// Returns the x-coordinate input.
+    #[must_use]
+    pub fn x(&self) -> &'a [f64] {
+        self.x
+    }
+
+    /// Returns the y-value input.
+    #[must_use]
+    pub fn y(&self) -> &'a [f64] {
+        self.y
+    }
+
+    /// Configures x-aware AsLS fitting.
+    pub fn asls(self) -> AslsXyBuilder<'a> {
+        AslsXyBuilder::new(self.x, self.y)
+    }
+
+    /// Configures x-aware airPLS fitting.
+    pub fn airpls(self) -> AirPlsXyBuilder<'a> {
+        AirPlsXyBuilder::new(self.x, self.y)
+    }
+
+    /// Configures x-aware arPLS fitting.
+    pub fn arpls(self) -> ArPlsXyBuilder<'a> {
+        ArPlsXyBuilder::new(self.x, self.y)
+    }
+
+    /// Configures x-aware IAsLS fitting.
+    pub fn iasls(self) -> IaslsXyBuilder<'a> {
+        IaslsXyBuilder::new(self.x, self.y)
+    }
+
+    /// Configures x-aware drPLS fitting.
+    pub fn drpls(self) -> DrPlsXyBuilder<'a> {
+        DrPlsXyBuilder::new(self.x, self.y)
+    }
+
+    /// Configures x-aware iarPLS fitting.
+    pub fn iarpls(self) -> IarPlsXyBuilder<'a> {
+        IarPlsXyBuilder::new(self.x, self.y)
+    }
+
+    /// Configures x-aware asPLS fitting.
+    pub fn aspls(self) -> AsPlsXyBuilder<'a> {
+        AsPlsXyBuilder::new(self.x, self.y)
+    }
+
+    /// Configures x-aware psalsa fitting.
+    pub fn psalsa(self) -> PsalsaXyBuilder<'a> {
+        PsalsaXyBuilder::new(self.x, self.y)
+    }
+
+    /// Configures x-aware derpsalsa fitting.
+    pub fn derpsalsa(self) -> DerPsalsaXyBuilder<'a> {
+        DerPsalsaXyBuilder::new(self.x, self.y)
+    }
+
+    /// Configures x-aware brPLS fitting.
+    pub fn brpls(self) -> BrPlsXyBuilder<'a> {
+        BrPlsXyBuilder::new(self.x, self.y)
+    }
+
+    /// Configures x-aware lsrPLS fitting.
+    pub fn lsrpls(self) -> LsrPlsXyBuilder<'a> {
+        LsrPlsXyBuilder::new(self.x, self.y)
+    }
+}
+
 builder_1d!(AslsBuilder, whittaker::AslsParams, whittaker::asls);
 builder_1d!(AirPlsBuilder, whittaker::AirPlsParams, whittaker::airpls);
 builder_1d!(ArPlsBuilder, whittaker::ArPlsParams, whittaker::arpls);
@@ -381,6 +550,58 @@ builder_1d!(
 );
 builder_1d!(BrPlsBuilder, whittaker::BrPlsParams, whittaker::brpls);
 builder_1d!(LsrPlsBuilder, whittaker::LsrPlsParams, whittaker::lsrpls);
+
+builder_xy_whittaker!(AslsXyBuilder, whittaker::AslsParams, whittaker::xy::asls_xy);
+builder_xy_whittaker!(
+    AirPlsXyBuilder,
+    whittaker::AirPlsParams,
+    whittaker::xy::airpls_xy
+);
+builder_xy_whittaker!(
+    ArPlsXyBuilder,
+    whittaker::ArPlsParams,
+    whittaker::xy::arpls_xy
+);
+builder_xy_whittaker!(
+    IaslsXyBuilder,
+    whittaker::IaslsParams,
+    whittaker::xy::iasls_xy
+);
+builder_xy_whittaker!(
+    DrPlsXyBuilder,
+    whittaker::DrPlsParams,
+    whittaker::xy::drpls_xy
+);
+builder_xy_whittaker!(
+    IarPlsXyBuilder,
+    whittaker::IarPlsParams,
+    whittaker::xy::iarpls_xy
+);
+builder_xy_whittaker!(
+    AsPlsXyBuilder,
+    whittaker::AsPlsParams,
+    whittaker::xy::aspls_xy
+);
+builder_xy_whittaker!(
+    PsalsaXyBuilder,
+    whittaker::PsalsaParams,
+    whittaker::xy::psalsa_xy
+);
+builder_xy_whittaker!(
+    DerPsalsaXyBuilder,
+    whittaker::DerPsalsaParams,
+    whittaker::xy::derpsalsa_xy
+);
+builder_xy_whittaker!(
+    BrPlsXyBuilder,
+    whittaker::BrPlsParams,
+    whittaker::xy::brpls_xy
+);
+builder_xy_whittaker!(
+    LsrPlsXyBuilder,
+    whittaker::LsrPlsParams,
+    whittaker::xy::lsrpls_xy
+);
 
 impl<'a> AslsBuilder<'a> {
     whittaker_setters!();
@@ -485,6 +706,68 @@ impl<'a> BrPlsBuilder<'a> {
 }
 
 impl<'a> LsrPlsBuilder<'a> {
+    whittaker_setters!();
+}
+
+impl<'a> AslsXyBuilder<'a> {
+    whittaker_setters!();
+    setter!(p, p, f64);
+}
+
+impl<'a> AirPlsXyBuilder<'a> {
+    whittaker_setters!();
+}
+
+impl<'a> ArPlsXyBuilder<'a> {
+    whittaker_setters!();
+}
+
+impl<'a> IaslsXyBuilder<'a> {
+    whittaker_setters!();
+    setter!(p, p, f64);
+    setter!(lambda_1, lambda_1, f64);
+}
+
+impl<'a> DrPlsXyBuilder<'a> {
+    whittaker_setters!();
+    setter!(eta, eta, f64);
+}
+
+impl<'a> IarPlsXyBuilder<'a> {
+    whittaker_setters!();
+}
+
+impl<'a> AsPlsXyBuilder<'a> {
+    whittaker_setters!();
+    setter!(asymmetric_coef, asymmetric_coef, f64);
+}
+
+impl<'a> PsalsaXyBuilder<'a> {
+    whittaker_setters!();
+    setter!(p, p, f64);
+    option_setter!(k, auto_k, k, f64);
+}
+
+impl<'a> DerPsalsaXyBuilder<'a> {
+    whittaker_setters!();
+    setter!(p, p, f64);
+    option_setter!(k, auto_k, k, f64);
+    option_setter!(
+        smooth_half_window,
+        auto_smooth_half_window,
+        smooth_half_window,
+        usize
+    );
+    setter!(num_smooths, num_smooths, usize);
+}
+
+impl<'a> BrPlsXyBuilder<'a> {
+    whittaker_setters!();
+    setter!(max_iter_2, max_iter_2, usize);
+    setter!(tol_2, tol_2, f64);
+}
+
+impl<'a> LsrPlsXyBuilder<'a> {
     whittaker_setters!();
 }
 

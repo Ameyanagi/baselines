@@ -10,5 +10,5 @@
 mod one_d;
 mod two_d;
 
-pub use one_d::{Baseline, CollabPlsBuilder};
+pub use one_d::{Baseline, BaselineXY, CollabPlsBuilder};
 pub use two_d::{Baseline2D, CollabPls2DBuilder};
