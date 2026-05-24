@@ -57,3 +57,13 @@ BEADS optimization result:
 The retained change narrows BEADS dense compatibility to fixture-sized small
 inputs and sends the 256-point benchmark through the banded solver. Fixture
 compatibility remained passing for the pinned pybaselines references.
+
+P-spline IAsLS optimization result:
+
+| Benchmark | Before mean | After mean | Change |
+| --- | ---: | ---: | ---: |
+| `spline_1d/pspline_iasls_256` | 15.934 ms | 0.764 ms | -95.05% |
+
+The retained change updates the data-domain first-difference penalty assembly
+to use sparse differences between adjacent B-spline basis rows. The solve path
+and public API remain unchanged.

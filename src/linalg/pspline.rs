@@ -205,17 +205,22 @@ impl PenalizedSpline {
         }
 
         if data_first_difference_lambda > 0.0 {
+            let mut basis_difference = Vec::with_capacity(2 * (self.degree + 1));
             for (basis_pair, observed_pair) in self.basis.windows(2).zip(y.windows(2)) {
                 let observed_difference = observed_pair[1] - observed_pair[0];
-                for row in 0..n_bases {
-                    let basis_row_difference =
-                        basis_pair[1].value_at(row) - basis_pair[0].value_at(row);
+                SparseBasisRow::difference_entries_into(
+                    &basis_pair[0],
+                    &basis_pair[1],
+                    &mut basis_difference,
+                );
+                for &(row, basis_row_difference) in &basis_difference {
                     rhs[row] +=
                         data_first_difference_lambda * basis_row_difference * observed_difference;
-                    for (col, normal_value) in normal[row].iter_mut().enumerate() {
+                    for &(col, basis_col_difference) in &basis_difference {
+                        let normal_value = &mut normal[row][col];
                         *normal_value += data_first_difference_lambda
                             * basis_row_difference
-                            * (basis_pair[1].value_at(col) - basis_pair[0].value_at(col));
+                            * basis_col_difference;
                     }
                 }
             }
@@ -296,6 +301,22 @@ impl SparseBasisRow {
             0.0
         } else {
             self.values[index - self.start]
+        }
+    }
+
+    fn difference_entries_into(
+        left: &SparseBasisRow,
+        right: &SparseBasisRow,
+        entries: &mut Vec<(usize, f64)>,
+    ) {
+        entries.clear();
+        let start = left.start.min(right.start);
+        let end = (left.start + left.values.len()).max(right.start + right.values.len());
+        for index in start..end {
+            let value = right.value_at(index) - left.value_at(index);
+            if value != 0.0 {
+                entries.push((index, value));
+            }
         }
     }
 }
