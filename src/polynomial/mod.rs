@@ -668,22 +668,12 @@ fn fit_penalized_polynomial_with_threshold(
     workspace: &mut PenalizedPolynomialWorkspace,
 ) -> Result<FitReport> {
     workspace.resize(y.len(), params.order);
+    let correction = CorrectionParams::new(params);
     let mut tolerance = f64::INFINITY;
 
     for iter in 0..params.max_iter {
         workspace.previous.copy_from_slice(baseline);
-        for ((target, observed), fitted) in
-            workspace.adjusted.iter_mut().zip(y).zip(baseline.iter())
-        {
-            let residual = observed - fitted;
-            *target = observed
-                + non_quadratic_correction(
-                    residual,
-                    params.threshold,
-                    params.alpha_factor,
-                    params.cost,
-                );
-        }
+        fill_penalized_adjusted(y, &workspace.previous, correction, &mut workspace.adjusted);
 
         fit_unweighted_polynomial_with_workspace(
             &workspace.adjusted,
@@ -698,6 +688,66 @@ fn fit_penalized_polynomial_with_threshold(
     }
 
     Ok(FitReport::new(params.max_iter, false, tolerance))
+}
+
+fn fill_penalized_adjusted(
+    y: &[f64],
+    previous_baseline: &[f64],
+    correction: CorrectionParams,
+    adjusted: &mut [f64],
+) {
+    match correction.cost {
+        PenalizedCost::AsymmetricTruncatedQuadratic => {
+            for ((target, observed), fitted) in adjusted.iter_mut().zip(y).zip(previous_baseline) {
+                let residual = observed - fitted;
+                *target = observed
+                    + truncated_quadratic_correction(
+                        residual,
+                        correction.threshold,
+                        correction.alpha,
+                        false,
+                    );
+            }
+        }
+        PenalizedCost::SymmetricTruncatedQuadratic => {
+            for ((target, observed), fitted) in adjusted.iter_mut().zip(y).zip(previous_baseline) {
+                let residual = observed - fitted;
+                *target = observed
+                    + truncated_quadratic_correction(
+                        residual,
+                        correction.threshold,
+                        correction.alpha,
+                        true,
+                    );
+            }
+        }
+        PenalizedCost::AsymmetricHuber => {
+            for ((target, observed), fitted) in adjusted.iter_mut().zip(y).zip(previous_baseline) {
+                let residual = observed - fitted;
+                *target = observed
+                    + huber_correction(residual, correction.threshold, correction.alpha, false);
+            }
+        }
+        PenalizedCost::SymmetricHuber => {
+            for ((target, observed), fitted) in adjusted.iter_mut().zip(y).zip(previous_baseline) {
+                let residual = observed - fitted;
+                *target = observed
+                    + huber_correction(residual, correction.threshold, correction.alpha, true);
+            }
+        }
+        PenalizedCost::AsymmetricIndec => {
+            for ((target, observed), fitted) in adjusted.iter_mut().zip(y).zip(previous_baseline) {
+                let residual = observed - fitted;
+                *target = observed + indec_correction(residual, correction, false);
+            }
+        }
+        PenalizedCost::SymmetricIndec => {
+            for ((target, observed), fitted) in adjusted.iter_mut().zip(y).zip(previous_baseline) {
+                let residual = observed - fitted;
+                *target = observed + indec_correction(residual, correction, true);
+            }
+        }
+    }
 }
 
 #[derive(Debug, Default)]
@@ -729,33 +779,31 @@ fn relative_scalar_change(previous: f64, current: f64) -> f64 {
     (current - previous).abs() / previous.abs().max(f64::EPSILON)
 }
 
+#[derive(Debug, Clone, Copy)]
+struct CorrectionParams {
+    threshold: f64,
+    threshold_cubed: f64,
+    alpha: f64,
+    cost: PenalizedCost,
+}
+
+impl CorrectionParams {
+    fn new(params: PenalizedFitParams) -> Self {
+        Self {
+            threshold: params.threshold,
+            threshold_cubed: params.threshold.powi(3),
+            alpha: 0.5 * params.alpha_factor,
+            cost: params.cost,
+        }
+    }
+}
+
 impl PenalizedCost {
     fn is_asymmetric(self) -> bool {
         matches!(
             self,
             Self::AsymmetricTruncatedQuadratic | Self::AsymmetricHuber | Self::AsymmetricIndec
         )
-    }
-}
-
-fn non_quadratic_correction(
-    residual: f64,
-    threshold: f64,
-    alpha_factor: f64,
-    cost: PenalizedCost,
-) -> f64 {
-    let alpha = 0.5 * alpha_factor;
-    match cost {
-        PenalizedCost::AsymmetricTruncatedQuadratic => {
-            truncated_quadratic_correction(residual, threshold, alpha, false)
-        }
-        PenalizedCost::SymmetricTruncatedQuadratic => {
-            truncated_quadratic_correction(residual, threshold, alpha, true)
-        }
-        PenalizedCost::AsymmetricHuber => huber_correction(residual, threshold, alpha, false),
-        PenalizedCost::SymmetricHuber => huber_correction(residual, threshold, alpha, true),
-        PenalizedCost::AsymmetricIndec => indec_correction(residual, threshold, alpha, false),
-        PenalizedCost::SymmetricIndec => indec_correction(residual, threshold, alpha, true),
     }
 }
 
@@ -791,18 +839,18 @@ fn huber_correction(residual: f64, threshold: f64, alpha: f64, symmetric: bool) 
     }
 }
 
-fn indec_correction(residual: f64, threshold: f64, alpha: f64, symmetric: bool) -> f64 {
+fn indec_correction(residual: f64, params: CorrectionParams, symmetric: bool) -> f64 {
     let in_quadratic_region = if symmetric {
-        residual.abs() < threshold
+        residual.abs() < params.threshold
     } else {
-        residual < threshold
+        residual < params.threshold
     };
     if in_quadratic_region {
-        residual * (2.0 * alpha - 1.0)
+        residual * (2.0 * params.alpha - 1.0)
     } else {
         let sign = if symmetric { residual.signum() } else { 1.0 };
         let denominator = (2.0 * residual * residual).max(f64::MIN_POSITIVE);
-        -(residual + alpha * sign * threshold.powi(3) / denominator)
+        -(residual + params.alpha * sign * params.threshold_cubed / denominator)
     }
 }
 

@@ -36,6 +36,12 @@ cargo bench --bench baseline_workloads -- polynomial_2d/quant_reg_16x16 --profil
 sample <baseline_workloads-pid> 5 -file /tmp/baselines-quantreg2d.sample.txt
 cargo bench --bench baseline_workloads -- polynomial_2d --baseline perf_before_opt
 cargo bench --bench baseline_workloads -- polynomial_2d --save-baseline polynomial2d_after_basis_workspace
+cargo bench --bench baseline_workloads -- polynomial_1d/goldindec_256 --save-baseline goldindec_before_direct_rhs
+cargo bench --bench baseline_workloads -- polynomial_1d/goldindec_256 --profile-time 30
+sample <baseline_workloads-pid> 5 -file /tmp/baselines-goldindec-current-2.sample.txt
+cargo bench --bench baseline_workloads -- polynomial_1d/goldindec_256 --baseline goldindec_before_direct_rhs
+cargo bench --bench baseline_workloads -- polynomial_1d --baseline polynomial1d_after_unweighted_cache
+cargo bench --bench baseline_workloads -- polynomial_1d --save-baseline polynomial1d_after_cost_dispatch
 cargo bench --bench baseline_workloads -- morphology_2d/imor_16x16 --profile-time 20
 sample <baseline_workloads-pid> 5 -file /tmp/baselines-imor2d.sample.txt
 cargo bench --bench baseline_workloads -- morphology_2d --baseline perf_before_opt
@@ -203,6 +209,32 @@ The full `polynomial_1d` Criterion group was saved as
 `polynomial1d_after_unweighted_cache` so unchanged controls can be checked
 later.
 
+Goldindec profiling after the unweighted cache optimization:
+
+- Target: `polynomial_1d/goldindec_256`
+- `sample` captured 3823 samples from the Criterion profile run.
+- The profile still spent 2895 samples in
+  `fit_penalized_polynomial_with_threshold`. Within that path, 2190 samples
+  were under the repeated unweighted polynomial fit and 1463 samples were in
+  the surrounding adjusted-value and correction loop. The dense solve accounted
+  for only 75 samples.
+- A direct adjusted-RHS experiment measured 1.540 ms against the saved
+  1.347 ms baseline, so it was rejected.
+
+Penalized polynomial cost-dispatch optimization results:
+
+| Benchmark | Before mean | After mean | Change |
+| --- | ---: | ---: | ---: |
+| `polynomial_1d/penalized_poly_256` | 14.798 us | 14.218 us | -3.92% |
+| `polynomial_1d/goldindec_256` | 1.354 ms | 1.207 ms | -10.82% |
+
+The retained change hoists non-quadratic cost dispatch out of the per-point
+penalized polynomial loop and precomputes the Indec threshold cubic once per
+inner fit. This keeps the adjusted-vector and unweighted-fit structure that
+benchmarked well, while reducing the branch and `powi` work in Goldindec's
+hot correction path. The full `polynomial_1d` Criterion group was saved as
+`polynomial1d_after_cost_dispatch`.
+
 2D polynomial profiling before basis caching:
 
 - Target: `polynomial_2d/quant_reg_16x16`
@@ -288,6 +320,7 @@ Rejected or no-op experiments:
 | `whittaker_2d/brpls_16x16` | Jacobi-preconditioned CG | 8.232 ms | 12.802 ms | +55.63% |
 | `optimizers_2d/collab_pls_2x16x16` | Reuse shared Whittaker workspace and fill weights in place | 1.300 ms | 1.293 ms | no significant change |
 | `spline_1d/pspline_aspls_256` | Direct dense row-scaled P-spline workspace | 0.990 ms | 7.489 ms | +656.45% |
+| `polynomial_1d/goldindec_256` | Direct adjusted-RHS computation with cached-power evaluation | 1.347 ms | 1.540 ms | +14.30% |
 
 2D morphology profiling before optimization:
 

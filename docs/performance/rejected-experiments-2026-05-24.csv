@@ -3,3 +3,4 @@ whittaker_2d/brpls_16x16,precomputed second-order operator coefficients,8232144,
 whittaker_2d/brpls_16x16,jacobi-preconditioned conjugate gradient,8232144,12802000,+55.63,rejected
 optimizers_2d/collab_pls_2x16x16,reuse shared Whittaker workspace and fill weights in place,1299657,1293300,-0.38,no significant change
 spline_1d/pspline_aspls_256,direct dense row-scaled P-spline workspace,990000,7488873,+656.45,rejected
+polynomial_1d/goldindec_256,direct adjusted-RHS computation with cached-power evaluation,1347031,1539700,+14.30,rejected
