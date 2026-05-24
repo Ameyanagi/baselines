@@ -43,6 +43,9 @@ top-hat baseline primitive.
 See `docs/PARITY.md` for the current pybaselines parity matrix, 2D tolerance
 ledger, and known limits.
 
+See `docs/performance/` for checked-in benchmark records, including the
+2026-05-24 full Criterion baseline and the measured BEADS optimization result.
+
 ## Visual examples
 
 The crate includes `ruviz` examples for inspecting generated baselines as PNGs:

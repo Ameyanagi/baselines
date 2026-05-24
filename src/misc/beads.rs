@@ -6,7 +6,9 @@ use crate::{BaselineError, Result};
 
 const BEADS_SYSTEM_BANDWIDTH: usize = 4;
 const BEADS_PENALTY_BANDWIDTH: usize = 2;
-const BEADS_DENSE_COMPAT_THRESHOLD: usize = 256;
+// Keep the dense path for small fixture-compatible cases; larger inputs use the
+// banded solver to avoid cubic work and repeated dense matrix allocation.
+const BEADS_DENSE_COMPAT_THRESHOLD: usize = 192;
 
 #[derive(Debug, Clone, Copy)]
 struct TridiagonalCoefficients {
