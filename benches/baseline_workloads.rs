@@ -1,4 +1,3 @@
-use baselines::MatrixView;
 use baselines::backend::cpu::snip_batch_into;
 use baselines::classification as class;
 use baselines::misc;
@@ -13,6 +12,7 @@ use baselines::two_d::polynomial as poly2d;
 use baselines::two_d::spline as spline2d;
 use baselines::two_d::whittaker as whittaker2d;
 use baselines::whittaker as whit;
+use baselines::{MatrixView, MatrixViewMut};
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 use std::time::Duration;
@@ -97,6 +97,129 @@ fn bench_whittaker_1d(c: &mut Criterion) {
     group.bench_function("lsrpls_256", |bench| {
         bench.iter(|| whit::lsrpls(black_box(y.as_slice()), whit::LsrPlsParams::default()).unwrap())
     });
+    group.finish();
+}
+
+fn bench_whittaker_1d_into(c: &mut Criterion) {
+    let y = signal(256);
+    let input = y.as_slice();
+    let mut group = c.benchmark_group("whittaker_1d_into");
+    {
+        let mut baseline = vec![0.0; input.len()];
+        let mut workspace = whit::WhittakerWorkspace::new(input.len());
+        group.bench_function("asls_into_256", move |bench| {
+            bench.iter(|| {
+                whit::asls_into(
+                    black_box(input),
+                    whit::AslsParams::default(),
+                    black_box(baseline.as_mut_slice()),
+                    &mut workspace,
+                )
+                .unwrap()
+            })
+        });
+    }
+    {
+        let mut baseline = vec![0.0; input.len()];
+        let mut workspace = whit::WhittakerWorkspace::new(input.len());
+        let mut tol_history = Vec::new();
+        group.bench_function("asls_into_with_history_256", move |bench| {
+            bench.iter(|| {
+                whit::asls_into_with_history(
+                    black_box(input),
+                    whit::AslsParams::default(),
+                    black_box(baseline.as_mut_slice()),
+                    &mut workspace,
+                    &mut tol_history,
+                )
+                .unwrap()
+            })
+        });
+    }
+    {
+        let mut baseline = vec![0.0; input.len()];
+        let mut workspace = whit::WhittakerWorkspace::new(input.len());
+        group.bench_function("airpls_into_256", move |bench| {
+            bench.iter(|| {
+                whit::airpls_into(
+                    black_box(input),
+                    whit::AirPlsParams::default(),
+                    black_box(baseline.as_mut_slice()),
+                    &mut workspace,
+                )
+                .unwrap()
+            })
+        });
+    }
+    {
+        let mut baseline = vec![0.0; input.len()];
+        let mut workspace = whit::WhittakerWorkspace::new(input.len());
+        group.bench_function("arpls_into_256", move |bench| {
+            bench.iter(|| {
+                whit::arpls_into(
+                    black_box(input),
+                    whit::ArPlsParams::default(),
+                    black_box(baseline.as_mut_slice()),
+                    &mut workspace,
+                )
+                .unwrap()
+            })
+        });
+    }
+    {
+        let mut baseline = vec![0.0; input.len()];
+        group.bench_function("iasls_into_256", move |bench| {
+            bench.iter(|| {
+                whit::iasls_into(
+                    black_box(input),
+                    whit::IaslsParams::default(),
+                    black_box(baseline.as_mut_slice()),
+                )
+                .unwrap()
+            })
+        });
+    }
+    {
+        let mut baseline = vec![0.0; input.len()];
+        group.bench_function("drpls_into_256", move |bench| {
+            bench.iter(|| {
+                whit::drpls_into(
+                    black_box(input),
+                    whit::DrPlsParams::default(),
+                    black_box(baseline.as_mut_slice()),
+                )
+                .unwrap()
+            })
+        });
+    }
+    {
+        let mut baseline = vec![0.0; input.len()];
+        let mut tol_history = Vec::new();
+        group.bench_function("aspls_into_with_history_256", move |bench| {
+            bench.iter(|| {
+                whit::aspls_into_with_history(
+                    black_box(input),
+                    whit::AsPlsParams::default(),
+                    black_box(baseline.as_mut_slice()),
+                    &mut tol_history,
+                )
+                .unwrap()
+            })
+        });
+    }
+    {
+        let mut baseline = vec![0.0; input.len()];
+        group.bench_function("brpls_into_256", move |bench| {
+            bench.iter(|| {
+                whit::brpls_into(
+                    black_box(input),
+                    whit::BrPlsParams::default(),
+                    black_box(baseline.as_mut_slice()),
+                )
+                .unwrap()
+            })
+        });
+    }
     group.finish();
 }
 
@@ -580,6 +703,195 @@ fn bench_whittaker_2d(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_whittaker_2d_into(c: &mut Criterion) {
+    let rows = 16;
+    let cols = 16;
+    let data = surface(rows, cols);
+    let input = matrix(&data, rows, cols);
+    let mut group = c.benchmark_group("whittaker_2d_into");
+    {
+        let mut baseline = vec![0.0; input.len()];
+        let mut workspace = whittaker2d::Whittaker2DWorkspace::new(input.len());
+        group.bench_function("asls_into_16x16", move |bench| {
+            bench.iter(|| {
+                let output =
+                    MatrixViewMut::row_major(black_box(baseline.as_mut_slice()), rows, cols)
+                        .unwrap();
+                whittaker2d::asls_into(
+                    black_box(input),
+                    whittaker2d::Asls2DParams::default(),
+                    output,
+                    &mut workspace,
+                )
+                .unwrap()
+            })
+        });
+    }
+    {
+        let mut baseline = vec![0.0; input.len()];
+        let mut workspace = whittaker2d::Whittaker2DWorkspace::new(input.len());
+        group.bench_function("iasls_into_16x16", move |bench| {
+            bench.iter(|| {
+                let output =
+                    MatrixViewMut::row_major(black_box(baseline.as_mut_slice()), rows, cols)
+                        .unwrap();
+                whittaker2d::iasls_into(
+                    black_box(input),
+                    whittaker2d::Iasls2DParams::default(),
+                    output,
+                    &mut workspace,
+                )
+                .unwrap()
+            })
+        });
+    }
+    {
+        let mut baseline = vec![0.0; input.len()];
+        let mut workspace = whittaker2d::Whittaker2DWorkspace::new(input.len());
+        group.bench_function("airpls_into_16x16", move |bench| {
+            bench.iter(|| {
+                let output =
+                    MatrixViewMut::row_major(black_box(baseline.as_mut_slice()), rows, cols)
+                        .unwrap();
+                whittaker2d::airpls_into(
+                    black_box(input),
+                    whittaker2d::AirPls2DParams::default(),
+                    output,
+                    &mut workspace,
+                )
+                .unwrap()
+            })
+        });
+    }
+    {
+        let mut baseline = vec![0.0; input.len()];
+        let mut workspace = whittaker2d::Whittaker2DWorkspace::new(input.len());
+        group.bench_function("arpls_into_16x16", move |bench| {
+            bench.iter(|| {
+                let output =
+                    MatrixViewMut::row_major(black_box(baseline.as_mut_slice()), rows, cols)
+                        .unwrap();
+                whittaker2d::arpls_into(
+                    black_box(input),
+                    whittaker2d::ArPls2DParams::default(),
+                    output,
+                    &mut workspace,
+                )
+                .unwrap()
+            })
+        });
+    }
+    {
+        let mut baseline = vec![0.0; input.len()];
+        let mut workspace = whittaker2d::Whittaker2DWorkspace::new(input.len());
+        group.bench_function("drpls_into_16x16", move |bench| {
+            bench.iter(|| {
+                let output =
+                    MatrixViewMut::row_major(black_box(baseline.as_mut_slice()), rows, cols)
+                        .unwrap();
+                whittaker2d::drpls_into(
+                    black_box(input),
+                    whittaker2d::DrPls2DParams::default(),
+                    output,
+                    &mut workspace,
+                )
+                .unwrap()
+            })
+        });
+    }
+    {
+        let mut baseline = vec![0.0; input.len()];
+        let mut workspace = whittaker2d::Whittaker2DWorkspace::new(input.len());
+        group.bench_function("iarpls_into_16x16", move |bench| {
+            bench.iter(|| {
+                let output =
+                    MatrixViewMut::row_major(black_box(baseline.as_mut_slice()), rows, cols)
+                        .unwrap();
+                whittaker2d::iarpls_into(
+                    black_box(input),
+                    whittaker2d::IarPls2DParams::default(),
+                    output,
+                    &mut workspace,
+                )
+                .unwrap()
+            })
+        });
+    }
+    {
+        let mut baseline = vec![0.0; input.len()];
+        let mut workspace = whittaker2d::Whittaker2DWorkspace::new(input.len());
+        group.bench_function("aspls_into_16x16", move |bench| {
+            bench.iter(|| {
+                let output =
+                    MatrixViewMut::row_major(black_box(baseline.as_mut_slice()), rows, cols)
+                        .unwrap();
+                whittaker2d::aspls_into(
+                    black_box(input),
+                    whittaker2d::AsPls2DParams::default(),
+                    output,
+                    &mut workspace,
+                )
+                .unwrap()
+            })
+        });
+    }
+    {
+        let mut baseline = vec![0.0; input.len()];
+        let mut workspace = whittaker2d::Whittaker2DWorkspace::new(input.len());
+        group.bench_function("psalsa_into_16x16", move |bench| {
+            bench.iter(|| {
+                let output =
+                    MatrixViewMut::row_major(black_box(baseline.as_mut_slice()), rows, cols)
+                        .unwrap();
+                whittaker2d::psalsa_into(
+                    black_box(input),
+                    whittaker2d::Psalsa2DParams::default(),
+                    output,
+                    &mut workspace,
+                )
+                .unwrap()
+            })
+        });
+    }
+    {
+        let mut baseline = vec![0.0; input.len()];
+        let mut workspace = whittaker2d::Whittaker2DWorkspace::new(input.len());
+        group.bench_function("brpls_into_16x16", move |bench| {
+            bench.iter(|| {
+                let output =
+                    MatrixViewMut::row_major(black_box(baseline.as_mut_slice()), rows, cols)
+                        .unwrap();
+                whittaker2d::brpls_into(
+                    black_box(input),
+                    whittaker2d::BrPls2DParams::default(),
+                    output,
+                    &mut workspace,
+                )
+                .unwrap()
+            })
+        });
+    }
+    {
+        let mut baseline = vec![0.0; input.len()];
+        let mut workspace = whittaker2d::Whittaker2DWorkspace::new(input.len());
+        group.bench_function("lsrpls_into_16x16", move |bench| {
+            bench.iter(|| {
+                let output =
+                    MatrixViewMut::row_major(black_box(baseline.as_mut_slice()), rows, cols)
+                        .unwrap();
+                whittaker2d::lsrpls_into(
+                    black_box(input),
+                    whittaker2d::LsrPls2DParams::default(),
+                    output,
+                    &mut workspace,
+                )
+                .unwrap()
+            })
+        });
+    }
+    group.finish();
+}
+
 fn bench_polynomial_2d(c: &mut Criterion) {
     let rows = 16;
     let cols = 16;
@@ -774,6 +1086,7 @@ criterion_group! {
         .measurement_time(Duration::from_secs(1));
     targets =
         bench_whittaker_1d,
+        bench_whittaker_1d_into,
         bench_polynomial_1d,
         bench_morphology_1d,
         bench_smoothing_1d,
@@ -781,6 +1094,7 @@ criterion_group! {
         bench_classification_1d,
         bench_optimizers_and_misc_1d,
         bench_whittaker_2d,
+        bench_whittaker_2d_into,
         bench_polynomial_2d,
         bench_morphology_2d,
         bench_spline_2d,
