@@ -3,4 +3,9 @@ optimizers_misc_1d/beads_256,23094000,609000,-97.36,3913b07
 spline_1d/pspline_iasls_256,15934000,159000,-99.00,922817e
 spline_1d/pspline_aspls_256,8954000,990000,-88.74,922817e
 spline_1d/pspline_drpls_256,3713000,348000,-90.60,922817e
-polynomial_1d/goldindec_256,6661665,3371000,-49.20,worktree
+polynomial_1d/goldindec_256,6661665,3371000,-49.20,5220e2a
+morphology_2d/rolling_ball_16x16,13432,7834,-41.67,worktree
+morphology_2d/tophat_16x16,8886,3501,-60.60,worktree
+morphology_2d/mor_16x16,18266,6781,-62.88,worktree
+morphology_2d/imor_16x16,1537424,409770,-73.35,worktree
+morphology_2d/noise_median_16x16,25796,24759,-4.02,worktree

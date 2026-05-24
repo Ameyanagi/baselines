@@ -27,6 +27,10 @@ cargo bench --bench baseline_workloads -- polynomial_1d/goldindec_256 --profile-
 sample <baseline_workloads-pid> 5 -file /tmp/baselines-goldindec.sample.txt
 cargo bench --bench baseline_workloads -- polynomial_1d/goldindec_256 --save-baseline goldindec_after_polynomial_workspace
 cargo bench --bench baseline_workloads -- polynomial_1d/goldindec_256 --baseline perf_before_opt
+cargo bench --bench baseline_workloads -- morphology_2d/imor_16x16 --profile-time 20
+sample <baseline_workloads-pid> 5 -file /tmp/baselines-imor2d.sample.txt
+cargo bench --bench baseline_workloads -- morphology_2d --baseline perf_before_opt
+cargo bench --bench baseline_workloads -- morphology_2d --save-baseline morphology2d_after_separable
 ```
 
 Full saved baseline means are in
@@ -114,3 +118,27 @@ Rejected 2D Whittaker experiments:
 | --- | --- | ---: | ---: | ---: |
 | `whittaker_2d/brpls_16x16` | Precomputed operator coefficients | 8.232 ms | 9.174 ms | +10.7% |
 | `whittaker_2d/brpls_16x16` | Jacobi-preconditioned CG | 8.232 ms | 12.802 ms | +55.63% |
+
+2D morphology profiling before optimization:
+
+- Target: `morphology_2d/imor_16x16`
+- `sample` captured 3705 samples from the Criterion profile run.
+- The profile was dominated by the reflected moving-window primitives:
+  1853 samples in `moving_min_reflect` and 1818 samples in
+  `moving_max_reflect`.
+
+2D morphology optimization results:
+
+| Benchmark | Before mean | After mean | Change |
+| --- | ---: | ---: | ---: |
+| `morphology_2d/rolling_ball_16x16` | 13.432 us | 7.834 us | -41.67% |
+| `morphology_2d/tophat_16x16` | 8.886 us | 3.501 us | -60.60% |
+| `morphology_2d/mor_16x16` | 18.266 us | 6.781 us | -62.88% |
+| `morphology_2d/imor_16x16` | 1.537 ms | 0.410 ms | -73.35% |
+| `morphology_2d/noise_median_16x16` | 25.796 us | 24.759 us | -4.02% |
+
+The retained change computes rectangular reflected min/max operations as
+separable row and column passes and reuses IMor work buffers across iterations.
+`noise_median` does not use the changed min/max primitive and is shown only
+because it was part of the same benchmark group comparison. Fixture
+compatibility remained passing for the pinned pybaselines references.

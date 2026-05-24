@@ -113,12 +113,18 @@ pub fn rolling_ball_into(
 ) -> Result<FitReport> {
     validate_input_output(input, &output, params)?;
     let (row_radius, col_radius) = params.radii();
-    let opened = opening_reflect(
+    let shape = MorphologyShape::new(input.rows(), input.cols());
+    let window = MorphologyWindow::new(row_radius, col_radius);
+    let mut scratch = vec![0.0; input.len()];
+    let mut eroded = vec![0.0; input.len()];
+    let mut opened = vec![0.0; input.len()];
+    opening_reflect_into(
         input.as_slice(),
-        input.rows(),
-        input.cols(),
-        row_radius,
-        col_radius,
+        shape,
+        window,
+        &mut scratch,
+        &mut eroded,
+        &mut opened,
     );
     moving_mean_reflect(
         &opened,
@@ -151,14 +157,18 @@ pub fn tophat_into(
 ) -> Result<FitReport> {
     validate_input_output(input, &output, params)?;
     let (row_radius, col_radius) = params.radii();
-    let opened = opening_reflect(
+    let shape = MorphologyShape::new(input.rows(), input.cols());
+    let window = MorphologyWindow::new(row_radius, col_radius);
+    let mut scratch = vec![0.0; input.len()];
+    let mut eroded = vec![0.0; input.len()];
+    opening_reflect_into(
         input.as_slice(),
-        input.rows(),
-        input.cols(),
-        row_radius,
-        col_radius,
+        shape,
+        window,
+        &mut scratch,
+        &mut eroded,
+        output.as_mut_slice(),
     );
-    output.as_mut_slice().copy_from_slice(&opened);
     Ok(FitReport::new(1, true, 0.0))
 }
 
@@ -182,22 +192,31 @@ pub fn mor_into(
 ) -> Result<FitReport> {
     validate_input_output(input, &output, params)?;
     let (row_radius, col_radius) = params.radii();
-    let opened = opening_reflect(
+    let shape = MorphologyShape::new(input.rows(), input.cols());
+    let window = MorphologyWindow::new(row_radius, col_radius);
+    let mut scratch = vec![0.0; input.len()];
+    let mut opened = vec![0.0; input.len()];
+    let mut eroded = vec![0.0; input.len()];
+    let mut dilated = vec![0.0; input.len()];
+    opening_reflect_into(
         input.as_slice(),
-        input.rows(),
-        input.cols(),
-        row_radius,
-        col_radius,
+        shape,
+        window,
+        &mut scratch,
+        &mut eroded,
+        &mut opened,
     );
-    let averaged = average_opening_from_opened_reflect(
+    average_opening_from_opened_reflect_into(
         &opened,
-        input.rows(),
-        input.cols(),
-        row_radius,
-        col_radius,
+        shape,
+        window,
+        &mut scratch,
+        &mut eroded,
+        &mut dilated,
+        output.as_mut_slice(),
     );
-    for ((target, opened), averaged) in output.as_mut_slice().iter_mut().zip(opened).zip(averaged) {
-        *target = opened.min(averaged);
+    for (target, opened) in output.as_mut_slice().iter_mut().zip(&opened) {
+        *target = opened.min(*target);
     }
     Ok(FitReport::new(1, true, 0.0))
 }
@@ -222,28 +241,27 @@ pub fn imor_into(
 ) -> Result<FitReport> {
     validate_imor_input_output(input, &output, params)?;
     let (row_radius, col_radius) = params.morphology.radii();
+    let shape = MorphologyShape::new(input.rows(), input.cols());
+    let window = MorphologyWindow::new(row_radius, col_radius);
     output.as_mut_slice().copy_from_slice(input.as_slice());
-    let mut next = vec![0.0; input.len()];
-    let mut averaged = vec![0.0; input.len()];
+    let mut workspace = Morphology2DWorkspace::new(input.len());
     let mut tolerance = f64::INFINITY;
 
     for iter in 0..=params.max_iter {
-        average_opening_reflect(
-            output.as_slice(),
-            input.rows(),
-            input.cols(),
-            row_radius,
-            col_radius,
-            &mut averaged,
-        );
-        for ((target, observed), opened) in next.iter_mut().zip(input.as_slice()).zip(&averaged) {
+        average_opening_reflect_into(output.as_slice(), shape, window, &mut workspace);
+        for ((target, observed), opened) in workspace
+            .next
+            .iter_mut()
+            .zip(input.as_slice())
+            .zip(&workspace.averaged)
+        {
             *target = observed.min(*opened);
         }
-        tolerance = relative_change(output.as_slice(), &next);
+        tolerance = relative_change(output.as_slice(), &workspace.next);
         if tolerance < params.tol {
             return Ok(FitReport::new(iter + 1, true, tolerance));
         }
-        output.as_mut_slice().copy_from_slice(&next);
+        output.as_mut_slice().copy_from_slice(&workspace.next);
     }
 
     Ok(FitReport::new(
@@ -320,112 +338,180 @@ fn validate_imor_input_output(
     Ok(())
 }
 
-fn opening_reflect(
-    data: &[f64],
+#[derive(Debug, Clone, Copy)]
+struct MorphologyShape {
     rows: usize,
     cols: usize,
-    row_radius: usize,
-    col_radius: usize,
-) -> Vec<f64> {
-    let eroded = moving_min_reflect(data, rows, cols, row_radius, col_radius);
-    let mut opened = vec![0.0; data.len()];
-    moving_max_reflect(&eroded, rows, cols, row_radius, col_radius, &mut opened);
-    opened
 }
 
-fn average_opening_reflect(
-    data: &[f64],
-    rows: usize,
-    cols: usize,
-    row_radius: usize,
-    col_radius: usize,
-    output: &mut [f64],
-) {
-    let opened = opening_reflect(data, rows, cols, row_radius, col_radius);
-    let averaged = average_opening_from_opened_reflect(&opened, rows, cols, row_radius, col_radius);
-    output.copy_from_slice(&averaged);
+impl MorphologyShape {
+    fn new(rows: usize, cols: usize) -> Self {
+        Self { rows, cols }
+    }
+
+    fn len(self) -> usize {
+        self.rows * self.cols
+    }
 }
 
-fn average_opening_from_opened_reflect(
-    opened: &[f64],
-    rows: usize,
-    cols: usize,
+#[derive(Debug, Clone, Copy)]
+struct MorphologyWindow {
     row_radius: usize,
     col_radius: usize,
-) -> Vec<f64> {
-    let dilated = moving_max_reflect_alloc(opened, rows, cols, row_radius, col_radius);
-    let eroded = moving_min_reflect(opened, rows, cols, row_radius, col_radius);
-    dilated
-        .into_iter()
-        .zip(eroded)
-        .map(|(dilated, eroded)| 0.5 * (dilated + eroded))
-        .collect()
 }
 
-fn moving_min_reflect(
-    data: &[f64],
-    rows: usize,
-    cols: usize,
-    row_radius: usize,
-    col_radius: usize,
-) -> Vec<f64> {
-    let mut output = vec![0.0; data.len()];
-    moving_min_reflect_into(data, rows, cols, row_radius, col_radius, &mut output);
-    output
-}
-
-fn moving_min_reflect_into(
-    data: &[f64],
-    rows: usize,
-    cols: usize,
-    row_radius: usize,
-    col_radius: usize,
-    output: &mut [f64],
-) {
-    for row in 0..rows {
-        for col in 0..cols {
-            let mut best = f64::INFINITY;
-            for window_row in window_indices(row, rows, row_radius) {
-                let start = window_row * cols;
-                for window_col in window_indices(col, cols, col_radius) {
-                    best = best.min(data[start + window_col]);
-                }
-            }
-            output[row * cols + col] = best;
+impl MorphologyWindow {
+    fn new(row_radius: usize, col_radius: usize) -> Self {
+        Self {
+            row_radius,
+            col_radius,
         }
     }
 }
 
-fn moving_max_reflect_alloc(
-    data: &[f64],
-    rows: usize,
-    cols: usize,
-    row_radius: usize,
-    col_radius: usize,
-) -> Vec<f64> {
-    let mut output = vec![0.0; data.len()];
-    moving_max_reflect(data, rows, cols, row_radius, col_radius, &mut output);
-    output
+#[derive(Debug, Clone)]
+struct Morphology2DWorkspace {
+    scratch: Vec<f64>,
+    opened: Vec<f64>,
+    eroded: Vec<f64>,
+    dilated: Vec<f64>,
+    averaged: Vec<f64>,
+    next: Vec<f64>,
 }
 
-fn moving_max_reflect(
+impl Morphology2DWorkspace {
+    fn new(len: usize) -> Self {
+        Self {
+            scratch: vec![0.0; len],
+            opened: vec![0.0; len],
+            eroded: vec![0.0; len],
+            dilated: vec![0.0; len],
+            averaged: vec![0.0; len],
+            next: vec![0.0; len],
+        }
+    }
+}
+
+fn opening_reflect_into(
     data: &[f64],
-    rows: usize,
-    cols: usize,
-    row_radius: usize,
-    col_radius: usize,
+    shape: MorphologyShape,
+    window: MorphologyWindow,
+    scratch: &mut [f64],
+    eroded: &mut [f64],
     output: &mut [f64],
 ) {
-    for row in 0..rows {
-        for col in 0..cols {
-            let mut best = f64::NEG_INFINITY;
-            for window_row in window_indices(row, rows, row_radius) {
-                let start = window_row * cols;
-                for window_col in window_indices(col, cols, col_radius) {
-                    best = best.max(data[start + window_col]);
-                }
+    moving_min_reflect_with_workspace(data, shape, window, scratch, eroded);
+    moving_max_reflect_with_workspace(eroded, shape, window, scratch, output);
+}
+
+fn average_opening_reflect_into(
+    data: &[f64],
+    shape: MorphologyShape,
+    window: MorphologyWindow,
+    workspace: &mut Morphology2DWorkspace,
+) {
+    opening_reflect_into(
+        data,
+        shape,
+        window,
+        &mut workspace.scratch,
+        &mut workspace.eroded,
+        &mut workspace.opened,
+    );
+    average_opening_from_opened_reflect_into(
+        &workspace.opened,
+        shape,
+        window,
+        &mut workspace.scratch,
+        &mut workspace.eroded,
+        &mut workspace.dilated,
+        &mut workspace.averaged,
+    );
+}
+
+fn average_opening_from_opened_reflect_into(
+    opened: &[f64],
+    shape: MorphologyShape,
+    window: MorphologyWindow,
+    scratch: &mut [f64],
+    eroded: &mut [f64],
+    dilated: &mut [f64],
+    output: &mut [f64],
+) {
+    moving_max_reflect_with_workspace(opened, shape, window, scratch, dilated);
+    moving_min_reflect_with_workspace(opened, shape, window, scratch, eroded);
+    for ((target, dilated), eroded) in output.iter_mut().zip(dilated).zip(eroded) {
+        *target = 0.5 * (*dilated + *eroded);
+    }
+}
+
+fn moving_min_reflect_with_workspace(
+    data: &[f64],
+    shape: MorphologyShape,
+    window: MorphologyWindow,
+    scratch: &mut [f64],
+    output: &mut [f64],
+) {
+    moving_extreme_reflect_with_workspace(
+        data,
+        shape,
+        window,
+        scratch,
+        output,
+        f64::INFINITY,
+        f64::min,
+    );
+}
+
+fn moving_max_reflect_with_workspace(
+    data: &[f64],
+    shape: MorphologyShape,
+    window: MorphologyWindow,
+    scratch: &mut [f64],
+    output: &mut [f64],
+) {
+    moving_extreme_reflect_with_workspace(
+        data,
+        shape,
+        window,
+        scratch,
+        output,
+        f64::NEG_INFINITY,
+        f64::max,
+    );
+}
+
+fn moving_extreme_reflect_with_workspace(
+    data: &[f64],
+    shape: MorphologyShape,
+    window: MorphologyWindow,
+    scratch: &mut [f64],
+    output: &mut [f64],
+    initial: f64,
+    combine: fn(f64, f64) -> f64,
+) {
+    debug_assert_eq!(data.len(), shape.len());
+    debug_assert_eq!(scratch.len(), data.len());
+    debug_assert_eq!(output.len(), data.len());
+
+    for row in 0..shape.rows {
+        let row_start = row * shape.cols;
+        for col in 0..shape.cols {
+            let mut best = initial;
+            for window_col in window_indices(col, shape.cols, window.col_radius) {
+                best = combine(best, data[row_start + window_col]);
             }
-            output[row * cols + col] = best;
+            scratch[row_start + col] = best;
+        }
+    }
+
+    for row in 0..shape.rows {
+        for col in 0..shape.cols {
+            let mut best = initial;
+            for window_row in window_indices(row, shape.rows, window.row_radius) {
+                best = combine(best, scratch[window_row * shape.cols + col]);
+            }
+            output[row * shape.cols + col] = best;
         }
     }
 }
