@@ -68,6 +68,15 @@ cargo bench --bench baseline_workloads -- whittaker_2d --save-baseline whittaker
 cargo bench --bench baseline_workloads -- spline_1d/pspline_aspls_256 --profile-time 20
 sample <baseline_workloads-pid> 5 -file /tmp/baselines-pspline-aspls1d.sample.txt
 cargo bench --bench baseline_workloads -- spline_1d --baseline perf_before_opt
+cargo bench --bench baseline_workloads -- classification_1d/dietrich_256 --profile-time 30
+sample <baseline_workloads-pid> 5 -file /tmp/baselines-dietrich.sample.txt
+cargo bench --bench baseline_workloads -- classification_1d --save-baseline classification1d_before_dietrich_workspace
+cargo bench --bench baseline_workloads -- classification_1d --baseline classification1d_before_dietrich_workspace
+cargo bench --bench baseline_workloads -- classification_1d --save-baseline classification1d_after_dietrich_workspace
+cargo bench --bench baseline_workloads -- classification_1d/dietrich_256 --profile-time 20
+sample <baseline_workloads-pid> 5 -file /tmp/baselines-dietrich-after-workspace.sample.txt
+cargo bench --bench baseline_workloads -- classification_1d --baseline classification1d_after_dietrich_workspace
+cargo bench --bench baseline_workloads -- classification_1d --save-baseline classification1d_after_threshold_workspace
 ```
 
 Full saved baseline means are in
@@ -344,6 +353,31 @@ inside every CG operator application, produced this incremental result against
 | `whittaker_2d/psalsa_16x16` | 1.701 ms | 1.651 ms | -2.91% |
 | `whittaker_2d/brpls_16x16` | 6.701 ms | 6.533 ms | -2.50% |
 | `whittaker_2d/lsrpls_16x16` | 671.233 us | 660.735 us | -1.56% |
+
+1D classification profiling before optimization:
+
+- Target: `classification_1d/dietrich_256`
+- `sample` captured 3843 samples from the Criterion profile run.
+- The profile was dominated by repeated all-ones weighted polynomial fits:
+  2954 samples in `fit_weighted_polynomial_coefficients_with_workspace`, plus
+  visible allocation/free stacks from rebuilding the polynomial workspace.
+- The next visible cost was threshold classification: 449 samples in
+  `iter_threshold` after the first workspace optimization, mostly from
+  repeated temporary `Vec` allocation for masked power values.
+
+1D classification optimization results:
+
+| Benchmark | Before mean | After mean | Change |
+| --- | ---: | ---: | ---: |
+| `classification_1d/dietrich_256` | 88.800 us | 37.107 us | -58.21% |
+| `classification_1d/dietrich_256` | 37.107 us | 33.597 us | -9.46% |
+| `classification_1d/fabc_256` | 25.393 us | 23.177 us | -8.73% |
+
+The retained changes reuse the cached unweighted polynomial workspace for the
+Dietrich polynomial refinement and replace threshold-classification temporary
+vectors with a two-pass masked mean/std calculation plus a reusable candidate
+mask. The full `classification_1d` Criterion group was saved as
+`classification1d_after_threshold_workspace`.
 
 Rejected or no-op experiments:
 

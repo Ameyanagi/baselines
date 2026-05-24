@@ -59,3 +59,6 @@ morphology_1d/imor_256,195076,114797,-41.15,2f42204
 morphology_1d/mormol_256,118987,76772,-35.48,2f42204
 morphology_1d/amormol_256,385625,226768,-41.19,2f42204
 morphology_1d/mpspline_256,38849,34641,-10.83,2f42204
+classification_1d/dietrich_256,88800,37107,-58.21,de4b108
+classification_1d/dietrich_256,37107,33597,-9.46,de4b108
+classification_1d/fabc_256,25393,23177,-8.73,de4b108
