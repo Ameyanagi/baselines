@@ -30,6 +30,11 @@ cargo bench --bench baseline_workloads -- optimizers_misc_1d/beads_256 --save-ba
 cargo bench --bench baseline_workloads -- optimizers_misc_1d/beads_256 --baseline beads_current_profile
 cargo bench --bench baseline_workloads -- optimizers_misc_1d/beads_256 --profile-time 20
 sample <baseline_workloads-pid> 5 -file /tmp/baselines-beads-direct-band.sample.txt
+cargo bench --bench baseline_workloads -- optimizers_misc_1d/beads_256 --save-baseline beads_before_workspace_reuse
+cargo bench --bench baseline_workloads -- optimizers_misc_1d/beads_256 --profile-time 20
+sample <baseline_workloads-pid> 5 -file /tmp/baselines-beads-workspace.sample.txt
+cargo bench --bench baseline_workloads -- optimizers_misc_1d/beads_256 --baseline beads_before_workspace_reuse
+cargo bench --bench baseline_workloads -- optimizers_misc_1d/beads_256 --save-baseline beads_after_workspace_reuse
 cargo bench --bench baseline_workloads -- polynomial_1d/goldindec_256 --profile-time 20
 sample <baseline_workloads-pid> 5 -file /tmp/baselines-goldindec.sample.txt
 cargo bench --bench baseline_workloads -- polynomial_1d/goldindec_256 --save-baseline goldindec_after_polynomial_workspace
@@ -142,6 +147,7 @@ cargo bench --bench baseline_workloads polynomial_2d_into -- --save-baseline non
 cargo bench --bench baseline_workloads morphology_2d_into -- --save-baseline nonwhittaker_2d_into_coverage_2026_05_24
 cargo bench --bench baseline_workloads spline_2d_into -- --save-baseline nonwhittaker_2d_into_coverage_2026_05_24
 cargo bench --bench baseline_workloads optimizers_2d_into -- --save-baseline nonwhittaker_2d_into_coverage_2026_05_24
+cargo test --test benchmark_coverage
 cargo doc --workspace --all-features --no-deps
 cargo package --allow-dirty
 cargo bench --bench baseline_workloads -- --save-baseline perf_current_2026_05_24
@@ -160,6 +166,11 @@ Benchmark coverage additions made after the initial full baseline run are in
 That file now includes Whittaker and non-Whittaker 1D/2D reusable-output
 `*_into` benchmarks, which measure the allocation-reuse API surface separately
 from the allocating fit APIs.
+
+Benchmark coverage is also checked by `tests/benchmark_coverage.rs`, which
+parses the public top-level algorithm functions in the 1D, 2D, misc, and batch
+modules and verifies a matching Criterion workload exists in
+`benches/baseline_workloads.rs`.
 
 Top slow paths before optimization:
 
@@ -226,6 +237,23 @@ longer visible as named hotspots in the normal optimized profile; remaining
 visible secondary costs were the tridiagonal solve, logarithms in the BEADS
 loss calculation, and small allocation/free stacks. Fixture compatibility
 remained passing for the pinned pybaselines references.
+
+BEADS workspace reuse profiling:
+
+- Target: `optimizers_misc_1d/beads_256`
+- Saved Criterion baseline before the change: `beads_before_workspace_reuse`
+- `sample` captured 3830 samples from the Criterion profile run.
+- The profile still pointed at the main BEADS filter loop and showed
+  same-sized temporary vector allocation around the band system, diagonal
+  penalty, absolute-value mask, and tridiagonal application paths.
+- The retained change reuses those filter-loop work buffers while keeping the
+  public API and fixture-compatible dense path unchanged.
+
+BEADS workspace reuse result:
+
+| Benchmark | Before mean | After mean | Change |
+| --- | ---: | ---: | ---: |
+| `optimizers_misc_1d/beads_256` | 466.970 us | 455.020 us | -10.41% |
 
 P-spline solver optimization results:
 
