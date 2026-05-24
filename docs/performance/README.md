@@ -105,6 +105,8 @@ cargo bench --bench baseline_workloads -- whittaker_2d/arpls_eigen_16x16 --basel
 cargo bench --bench baseline_workloads -- whittaker_2d/arpls_eigen_16x16 --save-baseline arpls_eigen_after_squared_diag
 cargo bench --bench baseline_workloads -- whittaker_2d/arpls_eigen_16x16 --profile-time 20
 sample <baseline_workloads-pid> 5 -file /tmp/baselines-arpls-eigen-after.sample.txt
+cargo bench --bench baseline_workloads -- whittaker_2d/brpls_16x16 --save-baseline brpls2d_current_2026_05_24
+cargo bench --bench baseline_workloads -- whittaker_2d/brpls_16x16 --baseline brpls2d_current_2026_05_24
 cargo bench --bench baseline_workloads -- spline_1d/pspline_aspls_256 --profile-time 20
 sample <baseline_workloads-pid> 5 -file /tmp/baselines-pspline-aspls1d.sample.txt
 cargo bench --bench baseline_workloads -- spline_1d --baseline perf_before_opt
@@ -587,6 +589,7 @@ Rejected or no-op experiments:
 | `whittaker_1d/arpls_256` | No-allocation arPLS weight update | 0.312 ms | 0.335 ms | +7.45% |
 | `whittaker_2d/brpls_16x16` | Interior/boundary split for second-order operator | 6.462 ms | 7.949 ms | +23.02% |
 | `spline_1d/pspline_arpls_256` | In-place arPLS spline weight update | 0.367 ms | 0.377 ms | +2.77% |
+| `whittaker_2d/brpls_16x16` | Squared residual convergence check in CG loop | 6.800 ms | 6.566 ms | no significant change |
 
 2D morphology profiling before optimization:
 
