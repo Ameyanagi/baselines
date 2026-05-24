@@ -2648,9 +2648,9 @@ checksum = "b39cdef0fa800fc44525c84ccb54a029961a8215f9619753635a9c0d2538d46d"
 
 [[package]]
 name = "ruviz"
-version = "0.4.16"
+version = "0.4.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "78b58c91924351ad905d41a8f9eea27c6033024cb417ad473b24a2400254b418"
+checksum = "06a29400340e34bf9d285dbff9f1a0bcca23bdd0282dbb0ffa05c985b8ef45bb"
 dependencies = [
  "anyhow",
  "cosmic-text",
