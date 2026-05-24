@@ -75,6 +75,10 @@ cargo bench --bench baseline_workloads -- spline_2d/pspline_iasls_16x16 --save-b
 cargo bench --bench baseline_workloads -- spline_2d/pspline_iasls_16x16 --profile-time 20
 sample <baseline_workloads-pid> 5 -file /tmp/baselines-pspline-iasls2d-after.sample.txt
 cargo bench --bench baseline_workloads -- spline_2d_into/pspline_iasls_into_16x16 --save-baseline pspline_iasls2d_into_after_workspace
+cargo bench --bench baseline_workloads -- spline_2d/pspline_iarpls_16x16 --save-baseline pspline_iarpls2d_current_profile
+cargo bench --bench baseline_workloads -- spline_2d/pspline_iarpls_16x16 --profile-time 20
+sample <baseline_workloads-pid> 5 -file /tmp/baselines-pspline-iarpls2d-current.sample.txt
+cargo bench --bench baseline_workloads -- spline_2d/pspline_iarpls_16x16 --baseline pspline_iarpls2d_current_profile
 cargo bench --bench baseline_workloads -- whittaker_2d/arpls_16x16 --profile-time 20
 sample <baseline_workloads-pid> 5 -file /tmp/baselines-arpls2d.sample.txt
 cargo bench --bench baseline_workloads -- whittaker_2d --baseline perf_before_opt
@@ -263,6 +267,13 @@ first-difference solve using the existing row-major dense solver and wires the
 The follow-up profile captured 3834 samples; the old
 `solve_coefficients_dense_with_options` path disappeared, and the remaining
 top cost is the expected `solve_dense_in_place` work.
+
+The current `spline_2d/pspline_iarpls_16x16` path was also profiled after the
+workspace optimizations. `sample` captured 3846 samples, mostly in
+`solve_coefficients_banded_into`, `solve_spd_banded_into`, and the separable
+row/column pass. A cache-locality experiment that stored the intermediate
+row-smoothed surface transposed measured 706.670 us before and 716.190 us
+after, so it was rejected as no significant improvement.
 
 Goldindec profiling before optimization:
 
