@@ -17,6 +17,7 @@
 
 use crate::data::{MatrixView, MatrixViewMut};
 use crate::fit::{Fit2D, FitReport};
+use crate::linalg::banded::SymmetricBandedWorkspace;
 use crate::workspace::logistic;
 use crate::{BaselineError, Result};
 
@@ -25,6 +26,14 @@ pub use super::whittaker_eigen::{
 };
 
 const MIN_WEIGHT: f64 = 1.0e-8;
+const DIRECT_BANDED_MAX_N: usize = 512;
+const DIRECT_BANDED_MAX_BANDWIDTH: usize = 64;
+
+#[derive(Debug, Clone, Copy)]
+enum SolverMode {
+    Cg,
+    DirectBandedWhenSmall,
+}
 
 /// Common parameters for two-dimensional Whittaker-style algorithms.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -134,6 +143,7 @@ pub struct Whittaker2DWorkspace {
     cg_residual: Vec<f64>,
     cg_direction: Vec<f64>,
     cg_operator: Vec<f64>,
+    direct_solver: SymmetricBandedWorkspace,
 }
 
 impl Whittaker2DWorkspace {
@@ -149,6 +159,7 @@ impl Whittaker2DWorkspace {
             cg_residual: vec![0.0; len],
             cg_direction: vec![0.0; len],
             cg_operator: vec![0.0; len],
+            direct_solver: SymmetricBandedWorkspace::new(),
         }
     }
 
@@ -339,6 +350,7 @@ pub fn asls_into(
         AslsWeights { p: params.p },
         output,
         workspace,
+        SolverMode::DirectBandedWhenSmall,
     )
 }
 
@@ -377,12 +389,13 @@ pub fn iasls_into(
         AslsWeights { p: params.p },
         output,
         workspace,
+        SolverMode::DirectBandedWhenSmall,
     )
 }
 
 /// Fits a 2D airPLS baseline.
 pub fn airpls(input: MatrixView<'_>, params: AirPls2DParams) -> Result<Fit2D> {
-    fit_alloc(input, params.whittaker, AirPlsWeights)
+    fit_alloc(input, params.whittaker, AirPlsWeights, SolverMode::Cg)
 }
 
 /// Fits a 2D airPLS baseline into an existing output buffer.
@@ -392,12 +405,24 @@ pub fn airpls_into(
     output: MatrixViewMut<'_>,
     workspace: &mut Whittaker2DWorkspace,
 ) -> Result<FitReport> {
-    fit_with_policy(input, params.whittaker, AirPlsWeights, output, workspace)
+    fit_with_policy(
+        input,
+        params.whittaker,
+        AirPlsWeights,
+        output,
+        workspace,
+        SolverMode::Cg,
+    )
 }
 
 /// Fits a 2D arPLS baseline.
 pub fn arpls(input: MatrixView<'_>, params: ArPls2DParams) -> Result<Fit2D> {
-    fit_alloc(input, params.whittaker, ArPlsWeights)
+    fit_alloc(
+        input,
+        params.whittaker,
+        ArPlsWeights,
+        SolverMode::DirectBandedWhenSmall,
+    )
 }
 
 /// Fits a 2D arPLS baseline into an existing output buffer.
@@ -407,7 +432,14 @@ pub fn arpls_into(
     output: MatrixViewMut<'_>,
     workspace: &mut Whittaker2DWorkspace,
 ) -> Result<FitReport> {
-    fit_with_policy(input, params.whittaker, ArPlsWeights, output, workspace)
+    fit_with_policy(
+        input,
+        params.whittaker,
+        ArPlsWeights,
+        output,
+        workspace,
+        SolverMode::DirectBandedWhenSmall,
+    )
 }
 
 /// Fits a 2D drPLS baseline.
@@ -428,12 +460,24 @@ pub fn drpls_into(
     workspace: &mut Whittaker2DWorkspace,
 ) -> Result<FitReport> {
     validate_eta(params.eta)?;
-    fit_with_policy(input, params.whittaker, DrPlsWeights, output, workspace)
+    fit_with_policy(
+        input,
+        params.whittaker,
+        DrPlsWeights,
+        output,
+        workspace,
+        SolverMode::DirectBandedWhenSmall,
+    )
 }
 
 /// Fits a 2D IarPLS baseline.
 pub fn iarpls(input: MatrixView<'_>, params: IarPls2DParams) -> Result<Fit2D> {
-    fit_alloc(input, params.whittaker, IarPlsWeights)
+    fit_alloc(
+        input,
+        params.whittaker,
+        IarPlsWeights,
+        SolverMode::DirectBandedWhenSmall,
+    )
 }
 
 /// Fits a 2D IarPLS baseline into an existing output buffer.
@@ -443,7 +487,14 @@ pub fn iarpls_into(
     output: MatrixViewMut<'_>,
     workspace: &mut Whittaker2DWorkspace,
 ) -> Result<FitReport> {
-    fit_with_policy(input, params.whittaker, IarPlsWeights, output, workspace)
+    fit_with_policy(
+        input,
+        params.whittaker,
+        IarPlsWeights,
+        output,
+        workspace,
+        SolverMode::DirectBandedWhenSmall,
+    )
 }
 
 /// Fits a 2D asPLS baseline.
@@ -472,6 +523,7 @@ pub fn aspls_into(
         },
         output,
         workspace,
+        SolverMode::Cg,
     )
 }
 
@@ -499,6 +551,7 @@ pub fn psalsa_into(
         PsalsaWeights { p: params.p, k },
         output,
         workspace,
+        SolverMode::DirectBandedWhenSmall,
     )
 }
 
@@ -526,6 +579,7 @@ pub fn brpls_into(
         BrPlsWeights { beta: 0.5 },
         output,
         workspace,
+        SolverMode::DirectBandedWhenSmall,
     )
 }
 
@@ -547,7 +601,12 @@ fn validate_brpls_params(params: BrPls2DParams) -> Result<()> {
 
 /// Fits a 2D lsrPLS baseline.
 pub fn lsrpls(input: MatrixView<'_>, params: LsrPls2DParams) -> Result<Fit2D> {
-    fit_alloc(input, params.whittaker, LsrPlsWeights)
+    fit_alloc(
+        input,
+        params.whittaker,
+        LsrPlsWeights,
+        SolverMode::DirectBandedWhenSmall,
+    )
 }
 
 /// Fits a 2D lsrPLS baseline into an existing output buffer.
@@ -557,18 +616,26 @@ pub fn lsrpls_into(
     output: MatrixViewMut<'_>,
     workspace: &mut Whittaker2DWorkspace,
 ) -> Result<FitReport> {
-    fit_with_policy(input, params.whittaker, LsrPlsWeights, output, workspace)
+    fit_with_policy(
+        input,
+        params.whittaker,
+        LsrPlsWeights,
+        output,
+        workspace,
+        SolverMode::DirectBandedWhenSmall,
+    )
 }
 
 fn fit_alloc<P: ReweightPolicy>(
     input: MatrixView<'_>,
     params: Whittaker2DParams,
     policy: P,
+    solver_mode: SolverMode,
 ) -> Result<Fit2D> {
     let mut baseline = vec![0.0; input.len()];
     let output = MatrixViewMut::row_major(&mut baseline, input.rows(), input.cols())?;
     let mut workspace = Whittaker2DWorkspace::new(input.len());
-    let report = fit_with_policy(input, params, policy, output, &mut workspace)?;
+    let report = fit_with_policy(input, params, policy, output, &mut workspace, solver_mode)?;
     Fit2D::new(baseline, input.rows(), input.cols(), report)
 }
 
@@ -578,6 +645,7 @@ fn fit_with_policy<P: ReweightPolicy>(
     mut policy: P,
     mut output: MatrixViewMut<'_>,
     workspace: &mut Whittaker2DWorkspace,
+    solver_mode: SolverMode,
 ) -> Result<FitReport> {
     validate_input_output(input, &output, params)?;
     workspace.resize(input.len());
@@ -610,6 +678,8 @@ fn fit_with_policy<P: ReweightPolicy>(
             &mut workspace.cg_residual,
             &mut workspace.cg_direction,
             &mut workspace.cg_operator,
+            &mut workspace.direct_solver,
+            solver_mode,
         )?;
         if !policy.update(
             input.as_slice(),
@@ -667,6 +737,8 @@ pub(crate) fn solve_fixed_weighted_system(
         &mut workspace.cg_residual,
         &mut workspace.cg_direction,
         &mut workspace.cg_operator,
+        &mut workspace.direct_solver,
+        SolverMode::DirectBandedWhenSmall,
     )?;
     Ok(FitReport::new(1, true, 0.0))
 }
@@ -705,7 +777,24 @@ fn solve_weighted_system(
     cg_residual: &mut [f64],
     cg_direction: &mut [f64],
     cg_operator: &mut [f64],
+    direct_solver: &mut SymmetricBandedWorkspace,
+    solver_mode: SolverMode,
 ) -> Result<()> {
+    if matches!(solver_mode, SolverMode::DirectBandedWhenSmall)
+        && use_direct_banded_solver(rows, cols)
+    {
+        return solve_weighted_system_banded(
+            rows,
+            cols,
+            params.lambda_rows(),
+            params.lambda_cols(),
+            operator_weights,
+            rhs,
+            solution,
+            direct_solver,
+        );
+    }
+
     apply_operator(
         rows,
         cols,
@@ -766,6 +855,68 @@ fn solve_weighted_system(
     }
 
     Ok(())
+}
+
+fn use_direct_banded_solver(rows: usize, cols: usize) -> bool {
+    let n = rows * cols;
+    let bandwidth = 2 * cols;
+    n <= DIRECT_BANDED_MAX_N && bandwidth <= DIRECT_BANDED_MAX_BANDWIDTH
+}
+
+#[allow(clippy::too_many_arguments)]
+fn solve_weighted_system_banded(
+    rows: usize,
+    cols: usize,
+    lambda_rows: f64,
+    lambda_cols: f64,
+    operator_weights: &[f64],
+    rhs: &[f64],
+    solution: &mut [f64],
+    workspace: &mut SymmetricBandedWorkspace,
+) -> Result<()> {
+    let n = rows * cols;
+    let bandwidth = 2 * cols;
+    workspace.reset(n, bandwidth);
+    fill_weighted_system_bands(
+        rows,
+        cols,
+        lambda_rows,
+        lambda_cols,
+        operator_weights,
+        workspace.bands_mut(),
+    );
+    workspace.solve_spd(rhs, solution)
+}
+
+fn fill_weighted_system_bands(
+    rows: usize,
+    cols: usize,
+    lambda_rows: f64,
+    lambda_cols: f64,
+    operator_weights: &[f64],
+    bands: &mut [Vec<f64>],
+) {
+    for row in 0..rows {
+        for col in 0..cols {
+            let index = row * cols + col;
+            bands[0][index] = operator_weights[index]
+                + lambda_rows * second_order_diag(row, rows)
+                + lambda_cols * second_order_diag(col, cols);
+
+            if col + 1 < cols {
+                bands[1][index] = lambda_cols * second_order_off1(col, cols);
+            }
+            if col + 2 < cols {
+                bands[2][index] = lambda_cols;
+            }
+            if row + 1 < rows {
+                bands[cols][index] = lambda_rows * second_order_off1(row, rows);
+            }
+            if row + 2 < rows {
+                bands[2 * cols][index] = lambda_rows;
+            }
+        }
+    }
 }
 
 fn apply_operator(
@@ -1293,7 +1444,9 @@ fn relative_change(previous: &[f64], current: &[f64]) -> f64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{Asls2DParams, asls};
+    use super::{
+        Asls2DParams, apply_operator, asls, fill_weighted_system_bands, use_direct_banded_solver,
+    };
     use crate::MatrixView;
 
     #[test]
@@ -1302,5 +1455,59 @@ mod tests {
         let input = MatrixView::row_major(&data, 5, 6).unwrap();
         let fit = asls(input, Asls2DParams::default()).unwrap();
         assert!(fit.baseline.iter().all(|value| (*value - 2.0).abs() < 1e-6));
+    }
+
+    #[test]
+    fn direct_banded_operator_matches_matrix_free_operator() {
+        let rows = 5;
+        let cols = 6;
+        let n = rows * cols;
+        let lambda_rows = 2.5;
+        let lambda_cols = 7.0;
+        let weights: Vec<f64> = (0..n).map(|index| 0.5 + index as f64 * 0.01).collect();
+        let input: Vec<f64> = (0..n).map(|index| (index as f64 * 0.2).sin()).collect();
+        let mut matrix_free = vec![0.0; n];
+        apply_operator(
+            rows,
+            cols,
+            lambda_rows,
+            lambda_cols,
+            &weights,
+            &input,
+            &mut matrix_free,
+        );
+
+        let bandwidth = 2 * cols;
+        let mut bands = vec![vec![0.0; n]; bandwidth + 1];
+        fill_weighted_system_bands(rows, cols, lambda_rows, lambda_cols, &weights, &mut bands);
+        let mut banded = vec![0.0; n];
+        for (row, value) in banded.iter_mut().enumerate().take(n) {
+            let start = row.saturating_sub(bandwidth);
+            let end = (row + bandwidth).min(n - 1);
+            *value = (start..=end)
+                .map(|col| symmetric_band_value(&bands, row, col) * input[col])
+                .sum();
+        }
+
+        for (actual, expected) in banded.iter().zip(&matrix_free) {
+            assert!((actual - expected).abs() < 1.0e-10);
+        }
+    }
+
+    #[test]
+    fn direct_banded_solver_is_limited_to_small_bandwidths() {
+        assert!(use_direct_banded_solver(16, 16));
+        assert!(!use_direct_banded_solver(16, 64));
+        assert!(!use_direct_banded_solver(64, 16));
+    }
+
+    fn symmetric_band_value(bands: &[Vec<f64>], row: usize, col: usize) -> f64 {
+        let offset = row.abs_diff(col);
+        let lower = row.min(col);
+        if offset < bands.len() {
+            bands[offset][lower]
+        } else {
+            0.0
+        }
     }
 }

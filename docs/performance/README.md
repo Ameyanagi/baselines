@@ -107,6 +107,10 @@ cargo bench --bench baseline_workloads -- whittaker_2d/arpls_eigen_16x16 --profi
 sample <baseline_workloads-pid> 5 -file /tmp/baselines-arpls-eigen-after.sample.txt
 cargo bench --bench baseline_workloads -- whittaker_2d/brpls_16x16 --save-baseline brpls2d_current_2026_05_24
 cargo bench --bench baseline_workloads -- whittaker_2d/brpls_16x16 --baseline brpls2d_current_2026_05_24
+cargo bench --bench baseline_workloads -- 'whittaker_2d/' --baseline whittaker2d_after_clamped_weights
+cargo bench --bench baseline_workloads -- 'whittaker_2d_into/' --baseline whittaker_into_coverage_2026_05_24
+cargo bench --bench baseline_workloads -- 'whittaker_2d/' --save-baseline whittaker2d_after_direct_banded
+cargo bench --bench baseline_workloads -- 'whittaker_2d_into/' --save-baseline whittaker2d_into_after_direct_banded
 cargo bench --bench baseline_workloads -- spline_1d/pspline_aspls_256 --profile-time 20
 sample <baseline_workloads-pid> 5 -file /tmp/baselines-pspline-aspls1d.sample.txt
 cargo bench --bench baseline_workloads -- spline_1d --baseline perf_before_opt
@@ -166,12 +170,12 @@ Top slow paths in the current full-run snapshot:
 
 | Benchmark | Mean |
 | --- | ---: |
-| `whittaker_2d/brpls_16x16` | 7.734 ms |
-| `whittaker_2d/arpls_16x16` | 5.585 ms |
-| `whittaker_2d/psalsa_16x16` | 1.902 ms |
-| `whittaker_2d/aspls_16x16` | 1.784 ms |
-| `whittaker_2d/iarpls_16x16` | 1.294 ms |
-| `polynomial_1d/goldindec_256` | 1.293 ms |
+| `whittaker_2d/brpls_16x16` | 5.651 ms |
+| `whittaker_2d/arpls_16x16` | 4.018 ms |
+| `whittaker_2d/aspls_16x16` | 1.769 ms |
+| `whittaker_2d/iarpls_16x16` | 1.234 ms |
+| `whittaker_2d/psalsa_16x16` | 1.122 ms |
+| `optimizers_2d/collab_pls_2x16x16` | 1.064 ms |
 
 BEADS profiling before optimization:
 
@@ -520,6 +524,39 @@ saved Criterion baseline `whittaker2d_before_operator_split`. It regressed
 `brpls_16x16` from 6.462 ms to 7.949 ms (+23.02%) and regressed the rest of the
 matrix-free Whittaker group, so the code was reverted and the experiment is
 recorded in `rejected-experiments-2026-05-24.csv`.
+
+A direct symmetric-banded Cholesky path was then added for small 2D Whittaker
+systems whose flattened row-major bandwidth remains modest. The direct path is
+used only for methods where the full-group benchmark showed an improvement;
+`airPLS` and `asPLS` stay on CG because direct solves were no better for those
+reweighting policies. The band assembly is checked against the existing
+matrix-free operator, and the pinned 2D pybaselines fixture remains passing.
+
+2D Whittaker direct-banded optimization results:
+
+| Benchmark | Before mean | After mean | Change |
+| --- | ---: | ---: | ---: |
+| `whittaker_2d/asls_16x16` | 651.440 us | 462.984 us | -28.93% |
+| `whittaker_2d/iasls_16x16` | 651.268 us | 454.635 us | -30.19% |
+| `whittaker_2d/arpls_16x16` | 5.243 ms | 4.018 ms | -23.37% |
+| `whittaker_2d/drpls_16x16` | 1.086 ms | 890.614 us | -17.96% |
+| `whittaker_2d/iarpls_16x16` | 1.281 ms | 1.234 ms | -3.62% |
+| `whittaker_2d/psalsa_16x16` | 1.651 ms | 1.122 ms | -32.04% |
+| `whittaker_2d/brpls_16x16` | 6.533 ms | 5.651 ms | -13.50% |
+| `whittaker_2d/lsrpls_16x16` | 660.735 us | 559.511 us | -15.32% |
+
+Reusable-output 2D Whittaker direct-banded results:
+
+| Benchmark | Before mean | After mean | Change |
+| --- | ---: | ---: | ---: |
+| `whittaker_2d_into/asls_into_16x16` | 658.134 us | 452.962 us | -31.17% |
+| `whittaker_2d_into/iasls_into_16x16` | 654.446 us | 447.508 us | -31.62% |
+| `whittaker_2d_into/arpls_into_16x16` | 5.335 ms | 4.070 ms | -23.71% |
+| `whittaker_2d_into/drpls_into_16x16` | 1.092 ms | 893.953 us | -18.16% |
+| `whittaker_2d_into/iarpls_into_16x16` | 1.296 ms | 1.233 ms | -4.87% |
+| `whittaker_2d_into/psalsa_into_16x16` | 1.673 ms | 1.113 ms | -33.44% |
+| `whittaker_2d_into/brpls_into_16x16` | 6.612 ms | 5.645 ms | -14.63% |
+| `whittaker_2d_into/lsrpls_into_16x16` | 661.428 us | 565.610 us | -14.49% |
 
 The reduced eigenspace `whittaker_2d/arpls_eigen_16x16` path was then profiled
 separately because it uses its own solver. `sample` captured 3821 samples
