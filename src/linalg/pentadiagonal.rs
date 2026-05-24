@@ -150,6 +150,63 @@ pub fn solve_second_order(
     factor_and_solve(baseline, workspace)
 }
 
+/// Solves `(W + lambda * D(x)'D(x)) z = W y` for second-order differences.
+pub(crate) fn solve_second_order_x(
+    x: &[f64],
+    y: &[f64],
+    weights: &[f64],
+    lambda: f64,
+    baseline: &mut [f64],
+    workspace: &mut PentadiagonalWorkspace,
+) -> Result<()> {
+    let n = y.len();
+    if n != x.len() {
+        return Err(BaselineError::LengthMismatch {
+            name: "x",
+            expected: n,
+            actual: x.len(),
+        });
+    }
+    if n != weights.len() {
+        return Err(BaselineError::LengthMismatch {
+            name: "weights",
+            expected: n,
+            actual: weights.len(),
+        });
+    }
+    if n != baseline.len() {
+        return Err(BaselineError::LengthMismatch {
+            name: "baseline",
+            expected: n,
+            actual: baseline.len(),
+        });
+    }
+    if n < 3 {
+        return Err(BaselineError::TooShort {
+            algorithm: "whittaker",
+            len: n,
+            min: 3,
+        });
+    }
+    validate_positive_lambda("lambda", lambda)?;
+
+    workspace.resize(n);
+    fill_second_order_x_bands(
+        x,
+        weights,
+        lambda,
+        &mut workspace.diag,
+        &mut workspace.sub1,
+        &mut workspace.sub2,
+    )?;
+
+    for (rhs, (observed, weight)) in workspace.tmp.iter_mut().zip(y.iter().zip(weights)) {
+        *rhs = observed * weight;
+    }
+
+    factor_and_solve(baseline, workspace)
+}
+
 /// Solves a second-order Whittaker system with an added first-order penalty.
 pub(crate) fn solve_second_order_with_first_order(
     diagonal: &[f64],
@@ -193,6 +250,80 @@ pub(crate) fn solve_second_order_with_first_order(
         &mut workspace.sub2,
     );
     add_first_order_penalty(lambda_first, &mut workspace.diag, &mut workspace.sub1);
+    workspace.tmp.copy_from_slice(rhs);
+
+    factor_and_solve(baseline, workspace)
+}
+
+/// Solves an x-aware second-order Whittaker system with an added first-order penalty.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn solve_second_order_x_with_first_order(
+    x: &[f64],
+    diagonal: &[f64],
+    rhs: &[f64],
+    active_mask: Option<&[bool]>,
+    lambda_second: f64,
+    lambda_first: f64,
+    baseline: &mut [f64],
+    workspace: &mut PentadiagonalWorkspace,
+) -> Result<()> {
+    let n = diagonal.len();
+    if n != x.len() {
+        return Err(BaselineError::LengthMismatch {
+            name: "x",
+            expected: n,
+            actual: x.len(),
+        });
+    }
+    if n != rhs.len() {
+        return Err(BaselineError::LengthMismatch {
+            name: "rhs",
+            expected: n,
+            actual: rhs.len(),
+        });
+    }
+    if n != baseline.len() {
+        return Err(BaselineError::LengthMismatch {
+            name: "baseline",
+            expected: n,
+            actual: baseline.len(),
+        });
+    }
+    if let Some(active_mask) = active_mask
+        && n != active_mask.len()
+    {
+        return Err(BaselineError::LengthMismatch {
+            name: "active_mask",
+            expected: n,
+            actual: active_mask.len(),
+        });
+    }
+    if n < 3 {
+        return Err(BaselineError::TooShort {
+            algorithm: "whittaker",
+            len: n,
+            min: 3,
+        });
+    }
+    validate_positive_lambda("lambda_second", lambda_second)?;
+    validate_positive_lambda("lambda_first", lambda_first)?;
+
+    workspace.resize(n);
+    fill_second_order_x_bands(
+        x,
+        diagonal,
+        lambda_second,
+        &mut workspace.diag,
+        &mut workspace.sub1,
+        &mut workspace.sub2,
+    )?;
+    add_first_order_x_penalty(
+        x,
+        active_mask,
+        lambda_first,
+        &mut workspace.diag,
+        &mut workspace.sub1,
+    )?;
     workspace.tmp.copy_from_slice(rhs);
 
     factor_and_solve(baseline, workspace)
@@ -344,6 +475,46 @@ fn fill_second_order_bands(
     }
 }
 
+pub(crate) fn fill_second_order_x_bands(
+    x: &[f64],
+    weights: &[f64],
+    lambda: f64,
+    diag: &mut [f64],
+    sub1: &mut [f64],
+    sub2: &mut [f64],
+) -> Result<()> {
+    let n = weights.len();
+    for (target, weight) in diag.iter_mut().zip(weights) {
+        *target = *weight;
+    }
+    sub1.fill(0.0);
+    sub2.fill(0.0);
+
+    for row in 0..n - 2 {
+        let h0 = x[row + 1] - x[row];
+        let h1 = x[row + 2] - x[row + 1];
+        if !h0.is_finite() || !h1.is_finite() || h0 <= 0.0 || h1 <= 0.0 {
+            return Err(BaselineError::InvalidParameter {
+                name: "x",
+                reason: "must be finite and strictly increasing",
+            });
+        }
+        let sum = h0 + h1;
+        let a = 2.0 / (h0 * sum);
+        let b = -2.0 / (h0 * h1);
+        let c = 2.0 / (h1 * sum);
+        let scale = lambda;
+
+        diag[row] += scale * a * a;
+        diag[row + 1] += scale * b * b;
+        diag[row + 2] += scale * c * c;
+        sub1[row] += scale * a * b;
+        sub1[row + 1] += scale * b * c;
+        sub2[row] += scale * a * c;
+    }
+    Ok(())
+}
+
 fn add_first_order_penalty(lambda: f64, diag: &mut [f64], sub1: &mut [f64]) {
     let n = diag.len();
     diag[0] += lambda;
@@ -354,6 +525,75 @@ fn add_first_order_penalty(lambda: f64, diag: &mut [f64], sub1: &mut [f64]) {
     for value in sub1 {
         *value -= lambda;
     }
+}
+
+pub(crate) fn add_first_order_x_penalty(
+    x: &[f64],
+    active_mask: Option<&[bool]>,
+    lambda: f64,
+    diag: &mut [f64],
+    sub1: &mut [f64],
+) -> Result<()> {
+    for row in 0..x.len() - 1 {
+        if active_mask.is_some_and(|mask| !mask[row] || !mask[row + 1]) {
+            continue;
+        }
+        let h = x[row + 1] - x[row];
+        if !h.is_finite() || h <= 0.0 {
+            return Err(BaselineError::InvalidParameter {
+                name: "x",
+                reason: "must be finite and strictly increasing",
+            });
+        }
+        let left = -1.0 / h;
+        let right = 1.0 / h;
+        diag[row] += lambda * left * left;
+        diag[row + 1] += lambda * right * right;
+        sub1[row] += lambda * left * right;
+    }
+    Ok(())
+}
+
+pub(crate) fn first_order_x_penalty_rhs(
+    x: &[f64],
+    y: &[f64],
+    active_mask: Option<&[bool]>,
+    lambda: f64,
+    output: &mut [f64],
+) -> Result<()> {
+    if x.len() != y.len() {
+        return Err(BaselineError::LengthMismatch {
+            name: "x",
+            expected: y.len(),
+            actual: x.len(),
+        });
+    }
+    if output.len() != y.len() {
+        return Err(BaselineError::LengthMismatch {
+            name: "output",
+            expected: y.len(),
+            actual: output.len(),
+        });
+    }
+    output.fill(0.0);
+    for row in 0..x.len() - 1 {
+        if active_mask.is_some_and(|mask| !mask[row] || !mask[row + 1]) {
+            continue;
+        }
+        let h = x[row + 1] - x[row];
+        if !h.is_finite() || h <= 0.0 {
+            return Err(BaselineError::InvalidParameter {
+                name: "x",
+                reason: "must be finite and strictly increasing",
+            });
+        }
+        let left = -1.0 / h;
+        let right = 1.0 / h;
+        let dy = left * y[row] + right * y[row + 1];
+        output[row] += lambda * left * dy;
+        output[row + 1] += lambda * right * dy;
+    }
+    Ok(())
 }
 
 fn cholesky_factor(

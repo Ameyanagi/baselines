@@ -3,7 +3,8 @@
 use crate::Result;
 use crate::fit::{Fit, FitReport};
 use crate::whittaker::engine::{
-    Reweighter, WhittakerParams, WhittakerWorkspace, fit_alloc, fit_into, relative_change,
+    Reweighter, WhittakerParams, WhittakerWorkspace, active_at, fit_alloc, fit_into,
+    relative_change,
 };
 use crate::workspace::logistic;
 
@@ -38,7 +39,7 @@ pub fn arpls_into(
 }
 
 #[derive(Debug, Clone, Copy)]
-struct ArPlsWeights;
+pub(crate) struct ArPlsWeights;
 
 impl Reweighter for ArPlsWeights {
     fn initialize(&self, _y: &[f64], weights: &mut [f64]) {
@@ -46,16 +47,35 @@ impl Reweighter for ArPlsWeights {
     }
 
     fn update(&self, y: &[f64], baseline: &[f64], weights: &mut [f64], _iter: usize) -> f64 {
+        self.update_masked(y, baseline, weights, 0, None)
+    }
+
+    fn update_masked(
+        &self,
+        y: &[f64],
+        baseline: &[f64],
+        weights: &mut [f64],
+        _iter: usize,
+        active_mask: Option<&[bool]>,
+    ) -> f64 {
         let previous = weights.to_vec();
         let negative: Vec<f64> = y
             .iter()
             .zip(baseline)
-            .map(|(observed, fitted)| observed - fitted)
+            .enumerate()
+            .filter(|(index, _)| active_at(active_mask, *index))
+            .map(|(_, (observed, fitted))| observed - fitted)
             .filter(|residual| *residual < 0.0)
             .collect();
 
         if negative.is_empty() {
-            weights.fill(1.0);
+            for (index, weight) in weights.iter_mut().enumerate() {
+                *weight = if active_at(active_mask, index) {
+                    1.0
+                } else {
+                    0.0
+                };
+            }
             return relative_change(&previous, weights);
         }
 
@@ -70,7 +90,13 @@ impl Reweighter for ArPlsWeights {
             / negative.len() as f64;
         let std = variance.sqrt().max(f64::EPSILON);
 
-        for ((weight, observed), fitted) in weights.iter_mut().zip(y).zip(baseline) {
+        for (index, ((weight, observed), fitted)) in
+            weights.iter_mut().zip(y).zip(baseline).enumerate()
+        {
+            if !active_at(active_mask, index) {
+                *weight = 0.0;
+                continue;
+            }
             let residual = observed - fitted;
             let exponent = 2.0 * (residual - (2.0 * std - mean)) / std;
             *weight = 1.0 - logistic(exponent);

@@ -90,6 +90,20 @@ let fit = Baseline::new(&y)
 # Ok::<(), baselines::BaselineError>(())
 ```
 
+Use `Baseline::new_xy(&x, &y)?` for nonuniform x grids or x-coordinate masks:
+
+```rust
+use baselines::prelude::*;
+
+let fit = Baseline::new_xy(&x, &y)?
+    .asls()
+    .lambda(1.0e6)
+    .exclude_range(125.0, 180.0)
+    .baseline_mask(&trusted_baseline_points)?
+    .fit()?;
+# Ok::<(), baselines::BaselineError>(())
+```
+
 Use the lower-level family modules when you want to pass a complete params
 struct, reuse workspaces, or compare directly against existing code:
 

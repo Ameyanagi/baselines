@@ -7,7 +7,9 @@ use crate::linalg::pentadiagonal::{
 };
 use crate::polynomial::fit_weighted_polynomial;
 use crate::whittaker::ArPlsParams;
-use crate::whittaker::engine::{Reweighter, WhittakerParams, fit_alloc, relative_change};
+use crate::whittaker::engine::{
+    Reweighter, WhittakerParams, active_at, fit_alloc, relative_change,
+};
 use crate::workspace::{logistic, validate_output, validate_signal};
 use crate::{BaselineError, FitReport, Result};
 
@@ -749,23 +751,23 @@ pub fn lsrpls(y: &[f64], params: LsrPlsParams) -> Result<Fit> {
 }
 
 #[derive(Debug, Clone, Copy)]
-struct PsalsaWeights {
-    p: f64,
-    k: f64,
+pub(crate) struct PsalsaWeights {
+    pub(crate) p: f64,
+    pub(crate) k: f64,
 }
 
 #[derive(Debug, Clone)]
-struct DerPsalsaWeights {
-    p: f64,
-    k: f64,
-    partial_weights: Vec<f64>,
+pub(crate) struct DerPsalsaWeights {
+    pub(crate) p: f64,
+    pub(crate) k: f64,
+    pub(crate) partial_weights: Vec<f64>,
 }
 
 #[derive(Debug, Clone, Copy)]
-struct IarPlsWeights;
+pub(crate) struct IarPlsWeights;
 
 #[derive(Debug, Clone, Copy)]
-struct LsrPlsWeights;
+pub(crate) struct LsrPlsWeights;
 
 impl Reweighter for PsalsaWeights {
     fn initialize(&self, _y: &[f64], weights: &mut [f64]) {
@@ -773,8 +775,25 @@ impl Reweighter for PsalsaWeights {
     }
 
     fn update(&self, y: &[f64], baseline: &[f64], weights: &mut [f64], _iter: usize) -> f64 {
+        self.update_masked(y, baseline, weights, 0, None)
+    }
+
+    fn update_masked(
+        &self,
+        y: &[f64],
+        baseline: &[f64],
+        weights: &mut [f64],
+        _iter: usize,
+        active_mask: Option<&[bool]>,
+    ) -> f64 {
         let previous = weights.to_vec();
-        for ((weight, observed), fitted) in weights.iter_mut().zip(y).zip(baseline) {
+        for (index, ((weight, observed), fitted)) in
+            weights.iter_mut().zip(y).zip(baseline).enumerate()
+        {
+            if !active_at(active_mask, index) {
+                *weight = 0.0;
+                continue;
+            }
             let residual = observed - fitted;
             *weight = if residual > 0.0 {
                 self.p * (-residual / self.k).exp()
@@ -792,13 +811,29 @@ impl Reweighter for DerPsalsaWeights {
     }
 
     fn update(&self, y: &[f64], baseline: &[f64], weights: &mut [f64], _iter: usize) -> f64 {
+        self.update_masked(y, baseline, weights, 0, None)
+    }
+
+    fn update_masked(
+        &self,
+        y: &[f64],
+        baseline: &[f64],
+        weights: &mut [f64],
+        _iter: usize,
+        active_mask: Option<&[bool]>,
+    ) -> f64 {
         let previous = weights.to_vec();
-        for (((weight, observed), fitted), partial) in weights
+        for (index, (((weight, observed), fitted), partial)) in weights
             .iter_mut()
             .zip(y)
             .zip(baseline)
             .zip(&self.partial_weights)
+            .enumerate()
         {
+            if !active_at(active_mask, index) {
+                *weight = 0.0;
+                continue;
+            }
             let residual = observed - fitted;
             let asymmetric = if residual > 0.0 {
                 self.p * (-0.5 * (residual / self.k).powi(2)).exp()
@@ -817,14 +852,31 @@ impl Reweighter for IarPlsWeights {
     }
 
     fn update(&self, y: &[f64], baseline: &[f64], weights: &mut [f64], iter: usize) -> f64 {
+        self.update_masked(y, baseline, weights, iter, None)
+    }
+
+    fn update_masked(
+        &self,
+        y: &[f64],
+        baseline: &[f64],
+        weights: &mut [f64],
+        iter: usize,
+        active_mask: Option<&[bool]>,
+    ) -> f64 {
         let previous = weights.to_vec();
-        let Some((_mean, std)) = negative_residual_stats(y, baseline) else {
+        let Some((_mean, std)) = negative_residual_stats_masked(y, baseline, active_mask) else {
             return 0.0;
         };
         let factor = (iter + 1).min(100) as f64;
         let scale = factor.exp() / std.max(f64::EPSILON);
 
-        for ((weight, observed), fitted) in weights.iter_mut().zip(y).zip(baseline) {
+        for (index, ((weight, observed), fitted)) in
+            weights.iter_mut().zip(y).zip(baseline).enumerate()
+        {
+            if !active_at(active_mask, index) {
+                *weight = 0.0;
+                continue;
+            }
             let residual = observed - fitted;
             let inner = scale * (residual - 2.0 * std);
             *weight = 0.5 * (1.0 - inner / (1.0 + inner * inner).sqrt());
@@ -840,13 +892,30 @@ impl Reweighter for LsrPlsWeights {
     }
 
     fn update(&self, y: &[f64], baseline: &[f64], weights: &mut [f64], iter: usize) -> f64 {
+        self.update_masked(y, baseline, weights, iter, None)
+    }
+
+    fn update_masked(
+        &self,
+        y: &[f64],
+        baseline: &[f64],
+        weights: &mut [f64],
+        iter: usize,
+        active_mask: Option<&[bool]>,
+    ) -> f64 {
         let previous = weights.to_vec();
-        let Some((mean, std)) = negative_residual_stats(y, baseline) else {
+        let Some((mean, std)) = negative_residual_stats_masked(y, baseline, active_mask) else {
             return 0.0;
         };
         let scale = 10f64.powi((iter + 1).min(100) as i32) / std.max(f64::EPSILON);
 
-        for ((weight, observed), fitted) in weights.iter_mut().zip(y).zip(baseline) {
+        for (index, ((weight, observed), fitted)) in
+            weights.iter_mut().zip(y).zip(baseline).enumerate()
+        {
+            if !active_at(active_mask, index) {
+                *weight = 0.0;
+                continue;
+            }
             let residual = observed - fitted;
             let inner = scale * (residual - (2.0 * std - mean));
             *weight = 0.5 * (1.0 - inner / (1.0 + inner.abs()));
@@ -856,7 +925,7 @@ impl Reweighter for LsrPlsWeights {
     }
 }
 
-fn standard_deviation(values: &[f64]) -> f64 {
+pub(crate) fn standard_deviation(values: &[f64]) -> f64 {
     if values.is_empty() {
         return 0.0;
     }
@@ -872,10 +941,17 @@ fn standard_deviation(values: &[f64]) -> f64 {
     variance.sqrt()
 }
 
-fn negative_residual_stats(y: &[f64], baseline: &[f64]) -> Option<(f64, f64)> {
+pub(crate) fn negative_residual_stats_masked(
+    y: &[f64],
+    baseline: &[f64],
+    active_mask: Option<&[bool]>,
+) -> Option<(f64, f64)> {
     let mut count = 0usize;
     let mut sum = 0.0;
-    for (observed, fitted) in y.iter().zip(baseline) {
+    for (index, (observed, fitted)) in y.iter().zip(baseline).enumerate() {
+        if !active_at(active_mask, index) {
+            continue;
+        }
         let residual = observed - fitted;
         if residual < 0.0 {
             count += 1;
@@ -888,7 +964,10 @@ fn negative_residual_stats(y: &[f64], baseline: &[f64]) -> Option<(f64, f64)> {
 
     let mean = sum / count as f64;
     let mut sum_squares = 0.0;
-    for (observed, fitted) in y.iter().zip(baseline) {
+    for (index, (observed, fitted)) in y.iter().zip(baseline).enumerate() {
+        if !active_at(active_mask, index) {
+            continue;
+        }
         let residual = observed - fitted;
         if residual < 0.0 {
             let centered = residual - mean;
@@ -900,12 +979,27 @@ fn negative_residual_stats(y: &[f64], baseline: &[f64]) -> Option<(f64, f64)> {
 }
 
 fn drpls_weights(y: &[f64], baseline: &[f64], iteration: usize, weights: &mut [f64]) -> bool {
-    let Some((mean, std)) = negative_residual_stats(y, baseline) else {
+    drpls_weights_masked(y, baseline, iteration, weights, None)
+}
+
+pub(crate) fn drpls_weights_masked(
+    y: &[f64],
+    baseline: &[f64],
+    iteration: usize,
+    weights: &mut [f64],
+    active_mask: Option<&[bool]>,
+) -> bool {
+    let Some((mean, std)) = negative_residual_stats_masked(y, baseline, active_mask) else {
         weights.fill(0.0);
         return false;
     };
     let scale = ((iteration.min(100) as f64).exp()) / std.max(f64::MIN_POSITIVE);
-    for ((weight, observed), fitted) in weights.iter_mut().zip(y).zip(baseline) {
+    for (index, ((weight, observed), fitted)) in weights.iter_mut().zip(y).zip(baseline).enumerate()
+    {
+        if !active_at(active_mask, index) {
+            *weight = 0.0;
+            continue;
+        }
         let residual = observed - fitted;
         let inner = scale * (residual - (2.0 * std - mean));
         *weight = 0.5 * (1.0 - inner / (1.0 + inner.abs()));
@@ -920,24 +1014,51 @@ fn aspls_weights(
     weights: &mut [f64],
     residuals: &mut [f64],
 ) -> bool {
-    for ((residual, observed), fitted) in residuals.iter_mut().zip(y).zip(baseline) {
-        *residual = observed - fitted;
+    aspls_weights_masked(y, baseline, asymmetric_coef, weights, residuals, None)
+}
+
+pub(crate) fn aspls_weights_masked(
+    y: &[f64],
+    baseline: &[f64],
+    asymmetric_coef: f64,
+    weights: &mut [f64],
+    residuals: &mut [f64],
+    active_mask: Option<&[bool]>,
+) -> bool {
+    for (index, ((residual, observed), fitted)) in
+        residuals.iter_mut().zip(y).zip(baseline).enumerate()
+    {
+        *residual = if active_at(active_mask, index) {
+            observed - fitted
+        } else {
+            0.0
+        };
     }
-    let Some(std) = negative_residual_std(residuals) else {
+    let Some(std) = negative_residual_std_masked(residuals, active_mask) else {
         weights.fill(0.0);
         return false;
     };
     let scale = asymmetric_coef / std.max(f64::MIN_POSITIVE);
-    for (weight, residual) in weights.iter_mut().zip(residuals) {
-        *weight = logistic(-scale * (*residual - std));
+    for (index, (weight, residual)) in weights.iter_mut().zip(residuals).enumerate() {
+        *weight = if active_at(active_mask, index) {
+            logistic(-scale * (*residual - std))
+        } else {
+            0.0
+        };
     }
     true
 }
 
-fn negative_residual_std(residuals: &[f64]) -> Option<f64> {
+pub(crate) fn negative_residual_std_masked(
+    residuals: &[f64],
+    active_mask: Option<&[bool]>,
+) -> Option<f64> {
     let mut count = 0usize;
     let mut sum = 0.0;
-    for residual in residuals {
+    for (index, residual) in residuals.iter().enumerate() {
+        if !active_at(active_mask, index) {
+            continue;
+        }
         if *residual < 0.0 {
             count += 1;
             sum += residual;
@@ -948,7 +1069,10 @@ fn negative_residual_std(residuals: &[f64]) -> Option<f64> {
     }
     let mean = sum / count as f64;
     let mut sum_squares = 0.0;
-    for residual in residuals {
+    for (index, residual) in residuals.iter().enumerate() {
+        if !active_at(active_mask, index) {
+            continue;
+        }
         if *residual < 0.0 {
             let centered = residual - mean;
             sum_squares += centered * centered;
@@ -957,7 +1081,7 @@ fn negative_residual_std(residuals: &[f64]) -> Option<f64> {
     Some((sum_squares / (count - 1) as f64).sqrt())
 }
 
-fn asls_weight(observed: f64, fitted: f64, p: f64) -> f64 {
+pub(crate) fn asls_weight(observed: f64, fitted: f64, p: f64) -> f64 {
     if observed > fitted { p } else { 1.0 - p }
 }
 
@@ -1051,12 +1175,25 @@ fn second_order_off1(index: usize, len: usize, lambda: f64) -> f64 {
 }
 
 fn brpls_weights(y: &[f64], baseline: &[f64], beta: f64, weights: &mut [f64]) -> bool {
+    brpls_weights_masked(y, baseline, beta, weights, None)
+}
+
+pub(crate) fn brpls_weights_masked(
+    y: &[f64],
+    baseline: &[f64],
+    beta: f64,
+    weights: &mut [f64],
+    active_mask: Option<&[bool]>,
+) -> bool {
     let mut positive_count = 0usize;
     let mut positive_sum = 0.0;
     let mut negative_count = 0usize;
     let mut negative_sum_squares = 0.0;
 
-    for (observed, fitted) in y.iter().zip(baseline) {
+    for (index, (observed, fitted)) in y.iter().zip(baseline).enumerate() {
+        if !active_at(active_mask, index) {
+            continue;
+        }
         let residual = observed - fitted;
         if residual > 0.0 {
             positive_count += 1;
@@ -1081,7 +1218,12 @@ fn brpls_weights(y: &[f64], baseline: &[f64], beta: f64, weights: &mut [f64]) ->
     let max_inner = f64::MAX.ln().sqrt();
     let sqrt_two = std::f64::consts::SQRT_2;
 
-    for ((weight, observed), fitted) in weights.iter_mut().zip(y).zip(baseline) {
+    for (index, ((weight, observed), fitted)) in weights.iter_mut().zip(y).zip(baseline).enumerate()
+    {
+        if !active_at(active_mask, index) {
+            *weight = 0.0;
+            continue;
+        }
         let residual = observed - fitted;
         let inner = residual / (sigma * sqrt_two) - sigma / (mean * sqrt_two);
         let clipped_inner = inner.clamp(-max_inner, max_inner);
@@ -1094,7 +1236,7 @@ fn brpls_weights(y: &[f64], baseline: &[f64], beta: f64, weights: &mut [f64]) ->
     true
 }
 
-fn derivative_peak_screening_weights(
+pub(crate) fn derivative_peak_screening_weights(
     y: &[f64],
     smooth_half_window: usize,
     num_smooths: usize,

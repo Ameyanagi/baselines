@@ -1,3 +1,4 @@
+use approx::assert_abs_diff_eq;
 use baselines::classification::{FastChromParams, fastchrom_with_mask};
 use baselines::morphology::{MorphologyParams, mor};
 use baselines::polynomial::{ModPolyParams, modpoly};
@@ -5,7 +6,11 @@ use baselines::prelude::*;
 use baselines::smoothing::{SmoothingParams, noise_median};
 use baselines::spline::pspline_asls;
 use baselines::two_d;
-use baselines::whittaker::{AslsParams, WhittakerParams, asls};
+use baselines::whittaker::{
+    AirPlsParams, ArPlsParams, AsPlsParams, AslsParams, BrPlsParams, DerPsalsaParams, DrPlsParams,
+    IarPlsParams, IaslsParams, LsrPlsParams, PsalsaParams, WhittakerParams, airpls, arpls, asls,
+    aspls, brpls, derpsalsa, drpls, iarpls, iasls, lsrpls, psalsa,
+};
 
 #[test]
 fn whittaker_builder_matches_free_function_defaults() {
@@ -40,6 +45,163 @@ fn whittaker_builder_setters_match_manual_params() {
     let explicit = asls(&y, params).unwrap();
 
     assert_eq!(chained, explicit);
+}
+
+#[test]
+fn xy_whittaker_uniform_grid_matches_existing_methods() {
+    let y = signal();
+    let x: Vec<f64> = (0..y.len()).map(|index| 5.0 + 2.5 * index as f64).collect();
+    let xy = Baseline::new_xy(&x, &y).unwrap();
+
+    assert_fit_close(
+        &xy.asls().fit().unwrap(),
+        &asls(&y, AslsParams::default()).unwrap(),
+    );
+    assert_fit_close(
+        &xy.airpls().fit().unwrap(),
+        &airpls(&y, AirPlsParams::default()).unwrap(),
+    );
+    assert_fit_close(
+        &xy.arpls().fit().unwrap(),
+        &arpls(&y, ArPlsParams::default()).unwrap(),
+    );
+    assert_fit_close(
+        &xy.iasls().fit().unwrap(),
+        &iasls(&y, IaslsParams::default()).unwrap(),
+    );
+    assert_fit_close(
+        &xy.drpls().fit().unwrap(),
+        &drpls(&y, DrPlsParams::default()).unwrap(),
+    );
+    assert_fit_close(
+        &xy.iarpls().fit().unwrap(),
+        &iarpls(&y, IarPlsParams::default()).unwrap(),
+    );
+    assert_fit_close(
+        &xy.aspls().fit().unwrap(),
+        &aspls(&y, AsPlsParams::default()).unwrap(),
+    );
+    assert_fit_close(
+        &xy.psalsa().fit().unwrap(),
+        &psalsa(&y, PsalsaParams::default()).unwrap(),
+    );
+    assert_fit_close(
+        &xy.derpsalsa().fit().unwrap(),
+        &derpsalsa(&y, DerPsalsaParams::default()).unwrap(),
+    );
+    assert_fit_close(
+        &xy.brpls().fit().unwrap(),
+        &brpls(&y, BrPlsParams::default()).unwrap(),
+    );
+    assert_fit_close(
+        &xy.lsrpls().fit().unwrap(),
+        &lsrpls(&y, LsrPlsParams::default()).unwrap(),
+    );
+}
+
+#[test]
+fn xy_whittaker_masks_accept_ranges_and_boolean_slices() {
+    let y = signal();
+    let x: Vec<f64> = (0..y.len()).map(|index| index as f64).collect();
+    let mut exclude = vec![false; y.len()];
+    for value in &mut exclude[24..34] {
+        *value = true;
+    }
+    let baseline_mask: Vec<bool> = exclude.iter().map(|excluded| !excluded).collect();
+
+    let range_fit = Baseline::new_xy(&x, &y)
+        .unwrap()
+        .asls()
+        .lambda(1.0e5)
+        .exclude_range(24.0, 33.0)
+        .fit()
+        .unwrap();
+    let exclude_fit = Baseline::new_xy(&x, &y)
+        .unwrap()
+        .asls()
+        .lambda(1.0e5)
+        .exclude_mask(&exclude)
+        .unwrap()
+        .fit()
+        .unwrap();
+    let baseline_fit = Baseline::new_xy(&x, &y)
+        .unwrap()
+        .asls()
+        .lambda(1.0e5)
+        .baseline_mask(&baseline_mask)
+        .unwrap()
+        .fit()
+        .unwrap();
+
+    assert_fit_close(&range_fit, &exclude_fit);
+    assert_fit_close(&exclude_fit, &baseline_fit);
+}
+
+#[test]
+fn xy_whittaker_all_methods_accept_masks() {
+    let y = signal();
+    let x: Vec<f64> = (0..y.len())
+        .map(|index| {
+            let base = index as f64;
+            if index < y.len() / 2 {
+                base
+            } else {
+                base + 0.25
+            }
+        })
+        .collect();
+    let mut exclude = vec![false; y.len()];
+    exclude[30] = true;
+    exclude[31] = true;
+    let xy = Baseline::new_xy(&x, &y).unwrap();
+
+    let fits = [
+        xy.asls().exclude_mask(&exclude).unwrap().fit().unwrap(),
+        xy.airpls().exclude_mask(&exclude).unwrap().fit().unwrap(),
+        xy.arpls().exclude_mask(&exclude).unwrap().fit().unwrap(),
+        xy.iasls().exclude_mask(&exclude).unwrap().fit().unwrap(),
+        xy.drpls().exclude_mask(&exclude).unwrap().fit().unwrap(),
+        xy.iarpls().exclude_mask(&exclude).unwrap().fit().unwrap(),
+        xy.aspls().exclude_mask(&exclude).unwrap().fit().unwrap(),
+        xy.psalsa().exclude_mask(&exclude).unwrap().fit().unwrap(),
+        xy.derpsalsa()
+            .exclude_mask(&exclude)
+            .unwrap()
+            .fit()
+            .unwrap(),
+        xy.brpls().exclude_mask(&exclude).unwrap().fit().unwrap(),
+        xy.lsrpls().exclude_mask(&exclude).unwrap().fit().unwrap(),
+    ];
+
+    for fit in fits {
+        assert_eq!(fit.baseline.len(), y.len());
+        assert!(fit.baseline.iter().all(|value| value.is_finite()));
+    }
+}
+
+#[test]
+fn xy_whittaker_validates_x_and_masks() {
+    let y = signal();
+    let x: Vec<f64> = (0..y.len()).map(|index| index as f64).collect();
+    let mut non_increasing = x.clone();
+    non_increasing[10] = non_increasing[9];
+
+    assert!(Baseline::new_xy(&non_increasing, &y).is_err());
+    assert!(
+        Baseline::new_xy(&x, &y)
+            .unwrap()
+            .asls()
+            .exclude_mask(&[true, false])
+            .is_err()
+    );
+    assert!(
+        Baseline::new_xy(&x, &y)
+            .unwrap()
+            .asls()
+            .exclude_range(x[0], x[y.len() - 1])
+            .fit()
+            .is_err()
+    );
 }
 
 #[test]
@@ -176,4 +338,11 @@ fn surface() -> Vec<f64> {
             })
         })
         .collect()
+}
+
+fn assert_fit_close(left: &Fit, right: &Fit) {
+    assert_eq!(left.baseline.len(), right.baseline.len());
+    for (left, right) in left.baseline.iter().zip(&right.baseline) {
+        assert_abs_diff_eq!(*left, *right, epsilon = 1.0e-6);
+    }
 }
