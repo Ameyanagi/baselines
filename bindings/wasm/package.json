@@ -1,6 +1,7 @@
 {
   "name": "baselines-wasm",
   "version": "0.1.1",
+  "private": true,
   "description": "Fast baseline correction for signals and surfaces, powered by Rust and WebAssembly",
   "license": "MIT OR Apache-2.0",
   "repository": {
@@ -12,7 +13,9 @@
     "pkg"
   ],
   "scripts": {
-    "build": "wasm-pack build --target web"
+    "build": "wasm-pack build --target web --release --out-dir pkg",
+    "pack:check": "npm pack ./pkg --dry-run",
+    "test": "node smoke.mjs"
   },
   "keywords": [
     "baseline",
