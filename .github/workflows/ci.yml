@@ -26,7 +26,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
-      - run: cargo check -p baselines-wasm --target wasm32-unknown-unknown
+      - run: cargo check -p baselines-rs --target wasm32-unknown-unknown
 
   msrv:
     runs-on: ubuntu-latest

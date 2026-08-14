@@ -4,10 +4,10 @@ import init, {
   availableMethods,
   baselineWith,
   correctWith,
-} from "./pkg/baselines_wasm.js";
+} from "./pkg/baselines_rs.js";
 
 const wasm = await readFile(
-  new URL("./pkg/baselines_wasm_bg.wasm", import.meta.url),
+  new URL("./pkg/baselines_rs_bg.wasm", import.meta.url),
 );
 await init({ module_or_path: wasm });
 

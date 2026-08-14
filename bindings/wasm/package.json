@@ -1,5 +1,5 @@
 {
-  "name": "baselines-wasm",
+  "name": "baselines-rs",
   "version": "0.1.1",
   "private": true,
   "description": "Fast baseline correction for signals and surfaces, powered by Rust and WebAssembly",

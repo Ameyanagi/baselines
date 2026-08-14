@@ -142,7 +142,7 @@ corrected = baselines_rs.correct(y, method="arpls")
 Build the Python wheel with `maturin build --release` from `bindings/python`.
 Build the browser package with `wasm-pack build --target web` from
 `bindings/wasm`. The planned distribution names are `baselines-rs` on PyPI and
-`baselines-wasm` on npm.
+`baselines-rs` on npm.
 
 ## Feature flags
 

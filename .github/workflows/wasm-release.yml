@@ -32,7 +32,7 @@ jobs:
         shell: bash
         run: |
           npm_version="$(node -p 'require("./bindings/wasm/package.json").version')"
-          cargo_version="$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "baselines-wasm") | .version')"
+          cargo_version="$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "baselines-rs") | .version')"
           test -n "${npm_version}"
           test "${npm_version}" = "${cargo_version}"
           test "${GITHUB_REF_NAME}" = "wasm-v${npm_version}"
