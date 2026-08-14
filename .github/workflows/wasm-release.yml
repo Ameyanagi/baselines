@@ -37,9 +37,9 @@ jobs:
           test "${npm_version}" = "${cargo_version}"
           test "${GITHUB_REF_NAME}" = "wasm-v${npm_version}"
       - name: Build npm package
-        run: wasm-pack build bindings/wasm --target web --release --out-dir pkg
+        run: npm run --prefix bindings/wasm build
       - name: Test WASM runtime
-        run: node bindings/wasm/smoke.mjs
+        run: npm test --prefix bindings/wasm
       - name: Inspect package contents
         run: npm pack bindings/wasm/pkg --dry-run
       - name: Publish package

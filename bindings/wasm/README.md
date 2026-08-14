@@ -6,6 +6,19 @@
 
 WebAssembly bindings for the Rust `baselines` crate.
 
+For modern browsers, use the auto-initializing entry point:
+
+```js
+import { baselineWith } from "baselines-rs/auto";
+
+const y = Float64Array.from([1.0, 1.1, 4.2, 1.2, 1.0]);
+const estimated = baselineWith(y, "arpls");
+```
+
+The module uses top-level `await` to load its WebAssembly binary before its
+exports become available. To control how the binary is loaded, use the explicit
+entry point instead:
+
 ```js
 import init, { baselineWith } from "baselines-rs";
 
@@ -20,4 +33,5 @@ explicit shape.
 
 Build the publishable package with `npm run build` from this directory. The
 generated `pkg/` directory is the npm package; the surrounding workspace is
-private to prevent accidentally publishing the wrapper instead.
+private to prevent accidentally publishing the wrapper instead. The automatic
+entry point requires a runtime that supports top-level `await` in ES modules.

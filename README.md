@@ -140,9 +140,20 @@ corrected = baselines_rs.correct(y, method="arpls")
 ```
 
 Build the Python wheel with `maturin build --release` from `bindings/python`.
-Build the browser package with `wasm-pack build --target web` from
-`bindings/wasm`. The planned distribution names are `baselines-rs` on PyPI and
-`baselines-rs` on npm.
+Build the browser package with `npm run build` from `bindings/wasm`. Browser
+applications can import the auto-initializing WASM API without a separate setup
+call:
+
+```js
+import { baselineWith } from "baselines-rs/auto";
+
+const estimated = baselineWith(
+  Float64Array.from([1.0, 1.1, 4.2, 1.2, 1.0]),
+  "arpls",
+);
+```
+
+The distribution name is `baselines-rs` on both PyPI and npm.
 
 ## Feature flags
 

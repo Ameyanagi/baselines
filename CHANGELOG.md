@@ -2,6 +2,15 @@
 
 All notable changes to this project are documented here.
 
+## [0.1.2] - 2026-08-15
+
+### Added
+
+- An auto-initializing `baselines-rs/auto` npm entry point for modern browsers,
+  while retaining the explicit initializer at `baselines-rs`.
+- Typed npm package exports and installed-package smoke coverage for both WASM
+  initialization modes.
+
 ## [0.1.1] - 2026-08-14
 
 ### Added
