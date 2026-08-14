@@ -440,7 +440,10 @@ fn validate_poly_input(
             actual: output.len(),
         });
     }
-    let basis_len = basis_terms(order).len();
+    let basis_len = polynomial_basis_len(order).ok_or(BaselineError::InvalidParameter {
+        name: "order",
+        reason: "is too large",
+    })?;
     if basis_len > input.len() {
         return Err(BaselineError::TooShort {
             algorithm: "two_d_polynomial",
@@ -604,13 +607,18 @@ fn evaluate_coefficients_with_workspace(
 }
 
 fn basis_terms(order: usize) -> Vec<(usize, usize)> {
-    let mut terms = Vec::with_capacity((order + 1) * (order + 1));
+    let mut terms = Vec::with_capacity(polynomial_basis_len(order).unwrap_or(0));
     for x_degree in 0..=order {
         for y_degree in 0..=order {
             terms.push((x_degree, y_degree));
         }
     }
     terms
+}
+
+fn polynomial_basis_len(order: usize) -> Option<usize> {
+    let axis_terms = order.checked_add(1)?;
+    axis_terms.checked_mul(axis_terms)
 }
 
 fn scaled_axis(index: usize, len: usize) -> f64 {

@@ -1,0 +1,18 @@
+[package]
+name = "baselines-python"
+version = "0.1.1"
+edition = "2024"
+rust-version = "1.92"
+license = "MIT OR Apache-2.0"
+description = "Python bindings for the baselines Rust crate"
+repository = "https://github.com/Ameyanagi/baselines"
+publish = false
+
+[lib]
+name = "_native"
+crate-type = ["cdylib"]
+
+[dependencies]
+baselines = { path = "../.." }
+numpy = "0.29"
+pyo3 = { version = "0.29", features = ["abi3-py39", "extension-module"] }

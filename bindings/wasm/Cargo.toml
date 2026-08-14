@@ -1,0 +1,16 @@
+[package]
+name = "baselines-wasm"
+version = "0.1.1"
+edition = "2024"
+rust-version = "1.92"
+license = "MIT OR Apache-2.0"
+description = "WebAssembly bindings for the baselines Rust crate"
+repository = "https://github.com/Ameyanagi/baselines"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+baselines = { path = "../.." }
+wasm-bindgen = "0.2.127"

@@ -1,0 +1,27 @@
+[build-system]
+requires = ["maturin>=1.9,<2"]
+build-backend = "maturin"
+
+[project]
+name = "baselines-rs"
+version = "0.1.1"
+description = "Fast baseline correction for signals and surfaces, powered by Rust"
+readme = "README.md"
+requires-python = ">=3.9"
+license = "MIT OR Apache-2.0"
+dependencies = ["numpy>=1.23"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Rust",
+    "Topic :: Scientific/Engineering",
+]
+
+[project.urls]
+Repository = "https://github.com/Ameyanagi/baselines"
+Documentation = "https://docs.rs/baselines"
+
+[tool.maturin]
+module-name = "baselines_rs._native"
+python-source = "python"
+features = ["pyo3/extension-module"]

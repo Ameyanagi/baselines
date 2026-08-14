@@ -239,11 +239,11 @@ impl DietrichParams {
                 reason: "must be finite and positive",
             });
         }
-        if self.max_iter > 0 && self.poly_order + 1 > len {
+        if self.max_iter > 0 && self.poly_order >= len {
             return Err(BaselineError::TooShort {
                 algorithm: "dietrich",
                 len,
-                min: self.poly_order + 1,
+                min: self.poly_order.saturating_add(1),
             });
         }
         if !self.tol.is_finite() || self.tol <= 0.0 {
@@ -348,11 +348,11 @@ impl Default for CwtBrParams {
 
 impl CwtBrParams {
     fn validate(&self, len: usize) -> Result<()> {
-        if self.poly_order + 1 > len {
+        if self.poly_order >= len {
             return Err(BaselineError::TooShort {
                 algorithm: "cwt_br",
                 len,
-                min: self.poly_order + 1,
+                min: self.poly_order.saturating_add(1),
             });
         }
         if self

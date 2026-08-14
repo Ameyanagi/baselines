@@ -93,4 +93,14 @@ fn two_d_morphology_rejects_invalid_windows_and_output_shapes() {
     )
     .unwrap_err();
     assert!(matches!(error, BaselineError::InvalidParameter { .. }));
+
+    let error = imor(
+        input,
+        Imor2DParams {
+            max_iter: 0,
+            ..Imor2DParams::default()
+        },
+    )
+    .unwrap_err();
+    assert!(matches!(error, BaselineError::InvalidParameter { .. }));
 }

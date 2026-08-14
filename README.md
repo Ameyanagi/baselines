@@ -1,5 +1,9 @@
 # baselines
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Ameyanagi/baselines/main/docs/assets/branding/baselines-icon-midnight-hex-v2.png" alt="baselines logo" width="220">
+</p>
+
 `baselines` is a Rust crate for baseline correction of signals, spectra, and
 row-major two-dimensional surfaces. It is an independent Rust implementation
 inspired by the baseline correction literature and by the public behavior of
@@ -9,12 +13,17 @@ inspired by the baseline correction literature and by the public behavior of
 use baselines::prelude::*;
 
 let y = vec![1.0, 1.1, 4.2, 1.2, 1.0];
-let fit = Baseline::new(&y)
-    .asls()
-    .lambda(1.0e6)
-    .p(0.01)
-    .fit()?;
-let corrected = fit.corrected(&y)?;
+let estimated = baseline(&y)?;
+let corrected = correct(&y)?;
+# Ok::<(), baselines::BaselineError>(())
+```
+
+Select one of the common methods without configuring parameters:
+
+```rust
+use baselines::prelude::*;
+
+let estimated = baseline_with(&y, Method::Arpls)?;
 # Ok::<(), baselines::BaselineError>(())
 ```
 
@@ -29,10 +38,12 @@ families now have first-pass native Rust implementations.
 
 Algorithms are organized by family module. Core data types such as `Fit1D`,
 `Fit2D`, and row-major matrix views are available at the crate root. The
-recommended Rust API starts from `Baseline::new(&y)` for 1D data and
-`Baseline2D::row_major(&data, rows, cols)` for row-major 2D data. The explicit
-family modules and parameter structs remain public for advanced workflows and
-for users who prefer free functions.
+smallest Rust API is `baseline(&y)` or `correct(&y)`. Use
+`baseline_with(&y, Method::Arpls)` to select a common algorithm with its
+documented defaults. For parameter tuning, start from `Baseline::new(&y)` for
+1D data or `Baseline2D::row_major(&data, rows, cols)` for row-major 2D data.
+The explicit family modules and parameter structs remain public for advanced
+workflows and for users who prefer free functions.
 
 Golden fixtures generated from a pinned `pybaselines` release check the
 one-dimensional algorithms with algorithm-specific tolerances. GPU support is
@@ -76,7 +87,7 @@ the upstream gallery coverage matrix.
 
 ## API style
 
-Use the method-chain API for ordinary fits:
+Use the method-chain API when you need to tune a fit:
 
 ```rust
 use baselines::prelude::*;
@@ -115,6 +126,33 @@ let fit = asls(&y, AslsParams::default())?;
 ```
 
 See `docs/API.md` for more examples.
+
+## Python and WebAssembly
+
+The repository contains thin bindings over the same simple API:
+
+```python
+import numpy as np
+import baselines_rs
+
+y = np.array([1.0, 1.1, 4.2, 1.2, 1.0])
+corrected = baselines_rs.correct(y, method="arpls")
+```
+
+Build the Python wheel with `maturin build --release` from `bindings/python`.
+Build the browser package with `wasm-pack build --target web` from
+`bindings/wasm`. The planned distribution names are `baselines-rs` on PyPI and
+`baselines-wasm` on npm.
+
+## Feature flags
+
+- `gpu-wgpu` enables the experimental CubeCL/WGPU morphology backend.
+- `rayon` parallelizes supported batch CPU operations, currently
+  `backend::cpu::snip_batch_into`.
+- `faer` exposes the reserved faer backend boundary; the public algorithms
+  still use the in-crate solvers in this release.
+- `std` is retained for feature compatibility. The crate currently requires
+  the standard library even when default features are disabled.
 
 ## Attribution
 

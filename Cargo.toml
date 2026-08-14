@@ -9,7 +9,22 @@ repository = "https://github.com/Ameyanagi/baselines"
 readme = "README.md"
 keywords = ["baseline", "spectroscopy", "signal-processing", "whittaker"]
 categories = ["algorithms", "science"]
-exclude = ["/docs/assets/ruviz/**"]
+exclude = [
+    "/.github/**",
+    "/.githooks/**",
+    "/.gitignore",
+    "/benches/**",
+    "/bindings/**",
+    "/docs/assets/**",
+    "/docs/performance/**",
+    "/scripts/**",
+    "/tests/**",
+]
+
+[workspace]
+members = [".", "bindings/python", "bindings/wasm"]
+default-members = ["."]
+resolver = "3"
 
 [dependencies]
 thiserror = "2.0"
@@ -36,6 +51,9 @@ gpu-wgpu = ["dep:cubecl", "cubecl/wgpu"]
 fmt = "cargo fmt --all --check"
 clippy = "cargo clippy --workspace --all-targets --all-features -- -D warnings"
 test = "cargo test --workspace --all-features"
+
+[package.metadata.docs.rs]
+all-features = true
 
 [[bench]]
 name = "baseline_workloads"

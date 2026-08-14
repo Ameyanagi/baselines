@@ -1,0 +1,23 @@
+{
+  "name": "baselines-wasm",
+  "version": "0.1.1",
+  "description": "Fast baseline correction for signals and surfaces, powered by Rust and WebAssembly",
+  "license": "MIT OR Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Ameyanagi/baselines.git",
+    "directory": "bindings/wasm"
+  },
+  "files": [
+    "pkg"
+  ],
+  "scripts": {
+    "build": "wasm-pack build --target web"
+  },
+  "keywords": [
+    "baseline",
+    "spectroscopy",
+    "signal-processing",
+    "wasm"
+  ]
+}

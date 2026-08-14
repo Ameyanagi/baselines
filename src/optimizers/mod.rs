@@ -83,11 +83,18 @@ impl Default for AdaptiveMinmaxParams {
 
 impl AdaptiveMinmaxParams {
     fn validate(&self, len: usize) -> Result<()> {
-        if self.poly_order + 2 > len {
+        let min_len = self
+            .poly_order
+            .checked_add(2)
+            .ok_or(BaselineError::InvalidParameter {
+                name: "poly_order",
+                reason: "is too large",
+            })?;
+        if min_len > len {
             return Err(BaselineError::TooShort {
                 algorithm: "adaptive_minmax",
                 len,
-                min: self.poly_order + 2,
+                min: min_len,
             });
         }
         if !self.left_constrained_fraction.is_finite()

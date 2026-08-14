@@ -83,6 +83,12 @@ impl Default for Imor2DParams {
 impl Imor2DParams {
     fn validate(self) -> Result<()> {
         self.morphology.validate()?;
+        if self.max_iter == 0 {
+            return Err(BaselineError::InvalidParameter {
+                name: "max_iter",
+                reason: "must be greater than zero",
+            });
+        }
         if !self.tol.is_finite() || self.tol <= 0.0 {
             return Err(BaselineError::InvalidParameter {
                 name: "tol",

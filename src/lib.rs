@@ -7,20 +7,19 @@
 //! correction literature. The Python project `pybaselines` is used as an API
 //! and behavioral reference, not as copied implementation code.
 //!
-//! The recommended Rust API starts from [`Baseline`] for one-dimensional data:
+//! The simplest Rust API estimates or corrects a signal with one function:
 //!
 //! ```
 //! use baselines::prelude::*;
 //!
 //! let y = vec![1.0, 1.1, 4.2, 1.2, 1.0];
-//! let fit = Baseline::new(&y).asls().lambda(1.0e6).p(0.01).fit()?;
-//! let corrected = fit.corrected(&y)?;
+//! let corrected = correct(&y)?;
 //! # Ok::<(), baselines::BaselineError>(())
 //! ```
 //!
-//! Use [`Baseline2D`] for row-major two-dimensional data. The family modules
-//! remain public for explicit parameter structs, workspace reuse, and direct
-//! behavioral comparisons against published examples.
+//! Use [`Baseline`] and [`Baseline2D`] when you need to tune parameters. The
+//! family modules remain public for explicit parameter structs, workspace
+//! reuse, and direct behavioral comparisons against published examples.
 
 pub mod api;
 pub mod backend;
@@ -35,6 +34,7 @@ pub mod misc;
 pub mod morphology;
 pub mod optimizers;
 pub mod polynomial;
+pub mod simple;
 pub mod smoothing;
 pub mod spline;
 pub mod two_d;
@@ -48,11 +48,17 @@ pub use classification::ClassificationFit;
 pub use data::{MatrixLayout, MatrixShape, MatrixView, MatrixViewMut};
 pub use error::{BaselineError, Result};
 pub use fit::{Fit, Fit1D, Fit2D, FitHistory, FitReport};
+pub use simple::{
+    Method, Method2D, baseline, baseline_2d, baseline_2d_with, baseline_with, correct, correct_2d,
+    correct_2d_with, correct_with,
+};
 
-/// Common imports for the method-chain API.
+/// Common imports for the simple and method-chain APIs.
 pub mod prelude {
     pub use crate::{
         Baseline, Baseline2D, BaselineError, BaselineXY, ClassificationFit, Fit, Fit1D, Fit2D,
-        FitHistory, FitReport, MatrixView, MatrixViewMut, Result,
+        FitHistory, FitReport, MatrixView, MatrixViewMut, Method, Method2D, Result, baseline,
+        baseline_2d, baseline_2d_with, baseline_with, correct, correct_2d, correct_2d_with,
+        correct_with,
     };
 }

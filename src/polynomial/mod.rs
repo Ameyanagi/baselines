@@ -979,11 +979,11 @@ fn standard_deviation(values: &[f64]) -> f64 {
 fn validate_poly_input(y: &[f64], order: usize, baseline: &[f64]) -> Result<()> {
     validate_signal(y)?;
     validate_output("baseline", y.len(), baseline.len())?;
-    if order + 1 > y.len() {
+    if order >= y.len() {
         return Err(BaselineError::TooShort {
             algorithm: "polynomial",
             len: y.len(),
-            min: order + 1,
+            min: order.saturating_add(1),
         });
     }
     Ok(())

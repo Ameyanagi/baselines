@@ -1,6 +1,59 @@
 use baselines::{BaselineError, Fit1D, Fit2D, FitReport, MatrixShape, MatrixView, MatrixViewMut};
 
 #[test]
+fn oversized_polynomial_orders_return_errors_instead_of_panicking() {
+    let y = [1.0, 2.0, 3.0];
+    let error =
+        baselines::polynomial::poly(&y, baselines::polynomial::PolyParams { order: usize::MAX })
+            .unwrap_err();
+    assert!(matches!(error, BaselineError::TooShort { .. }));
+
+    let data = vec![1.0; 3 * 3];
+    let input = MatrixView::row_major(&data, 3, 3).unwrap();
+    let error = baselines::two_d::polynomial::poly(
+        input,
+        baselines::two_d::polynomial::Poly2DParams { order: usize::MAX },
+    )
+    .unwrap_err();
+    assert!(matches!(error, BaselineError::InvalidParameter { .. }));
+}
+
+#[test]
+fn cpu_batch_backend_checks_shape_arithmetic() {
+    let mut output = [];
+    let error = baselines::backend::cpu::snip_batch_into(
+        &[],
+        usize::MAX,
+        2,
+        baselines::morphology::SnipParams::default(),
+        &mut output,
+    )
+    .unwrap_err();
+    assert!(matches!(error, BaselineError::InvalidParameter { .. }));
+}
+
+#[test]
+fn cpu_batch_backend_preserves_spectrum_order() {
+    let input = [
+        1.0, 1.0, 4.0, 1.0, 1.0, //
+        2.0, 2.0, 5.0, 2.0, 2.0,
+    ];
+    let mut output = [0.0; 10];
+    let reports = baselines::backend::cpu::snip_batch_into(
+        &input,
+        2,
+        5,
+        baselines::morphology::SnipParams { max_half_window: 2 },
+        &mut output,
+    )
+    .unwrap();
+
+    assert_eq!(reports.len(), 2);
+    assert_eq!(&output[..2], &[1.0, 1.0]);
+    assert_eq!(&output[5..7], &[2.0, 2.0]);
+}
+
+#[test]
 fn fit1d_correction_validates_lengths() {
     let fit = Fit1D {
         baseline: vec![0.5, 1.0, 1.5],

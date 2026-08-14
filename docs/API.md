@@ -1,8 +1,22 @@
 # Rust API
 
-The recommended API is method-chain based. It is a thin ergonomic layer over
-the family modules, so defaults, validation, references, and numerical behavior
-are the same as the underlying functions.
+Start with the small default-based API. Move to the method-chain API when you
+need to tune an algorithm. Both layers use the same implementations,
+validation, and numerical defaults.
+
+## Simple API
+
+```rust
+use baselines::prelude::*;
+
+let estimated = baseline(&y)?;
+let corrected = correct_with(&y, Method::Arpls)?;
+# Ok::<(), baselines::BaselineError>(())
+```
+
+The simple API currently includes AsLS, arPLS, airPLS, rolling-ball, and
+polynomial methods. The method-chain and family APIs expose the full algorithm
+set and all tuning parameters.
 
 ## 1D signals
 
