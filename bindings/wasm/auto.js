@@ -1,5 +1,5 @@
-import init from "./baselines_rs.js";
+import init from "./index.js";
 
 await init();
 
-export * from "./baselines_rs.js";
+export * from "./index.js";

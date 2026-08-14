@@ -11,12 +11,24 @@ use baselines::prelude::*;
 
 let estimated = baseline(&y)?;
 let corrected = correct_with(&y, Method::Arpls)?;
+
+let configured = fit_with_options(
+    &y,
+    BaselineOptions {
+        method: Method::Asls,
+        lambda: Some(1.0e5),
+        p: Some(0.05),
+        ..BaselineOptions::default()
+    },
+)?;
+assert!(configured.report.iterations >= 1);
 # Ok::<(), baselines::BaselineError>(())
 ```
 
 The simple API currently includes AsLS, arPLS, airPLS, rolling-ball, and
-polynomial methods. The method-chain and family APIs expose the full algorithm
-set and all tuning parameters.
+polynomial methods. Unsupported option/method combinations return an error
+instead of being ignored. The method-chain and family APIs expose the full
+algorithm set and all tuning parameters.
 
 ## 1D signals
 

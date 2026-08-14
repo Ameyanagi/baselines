@@ -456,6 +456,20 @@ fn fill_second_order_bands(
         *target = *weight;
     }
 
+    // A three-point signal has a single second-difference row, so the
+    // penalty is lambda * [1, -2, 1]^T [1, -2, 1]. The general endpoint
+    // assignments below overlap when n == 3 and would also form an invalid
+    // middle slice.
+    if n == 3 {
+        diag[0] += lambda;
+        diag[1] += 4.0 * lambda;
+        diag[2] += lambda;
+        sub1[0] = -2.0 * lambda;
+        sub1[1] = -2.0 * lambda;
+        sub2[0] = lambda;
+        return;
+    }
+
     diag[0] += lambda;
     diag[1] += 5.0 * lambda;
     for value in &mut diag[2..n - 2] {

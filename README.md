@@ -18,12 +18,22 @@ let corrected = correct(&y)?;
 # Ok::<(), baselines::BaselineError>(())
 ```
 
-Select one of the common methods without configuring parameters:
+Select and configure a common method with the same options used by the language
+bindings:
 
 ```rust
 use baselines::prelude::*;
 
-let estimated = baseline_with(&y, Method::Arpls)?;
+let fit = fit_with_options(
+    &y,
+    BaselineOptions {
+        method: Method::Asls,
+        lambda: Some(1.0e5),
+        p: Some(0.05),
+        ..BaselineOptions::default()
+    },
+)?;
+let estimated = fit.baseline;
 # Ok::<(), baselines::BaselineError>(())
 ```
 
@@ -40,10 +50,12 @@ Algorithms are organized by family module. Core data types such as `Fit1D`,
 `Fit2D`, and row-major matrix views are available at the crate root. The
 smallest Rust API is `baseline(&y)` or `correct(&y)`. Use
 `baseline_with(&y, Method::Arpls)` to select a common algorithm with its
-documented defaults. For parameter tuning, start from `Baseline::new(&y)` for
-1D data or `Baseline2D::row_major(&data, rows, cols)` for row-major 2D data.
-The explicit family modules and parameter structs remain public for advanced
-workflows and for users who prefer free functions.
+documented defaults. `fit_with_options` provides validated common parameters
+and convergence metadata. For the complete parameter surface, start from
+`Baseline::new(&y)` for 1D data or
+`Baseline2D::row_major(&data, rows, cols)` for row-major 2D data. The explicit
+family modules and parameter structs remain public for advanced workflows and
+for users who prefer free functions.
 
 Golden fixtures generated from a pinned `pybaselines` release check the
 one-dimensional algorithms with algorithm-specific tolerances. GPU support is
@@ -140,20 +152,20 @@ corrected = baselines_rs.correct(y, method="arpls")
 ```
 
 Build the Python wheel with `maturin build --release` from `bindings/python`.
-Build the browser package with `npm run build` from `bindings/wasm`. Browser
-applications can import the auto-initializing WASM API without a separate setup
-call:
+Build the WebAssembly package with `npm run build` from `bindings/wasm`. Browser
+and Node.js applications have dedicated auto-initializing entry points:
 
 ```js
-import { baselineWith } from "baselines-rs/auto";
+import { baseline, fit } from "baselines-rs/browser";
 
-const estimated = baselineWith(
-  Float64Array.from([1.0, 1.1, 4.2, 1.2, 1.0]),
-  "arpls",
-);
+const y = [1.0, 1.1, 4.2, 1.2, 1.0];
+const estimated = baseline(y, { method: "asls", lambda: 1e5, p: 0.05 });
+const result = fit(y, { method: "arpls", tol: 1e-4 });
+console.log(result.report);
 ```
 
-The distribution name is `baselines-rs` on both PyPI and npm.
+Use `baselines-rs/node` in Node.js. The distribution name is `baselines-rs` on
+both PyPI and npm.
 
 ## Feature flags
 

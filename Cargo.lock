@@ -145,7 +145,7 @@ dependencies = [
 
 [[package]]
 name = "baselines"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "approx",
  "criterion",
@@ -161,7 +161,7 @@ dependencies = [
 
 [[package]]
 name = "baselines-python"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "baselines",
  "numpy",
@@ -170,7 +170,7 @@ dependencies = [
 
 [[package]]
 name = "baselines-rs"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "baselines",
  "wasm-bindgen",

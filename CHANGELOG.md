@@ -2,6 +2,29 @@
 
 All notable changes to this project are documented here.
 
+## [0.2.0] - 2026-08-15
+
+### Added
+
+- Validated configurable options for the simple Rust, Python, and WebAssembly
+  APIs, covering Whittaker, morphology, and polynomial parameters.
+- `fit` and `fit_2d` binding functions that return baselines, corrected data,
+  and convergence reports.
+- Python array-like coercion, type stubs, and a `py.typed` marker.
+- Dedicated auto-initializing npm entry points for browsers and Node.js.
+- Nested JavaScript matrix inputs and typed npm package exports.
+
+### Changed
+
+- The npm API now accepts `baseline(data, options)` and `correct(data, options)`
+  while retaining the `*With` compatibility aliases.
+- npm method discovery now returns arrays instead of comma-separated strings.
+
+### Fixed
+
+- Three-point Whittaker inputs no longer panic while constructing the
+  second-difference penalty.
+
 ## [0.1.2] - 2026-08-15
 
 ### Added

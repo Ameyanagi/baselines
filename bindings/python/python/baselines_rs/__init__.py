@@ -5,6 +5,8 @@ from ._native import (
     baseline_2d,
     correct,
     correct_2d,
+    fit,
+    fit_2d,
     methods,
     methods_2d,
 )
@@ -14,7 +16,9 @@ __all__ = [
     "baseline_2d",
     "correct",
     "correct_2d",
+    "fit",
+    "fit_2d",
     "methods",
     "methods_2d",
 ]
-__version__ = "0.1.1"
+__version__ = "0.2.0"

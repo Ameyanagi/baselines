@@ -28,6 +28,8 @@ jobs:
           targets: wasm32-unknown-unknown
       - name: Install release tooling
         run: npm install --global npm@11.16.0 wasm-pack@0.15.0
+      - name: Install development dependencies
+        run: npm ci --prefix bindings/wasm
       - name: Verify tag matches package versions
         shell: bash
         run: |
@@ -40,6 +42,8 @@ jobs:
         run: npm run --prefix bindings/wasm build
       - name: Test WASM runtime
         run: npm test --prefix bindings/wasm
+      - name: Check TypeScript declarations
+        run: npm run --prefix bindings/wasm typecheck
       - name: Inspect package contents
         run: npm pack bindings/wasm/pkg --dry-run
       - name: Publish package

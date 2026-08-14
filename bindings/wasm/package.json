@@ -1,6 +1,6 @@
 {
   "name": "baselines-rs",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "private": true,
   "description": "Fast baseline correction for signals and surfaces, powered by Rust and WebAssembly",
   "license": "MIT OR Apache-2.0",
@@ -19,12 +19,16 @@
   "scripts": {
     "build": "wasm-pack build --target web --release --out-dir pkg && node prepare-package.mjs",
     "pack:check": "npm pack ./pkg --dry-run",
-    "test": "node smoke.mjs && node smoke-auto.mjs"
+    "test": "node smoke.mjs && node smoke-auto.mjs && node smoke-node.mjs",
+    "typecheck": "tsc --noEmit --strict --target ES2022 --lib ESNext,DOM --module NodeNext --moduleResolution NodeNext type-smoke.ts"
   },
   "keywords": [
     "baseline",
     "spectroscopy",
     "signal-processing",
     "wasm"
-  ]
+  ],
+  "devDependencies": {
+    "typescript": "5.9.3"
+  }
 }

@@ -49,16 +49,20 @@ pub use data::{MatrixLayout, MatrixShape, MatrixView, MatrixViewMut};
 pub use error::{BaselineError, Result};
 pub use fit::{Fit, Fit1D, Fit2D, FitHistory, FitReport};
 pub use simple::{
-    Method, Method2D, baseline, baseline_2d, baseline_2d_with, baseline_with, correct, correct_2d,
-    correct_2d_with, correct_with,
+    BaselineOptions, BaselineOptions2D, Method, Method2D, baseline, baseline_2d, baseline_2d_with,
+    baseline_2d_with_options, baseline_with, baseline_with_options, correct, correct_2d,
+    correct_2d_with, correct_2d_with_options, correct_with, correct_with_options,
+    fit_2d_with_options, fit_with_options,
 };
 
 /// Common imports for the simple and method-chain APIs.
 pub mod prelude {
     pub use crate::{
-        Baseline, Baseline2D, BaselineError, BaselineXY, ClassificationFit, Fit, Fit1D, Fit2D,
-        FitHistory, FitReport, MatrixView, MatrixViewMut, Method, Method2D, Result, baseline,
-        baseline_2d, baseline_2d_with, baseline_with, correct, correct_2d, correct_2d_with,
-        correct_with,
+        Baseline, Baseline2D, BaselineError, BaselineOptions, BaselineOptions2D, BaselineXY,
+        ClassificationFit, Fit, Fit1D, Fit2D, FitHistory, FitReport, MatrixView, MatrixViewMut,
+        Method, Method2D, Result, baseline, baseline_2d, baseline_2d_with,
+        baseline_2d_with_options, baseline_with, baseline_with_options, correct, correct_2d,
+        correct_2d_with, correct_2d_with_options, correct_with, correct_with_options,
+        fit_2d_with_options, fit_with_options,
     };
 }

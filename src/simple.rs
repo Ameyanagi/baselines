@@ -103,6 +103,145 @@ pub enum Method2D {
     Polynomial,
 }
 
+/// Configurable parameters for the simple one-dimensional API.
+///
+/// Fields left as [`None`] use the selected algorithm's documented defaults.
+/// Options that do not apply to the selected method return an error rather than
+/// being silently ignored.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct BaselineOptions {
+    /// Baseline algorithm.
+    pub method: Method,
+    /// Whittaker smoothness penalty for `asls`, `arpls`, and `airpls`.
+    pub lambda: Option<f64>,
+    /// Asymmetry parameter for `asls`.
+    pub p: Option<f64>,
+    /// Maximum iterations for `asls`, `arpls`, and `airpls`.
+    pub max_iter: Option<usize>,
+    /// Convergence tolerance for `asls`, `arpls`, and `airpls`.
+    pub tol: Option<f64>,
+    /// Moving-window size for `rolling_ball`.
+    pub window_size: Option<usize>,
+    /// Polynomial degree for `polynomial`.
+    pub order: Option<usize>,
+}
+
+impl BaselineOptions {
+    fn reject_unsupported(&self, supported: &[&str]) -> Result<()> {
+        for (name, is_set) in [
+            ("lambda", self.lambda.is_some()),
+            ("p", self.p.is_some()),
+            ("max_iter", self.max_iter.is_some()),
+            ("tol", self.tol.is_some()),
+            ("window_size", self.window_size.is_some()),
+            ("order", self.order.is_some()),
+        ] {
+            if is_set && !supported.contains(&name) {
+                return Err(BaselineError::InvalidParameter {
+                    name,
+                    reason: "is not supported by the selected method",
+                });
+            }
+        }
+        Ok(())
+    }
+
+    fn whittaker(&self) -> crate::whittaker::WhittakerParams {
+        let mut params = crate::whittaker::WhittakerParams::default();
+        if let Some(lambda) = self.lambda {
+            params.lambda = lambda;
+        }
+        if let Some(max_iter) = self.max_iter {
+            params.max_iter = max_iter;
+        }
+        if let Some(tol) = self.tol {
+            params.tol = tol;
+        }
+        params
+    }
+}
+
+/// Configurable parameters for the simple two-dimensional API.
+///
+/// Fields left as [`None`] use the selected algorithm's documented defaults.
+/// Options that do not apply to the selected method return an error rather than
+/// being silently ignored.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct BaselineOptions2D {
+    /// Baseline algorithm.
+    pub method: Method2D,
+    /// Shared Whittaker smoothness penalty for `asls` and `arpls`.
+    pub lambda: Option<f64>,
+    /// Optional row-axis Whittaker smoothness penalty.
+    pub lambda_rows: Option<f64>,
+    /// Optional column-axis Whittaker smoothness penalty.
+    pub lambda_cols: Option<f64>,
+    /// Asymmetry parameter for `asls`.
+    pub p: Option<f64>,
+    /// Maximum reweighting iterations for `asls` and `arpls`.
+    pub max_iter: Option<usize>,
+    /// Reweighting convergence tolerance for `asls` and `arpls`.
+    pub tol: Option<f64>,
+    /// Maximum conjugate-gradient iterations per weighted solve.
+    pub cg_max_iter: Option<usize>,
+    /// Conjugate-gradient residual tolerance.
+    pub cg_tol: Option<f64>,
+    /// Moving-window row count for `rolling_ball`.
+    pub window_rows: Option<usize>,
+    /// Moving-window column count for `rolling_ball`.
+    pub window_cols: Option<usize>,
+    /// Polynomial degree for `polynomial`.
+    pub order: Option<usize>,
+}
+
+impl BaselineOptions2D {
+    fn reject_unsupported(&self, supported: &[&str]) -> Result<()> {
+        for (name, is_set) in [
+            ("lambda", self.lambda.is_some()),
+            ("lambda_rows", self.lambda_rows.is_some()),
+            ("lambda_cols", self.lambda_cols.is_some()),
+            ("p", self.p.is_some()),
+            ("max_iter", self.max_iter.is_some()),
+            ("tol", self.tol.is_some()),
+            ("cg_max_iter", self.cg_max_iter.is_some()),
+            ("cg_tol", self.cg_tol.is_some()),
+            ("window_rows", self.window_rows.is_some()),
+            ("window_cols", self.window_cols.is_some()),
+            ("order", self.order.is_some()),
+        ] {
+            if is_set && !supported.contains(&name) {
+                return Err(BaselineError::InvalidParameter {
+                    name,
+                    reason: "is not supported by the selected method",
+                });
+            }
+        }
+        Ok(())
+    }
+
+    fn whittaker(&self) -> whittaker_2d::Whittaker2DParams {
+        let mut params = whittaker_2d::Whittaker2DParams::default();
+        if let Some(lambda) = self.lambda {
+            params.lambda = lambda;
+        }
+        params.lambda_rows = self.lambda_rows;
+        params.lambda_cols = self.lambda_cols;
+        if let Some(max_iter) = self.max_iter {
+            params.max_iter = max_iter;
+        }
+        if let Some(tol) = self.tol {
+            params.tol = tol;
+        }
+        if let Some(cg_max_iter) = self.cg_max_iter {
+            params.cg_max_iter = cg_max_iter;
+        }
+        if let Some(cg_tol) = self.cg_tol {
+            params.cg_tol = cg_tol;
+        }
+        params
+    }
+}
+
 impl Method2D {
     /// Methods accepted by [`baseline_2d_with`] and [`correct_2d_with`].
     pub const ALL: [Self; 4] = [Self::Asls, Self::Arpls, Self::RollingBall, Self::Polynomial];
@@ -155,7 +294,19 @@ pub fn baseline(y: &[f64]) -> Result<Vec<f64>> {
 
 /// Estimates a one-dimensional baseline with a selected method and its defaults.
 pub fn baseline_with(y: &[f64], method: Method) -> Result<Vec<f64>> {
-    Ok(fit_with(y, method)?.baseline)
+    Ok(fit_with_options(
+        y,
+        BaselineOptions {
+            method,
+            ..BaselineOptions::default()
+        },
+    )?
+    .baseline)
+}
+
+/// Estimates a one-dimensional baseline with configurable parameters.
+pub fn baseline_with_options(y: &[f64], options: BaselineOptions) -> Result<Vec<f64>> {
+    Ok(fit_with_options(y, options)?.baseline)
 }
 
 /// Returns `y - baseline` using the default [`Method::Asls`].
@@ -165,7 +316,19 @@ pub fn correct(y: &[f64]) -> Result<Vec<f64>> {
 
 /// Returns `y - baseline` using a selected method and its defaults.
 pub fn correct_with(y: &[f64], method: Method) -> Result<Vec<f64>> {
-    fit_with(y, method)?.corrected(y)
+    fit_with_options(
+        y,
+        BaselineOptions {
+            method,
+            ..BaselineOptions::default()
+        },
+    )?
+    .corrected(y)
+}
+
+/// Corrects a one-dimensional signal with configurable parameters.
+pub fn correct_with_options(y: &[f64], options: BaselineOptions) -> Result<Vec<f64>> {
+    fit_with_options(y, options)?.corrected(y)
 }
 
 /// Estimates a row-major two-dimensional baseline with the default [`Method2D::Asls`].
@@ -180,7 +343,26 @@ pub fn baseline_2d_with(
     cols: usize,
     method: Method2D,
 ) -> Result<Vec<f64>> {
-    Ok(fit_2d_with(data, rows, cols, method)?.baseline)
+    Ok(fit_2d_with_options(
+        data,
+        rows,
+        cols,
+        BaselineOptions2D {
+            method,
+            ..BaselineOptions2D::default()
+        },
+    )?
+    .baseline)
+}
+
+/// Estimates a row-major two-dimensional baseline with configurable parameters.
+pub fn baseline_2d_with_options(
+    data: &[f64],
+    rows: usize,
+    cols: usize,
+    options: BaselineOptions2D,
+) -> Result<Vec<f64>> {
+    Ok(fit_2d_with_options(data, rows, cols, options)?.baseline)
 }
 
 /// Returns `data - baseline` using the default [`Method2D::Asls`].
@@ -195,28 +377,151 @@ pub fn correct_2d_with(
     cols: usize,
     method: Method2D,
 ) -> Result<Vec<f64>> {
-    fit_2d_with(data, rows, cols, method)?.corrected(data)
+    fit_2d_with_options(
+        data,
+        rows,
+        cols,
+        BaselineOptions2D {
+            method,
+            ..BaselineOptions2D::default()
+        },
+    )?
+    .corrected(data)
 }
 
-fn fit_with(y: &[f64], method: Method) -> Result<Fit1D> {
-    match method {
-        Method::Asls => whittaker::asls(y, AslsParams::default()),
-        Method::Arpls => whittaker::arpls(y, ArPlsParams::default()),
-        Method::Airpls => whittaker::airpls(y, AirPlsParams::default()),
-        Method::RollingBall => morphology::rolling_ball(y, MorphologyParams::default()),
-        Method::Polynomial => polynomial::poly(y, PolyParams::default()),
+/// Corrects row-major two-dimensional data with configurable parameters.
+pub fn correct_2d_with_options(
+    data: &[f64],
+    rows: usize,
+    cols: usize,
+    options: BaselineOptions2D,
+) -> Result<Vec<f64>> {
+    fit_2d_with_options(data, rows, cols, options)?.corrected(data)
+}
+
+/// Fits a one-dimensional baseline and returns convergence metadata.
+pub fn fit_with_options(y: &[f64], options: BaselineOptions) -> Result<Fit1D> {
+    match options.method {
+        Method::Asls => {
+            options.reject_unsupported(&["lambda", "p", "max_iter", "tol"])?;
+            let mut params = AslsParams {
+                whittaker: options.whittaker(),
+                ..AslsParams::default()
+            };
+            if let Some(p) = options.p {
+                params.p = p;
+            }
+            whittaker::asls(y, params)
+        }
+        Method::Arpls => {
+            options.reject_unsupported(&["lambda", "max_iter", "tol"])?;
+            whittaker::arpls(
+                y,
+                ArPlsParams {
+                    whittaker: options.whittaker(),
+                },
+            )
+        }
+        Method::Airpls => {
+            options.reject_unsupported(&["lambda", "max_iter", "tol"])?;
+            whittaker::airpls(
+                y,
+                AirPlsParams {
+                    whittaker: options.whittaker(),
+                },
+            )
+        }
+        Method::RollingBall => {
+            options.reject_unsupported(&["window_size"])?;
+            morphology::rolling_ball(
+                y,
+                MorphologyParams {
+                    window_size: options
+                        .window_size
+                        .unwrap_or(MorphologyParams::default().window_size),
+                },
+            )
+        }
+        Method::Polynomial => {
+            options.reject_unsupported(&["order"])?;
+            polynomial::poly(
+                y,
+                PolyParams {
+                    order: options.order.unwrap_or(PolyParams::default().order),
+                },
+            )
+        }
     }
 }
 
-fn fit_2d_with(data: &[f64], rows: usize, cols: usize, method: Method2D) -> Result<Fit2D> {
+/// Fits a row-major two-dimensional baseline and returns convergence metadata.
+pub fn fit_2d_with_options(
+    data: &[f64],
+    rows: usize,
+    cols: usize,
+    options: BaselineOptions2D,
+) -> Result<Fit2D> {
     let input = MatrixView::row_major(data, rows, cols)?;
-    match method {
-        Method2D::Asls => whittaker_2d::asls(input, whittaker_2d::Asls2DParams::default()),
-        Method2D::Arpls => whittaker_2d::arpls(input, whittaker_2d::ArPls2DParams::default()),
-        Method2D::RollingBall => {
-            morphology_2d::rolling_ball(input, morphology_2d::Morphology2DParams::default())
+    match options.method {
+        Method2D::Asls => {
+            options.reject_unsupported(&[
+                "lambda",
+                "lambda_rows",
+                "lambda_cols",
+                "p",
+                "max_iter",
+                "tol",
+                "cg_max_iter",
+                "cg_tol",
+            ])?;
+            let mut params = whittaker_2d::Asls2DParams {
+                whittaker: options.whittaker(),
+                ..whittaker_2d::Asls2DParams::default()
+            };
+            if let Some(p) = options.p {
+                params.p = p;
+            }
+            whittaker_2d::asls(input, params)
         }
-        Method2D::Polynomial => polynomial_2d::poly(input, polynomial_2d::Poly2DParams::default()),
+        Method2D::Arpls => {
+            options.reject_unsupported(&[
+                "lambda",
+                "lambda_rows",
+                "lambda_cols",
+                "max_iter",
+                "tol",
+                "cg_max_iter",
+                "cg_tol",
+            ])?;
+            whittaker_2d::arpls(
+                input,
+                whittaker_2d::ArPls2DParams {
+                    whittaker: options.whittaker(),
+                },
+            )
+        }
+        Method2D::RollingBall => {
+            options.reject_unsupported(&["window_rows", "window_cols"])?;
+            let defaults = morphology_2d::Morphology2DParams::default();
+            morphology_2d::rolling_ball(
+                input,
+                morphology_2d::Morphology2DParams {
+                    window_rows: options.window_rows.unwrap_or(defaults.window_rows),
+                    window_cols: options.window_cols.unwrap_or(defaults.window_cols),
+                },
+            )
+        }
+        Method2D::Polynomial => {
+            options.reject_unsupported(&["order"])?;
+            polynomial_2d::poly(
+                input,
+                polynomial_2d::Poly2DParams {
+                    order: options
+                        .order
+                        .unwrap_or(polynomial_2d::Poly2DParams::default().order),
+                },
+            )
+        }
     }
 }
 
@@ -258,5 +563,43 @@ mod tests {
         for method in Method2D::ALL {
             assert_eq!(method.as_str().parse::<Method2D>(), Ok(method));
         }
+    }
+
+    #[test]
+    fn configurable_options_return_metadata_and_reject_mismatches() {
+        let y: Vec<f64> = (0..64).map(|index| 1.0 + index as f64 * 0.01).collect();
+        let fit = fit_with_options(
+            &y,
+            BaselineOptions {
+                lambda: Some(1.0e4),
+                p: Some(0.05),
+                max_iter: Some(8),
+                ..BaselineOptions::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(fit.baseline.len(), y.len());
+        assert!(fit.report.iterations <= 8);
+
+        let error = fit_with_options(
+            &y,
+            BaselineOptions {
+                method: Method::Polynomial,
+                lambda: Some(1.0e4),
+                ..BaselineOptions::default()
+            },
+        )
+        .unwrap_err();
+        assert!(matches!(
+            error,
+            BaselineError::InvalidParameter { name: "lambda", .. }
+        ));
+    }
+
+    #[test]
+    fn asls_accepts_the_documented_minimum_length() {
+        let fit = fit_with_options(&[3.0, 2.0, 3.0], BaselineOptions::default()).unwrap();
+        assert_eq!(fit.baseline.len(), 3);
+        assert!(fit.baseline.iter().all(|value| value.is_finite()));
     }
 }

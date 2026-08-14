@@ -18,7 +18,16 @@ if (
 }
 
 await Promise.all(
-  ["auto.js", "auto.d.ts"].map((filename) =>
+  [
+    "index.js",
+    "index.d.ts",
+    "auto.js",
+    "auto.d.ts",
+    "browser.js",
+    "browser.d.ts",
+    "node.js",
+    "node.d.ts",
+  ].map((filename) =>
     copyFile(new URL(filename, root), new URL(filename, output)),
   ),
 );
@@ -28,17 +37,46 @@ outputPackage.repository = sourcePackage.repository;
 outputPackage.homepage = sourcePackage.homepage;
 outputPackage.bugs = sourcePackage.bugs;
 outputPackage.keywords = sourcePackage.keywords;
-outputPackage.files = [...outputPackage.files, "auto.js", "auto.d.ts"];
+outputPackage.files = [
+  ...outputPackage.files,
+  "index.js",
+  "index.d.ts",
+  "auto.js",
+  "auto.d.ts",
+  "browser.js",
+  "browser.d.ts",
+  "node.js",
+  "node.d.ts",
+];
+outputPackage.main = "index.js";
+outputPackage.module = "index.js";
+outputPackage.types = "index.d.ts";
+outputPackage.sideEffects = [
+  ...(outputPackage.sideEffects ?? []),
+  "./auto.js",
+  "./browser.js",
+  "./node.js",
+];
 outputPackage.exports = {
   ".": {
-    types: "./baselines_rs.d.ts",
-    import: "./baselines_rs.js",
-    default: "./baselines_rs.js",
+    types: "./index.d.ts",
+    import: "./index.js",
+    default: "./index.js",
   },
   "./auto": {
     types: "./auto.d.ts",
     import: "./auto.js",
     default: "./auto.js",
+  },
+  "./browser": {
+    types: "./browser.d.ts",
+    import: "./browser.js",
+    default: "./browser.js",
+  },
+  "./node": {
+    types: "./node.d.ts",
+    import: "./node.js",
+    default: "./node.js",
   },
 };
 
