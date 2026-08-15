@@ -39,6 +39,8 @@ let estimated = fit.baseline;
 
 https://github.com/user-attachments/assets/2b3c97ec-e395-4c75-aa7f-aebec5f9a3f3
 
+[▶ Watch the intro video on YouTube](https://youtu.be/nAsXHbcthLA)
+
 ## Scope
 
 The crate starts with CPU `f64` implementations and public entry points for
