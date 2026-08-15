@@ -37,6 +37,8 @@ let estimated = fit.baseline;
 # Ok::<(), baselines::BaselineError>(())
 ```
 
+https://github.com/user-attachments/assets/2b3c97ec-e395-4c75-aa7f-aebec5f9a3f3
+
 ## Scope
 
 The crate starts with CPU `f64` implementations and public entry points for
